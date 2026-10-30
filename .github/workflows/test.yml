@@ -1,0 +1,25 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Hypothesis
+        run: /usr/bin/python3 -m pip install --user --break-system-packages hypothesis || /usr/bin/python3 -m pip install --user hypothesis
+      - name: Run tests
+        run: |
+          for t in tests/test_*.py schema/test_*.py; do echo "== $t"; /usr/bin/python3 "$t" < /dev/null || exit 1; done

@@ -1,0 +1,39 @@
+{
+  "roots": {
+    "agents": "~/.agents/skills",
+    "codex": "~/.codex/skills",
+    "claude": "~/.claude/skills"
+  },
+  "skills": {
+    "spec-plan": ["agents", "codex", "claude"],
+    "spec-analyze": ["agents", "codex", "claude"],
+    "spec-next": ["agents", "codex", "claude"],
+    "spec-audit": ["agents", "codex", "claude"],
+    "project-init": ["agents", "codex", "claude"],
+    "context-resume": ["agents", "codex", "claude"],
+    "work-status": ["agents", "codex", "claude"],
+    "ship": ["agents", "codex", "claude"],
+    "ui-check": ["agents", "codex", "claude"],
+    "debug-profile": ["agents", "codex", "claude"],
+    "evidence-research": ["agents", "codex", "claude"],
+    "agent-quality": ["agents", "codex", "claude"],
+    "relay": ["agents", "codex", "claude"],
+    "blockers": ["agents", "codex", "claude"],
+    "report": ["agents", "codex", "claude"],
+    "health": ["agents", "codex", "claude"],
+    "changes": ["agents", "codex", "claude"],
+    "codex-orchestration": ["agents", "claude"],
+    "spec-dispatch": ["claude"]
+  },
+  "files": {
+    "global/process-guard.py": ["~/.claude/hooks/process-guard.py"],
+    "global/work_hooks.py": ["~/.claude/hooks/work_hooks.py"],
+    "global/sdd_worktree.py": ["~/.local/bin/sdd-worktree.py"],
+    "global/sdd_dispatch_plan.py": ["~/.local/bin/sdd-dispatch-plan.py"],
+    "global/sdd_pr.py": ["~/.local/bin/sdd-pr.py"],
+    "global/model-policy.json": ["~/.claude/hooks/model-policy.json"],
+    "global/AGENTS.md": ["~/AGENTS.md", "~/.codex/AGENTS.md", "~/.claude/CLAUDE.md"],
+    "schema/openspec-after-update.py": ["~/.local/bin/openspec-after-update.py"],
+    "schema/test_openspec_after_update.py": ["~/.local/bin/test_openspec_after_update.py"]
+  }
+}

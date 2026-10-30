@@ -1,0 +1,13 @@
+schema: solo
+
+context: |
+  Language: ru. Keep OpenSpec structural headings and SHALL/MUST keywords in English.
+  Режим: prod
+  Замысел: <2–3 предложения: что это, для кого и что считается успехом. С ним сверяется каждый
+  новый change; change, который уводит от замысла, не создаётся.>
+
+operations:
+  apply:
+    guidance:
+      - Тесты и живая приёмка на самых дешёвых моделях
+      - Готовность доказывается сценарием в том, что получает человек, а не зелёными модульными тестами

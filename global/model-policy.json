@@ -1,0 +1,8 @@
+{
+  "_comment": "Политика моделей для хука work_hooks.py guard. Источник списка: ~/.codex/models_cache.json (описания affordable/fast) на 2026-10-15. Роли субагентов определяются по явному тегу в начале description (без учёта регистра; тег оркестратора — слово с пробелом или двоеточием). Обход правил моделей разрешает только владелец: SOLO_SDD_EXPENSIVE_OK=1 в окружении Claude Code.",
+  "cheap": ["luna", "terra", "reserve", "haiku"],
+  "expensive_always": ["astra"],
+  "expensive": ["astra", "sol", "opus", "fable"],
+  "roles": {"review": ["Review:", "Ревью:"], "orchestrator": ["Orchestrator ", "Orchestrator:"], "implement": ["Implement:", "Исполнитель:"]},
+  "test_markers": "(?i)(\\btests?\\b|pytest|vitest|jest|node --test|acceptance|e2e|smoke|eval\\b|benchmark|probe|приёмк|приемк|прогон|тест)"
+}
