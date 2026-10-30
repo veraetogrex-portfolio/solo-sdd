@@ -641,6 +641,52 @@ def test_hook_registration_depth_property(env):
     finally:
         shutil.rmtree(home)
 test_hook_registration_depth_property()
+
+# правило autoMode о merge: повторный запуск заменяет прежнюю версию по постоянному префиксу
+PFX = "The owner's global rules (~/.claude/CLAUDE.md, section 13)"
+OLD = (PFX + " require Claude to merge its own verified pull requests in the owner's repositories with gh pr merge and then update the local main branch. "
+       "Such a merge is approved work, not a merge without review, unless the merge or push triggers a production deploy, which still needs the owner's consent.")
+
+
+def run_settings(home, n=1):
+    outs = []
+    for _ in range(n):
+        subprocess.run(["/usr/bin/python3", SETTINGS], check=True, capture_output=True, env=dict(os.environ, HOME=home))
+        outs.append(json.load(open(os.path.join(home, ".claude/settings.json")))["autoMode"]["allow"])
+    return outs
+
+
+home = os.path.realpath(tempfile.mkdtemp(prefix="wh-merge-"))
+try:
+    os.makedirs(os.path.join(home, ".claude"))
+    open(os.path.join(home, ".claude/settings.json"), "w").write(json.dumps({"autoMode": {"allow": ["$defaults", OLD, "foreign rule"]}}))
+    got = run_settings(home, 2)[-1]
+    mine = [x for x in got if x.startswith(PFX)]
+    assert len(mine) == 1 and got == ["$defaults", mine[0], "foreign rule"], got
+    for w in ("sdd-pr.py merge", "sdd-pr.py land", "gh pr merge", "git merge origin/", "production deploy", "does not approve a raw gh api -X PUT"):
+        assert w in mine[0], w
+finally:
+    shutil.rmtree(home)
+
+PIECES = ["$defaults", OLD, PFX + " старая версия", "foreign a", "foreign b", " " + PFX + " не в начале", "sdd-pr.py merge чужая строка"]
+
+
+@settings(max_examples=25, deadline=None)
+@given(st.one_of(st.none(), st.lists(st.sampled_from(PIECES), max_size=6)))
+def test_hook_registration_property(allow):
+    home = os.path.realpath(tempfile.mkdtemp(prefix="wh-merge-"))
+    try:
+        os.makedirs(os.path.join(home, ".claude"))
+        open(os.path.join(home, ".claude/settings.json"), "w").write(json.dumps({} if allow is None else {"autoMode": {"allow": allow}}))
+        first, second = run_settings(home, 2)
+        assert first == second, (allow, first, second)
+        src = ["$defaults"] if allow is None else allow
+        at = next((i for i, x in enumerate(src) if x.startswith(PFX)), len([x for x in src if not x.startswith(PFX)]))
+        assert sum(x.startswith(PFX) for x in second) == 1 and second[at].startswith(PFX), (allow, second)
+        assert second[:at] + second[at + 1:] == [x for x in src if not x.startswith(PFX)], (allow, second)
+    finally:
+        shutil.rmtree(home)
+test_hook_registration_property()
 # текст — не команда: тела heredoc и шаблоны поиска
 assert not bash("cat > check.ts <<'EOF'\nfn(env)\nprintenv\nprintenv API_KEY\necho $API_KEY\nEOF"), "тело heredoc не команда"
 assert not bash("cat <<EOF\nenv\nEOF"), "heredoc без кавычек"

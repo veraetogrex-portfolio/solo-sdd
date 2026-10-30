@@ -23,12 +23,14 @@ for e in ("UserPromptSubmit", "SubagentStart", "SubagentStop"):
     add(e, {"hooks": [b]})
 add("SessionEnd", {"hooks": [c("end", timeout=10)]})
 s.setdefault("statusLine", {"type": "command", "command": G + "status", "refreshInterval": 5})
-r = ("The owner's global rules (~/.claude/CLAUDE.md, section 13) require Claude to merge its own verified pull requests "
-     "in the owner's repositories with gh pr merge and then update the local main branch. Such a merge is approved work, "
-     "not a merge without review, unless the merge or push triggers a production deploy, which still needs the owner's consent.")
+P = "The owner's global rules (~/.claude/CLAUDE.md, section 13)"
+r = (P + " require Claude to merge its own verified pull requests in the owner's repositories with sdd-pr.py merge or sdd-pr.py land "
+     "(gh pr merge in the /ship skill), and to update a change branch from the main branch with git merge origin/<main branch> in its worktree. "
+     "Such a merge or update is approved work, not a merge without review, unless the merge or push triggers a production deploy, "
+     "which still needs the owner's consent. This rule does not approve a raw gh api -X PUT .../merge call: it skips the hash and behind checks.")
 a = s.setdefault("autoMode", {}).setdefault("allow", ["$defaults"])
-if r not in a:
-    a.append(r)
+i = next((i for i, x in enumerate(a) if x.startswith(P)), len(a))
+a[:] = a[:i] + [r] + [x for x in a[i:] if not x.startswith(P)]
 D = "CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH"
 e = s.setdefault("env", {})
 own = D in e

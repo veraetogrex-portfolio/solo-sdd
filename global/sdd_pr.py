@@ -9,7 +9,7 @@ import time
 USAGE = """использование:
   sdd-pr.py open <WORKTREE> <основная ветка> <заголовок>
   sdd-pr.py wait <url> [--timeout <сек>] [--interval <сек>]
-  sdd-pr.py merge <url> <squash|merge|rebase> <hash>
+  sdd-pr.py merge <url> <squash|merge|rebase> <hash> [--title <заголовок>]
   коды merge: 0 слит, 1 ошибка, 5 основная ушла вперёд (PR отстаёт)"""
 SIGNS = ("FAIL:", "ERROR:", "FAILED", "AssertionError", "failed")
 NO_CHECKS_SEC = 180
@@ -104,7 +104,7 @@ def cmd_wait(url, timeout, interval):
 
 
 def view(url):
-    p = sh("gh", "pr", "view", url, "--json", "headRefOid,baseRefName,state")
+    p = sh("gh", "pr", "view", url, "--json", "headRefOid,headRefName,baseRefName,state,title,isCrossRepository")
     if p.returncode:
         die("gh pr view: " + p.stderr.strip())
     try:
@@ -113,13 +113,17 @@ def view(url):
         die("gh pr view: не JSON: " + p.stdout[:200])
 
 
-def cmd_merge(url, how, sha):
+def cmd_merge(url, how, sha, title=None):
     n, v = number(url), view(url)
     if v["state"] == "MERGED":
         print(f"PR #{n} merged (уже)")
         return 0
     if v["headRefOid"] != sha:
         die(f"hash {sha} не голова PR ({v['headRefOid']})")
+    if how != "rebase":
+        title = (v.get("title", "") if title is None else title).strip()
+        if not title:
+            die(f"PR #{n}: пустой заголовок коммита (передайте --title)")
     owner_repo = re.search(r"github\.com/([^/]+/[^/]+)/pull/", url)
     if not owner_repo:
         die("не разобрать owner/repo из url: " + url)
@@ -134,20 +138,31 @@ def cmd_merge(url, how, sha):
     if behind > 0:
         print(f"PR #{n} behind {behind}: основная ушла вперёд")
         return 5
-    p = sh("gh", "pr", "merge", url, "--" + how, "--match-head-commit", sha, "--delete-branch")
+    rows = checks(url)
+    bad = [f"{r.get('name')} ({r.get('bucket')})" for r in rows if r.get("bucket") not in ("pass", "skipping")]
+    if not rows or bad:
+        die(f"PR #{n} CI не зелёный: " + (", ".join(bad) or "нет проверок"))
+    repo = owner_repo.group(1)
+    extra = ["-f", f"commit_title={title} (#{n})"] if how != "rebase" else []
+    p = sh("gh", "api", "-X", "PUT", f"repos/{repo}/pulls/{n}/merge", "-f", f"merge_method={how}", "-f", f"sha={sha}", *extra)
     if p.returncode:
-        q = sh("gh", "pr", "view", url, "--json", "state")  # merge мог пройти, а упасть на удалении ветки
-        if q.returncode or json.loads(q.stdout or "{}").get("state") != "MERGED":
-            die((p.stderr or p.stdout).strip() or "gh pr merge отказал")
+        die((p.stderr or p.stdout).strip() or "merge отказан")
     print(f"PR #{n} {url} merged ({how})")
+    if v.get("isCrossRepository"):  # ветка живёт в форке: такое же имя в базовом репозитории — чужая ветка
+        return 0
+    branch = v["headRefName"]
+    p = sh("gh", "api", "-X", "DELETE", f"repos/{repo}/git/refs/heads/{branch}")
+    if p.returncode and not any(c in p.stderr for c in ("HTTP 404", "HTTP 422")):
+        print(f"ветка {branch} не удалена: " + (p.stderr or p.stdout).strip())
     return 0
 
 
 def main(a):
     if a[:1] == ["open"] and len(a) == 4:
         return cmd_open(*a[1:])
-    if a[:1] == ["merge"] and len(a) == 4 and a[2] in ("squash", "merge", "rebase"):
-        return cmd_merge(*a[1:])
+    if a[:1] == ["merge"] and len(a) in (4, 6) and a[2] in ("squash", "merge", "rebase") \
+            and (len(a) == 4 or a[4] == "--title"):
+        return cmd_merge(*a[1:4], *a[5:])
     if a[:1] == ["wait"] and len(a) >= 2:
         opt, rest = {"--timeout": 1200.0, "--interval": 15.0}, a[2:]
         try:  # ValueError ловится только при разборе аргументов: сбой gh внутри команды — код 1, не 2
