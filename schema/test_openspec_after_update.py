@@ -281,4 +281,30 @@ with tempfile.TemporaryDirectory() as t:
     assert run_main(m, "--schema-only", "--force", OPENSPEC_PKG=pkg, SOLO_SDD_REPO=repo) == 0, m.logged
     assert not synced.exists() and m.notified == [] and Path(m.STAMP).read_text() == "прежняя"
     assert "solo-override" not in skill.read_text() and "name: solo" in solo_text(m)
+# 8. Homebrew как источник: второй путь BREW_PKGS, npm недоступен, OPENSPEC_PKG не задан
+with tempfile.TemporaryDirectory() as t:
+    home = Path(t); w = home / ".w"; mark = w / "mark"; m = load(home)
+    pkg = fake_pkg(w / "brew", mark)
+    m.BREW_PKGS = (str(home / "нет-brew-1"), pkg)
+    assert run_main(m, "--schema-only", PATH=str(w / "пусто")) == 0, m.logged
+    assert "name: solo" in solo_text(m) and mark.read_text().startswith(f"{w}/brew/bin:"), mark.read_text()
+    assert any(pkg in line for line in m.logged), m.logged
+
+# 9. npm только в CALL_PATH: PATH процесса — пустая папка
+with tempfile.TemporaryDirectory() as t:
+    home = Path(t); w = home / ".w"; mark = w / "mark"; m = load(home)
+    pkg = fake_pkg(w / "p1", mark)
+    m.CALL_PATH = fake_npm(w / "npmbin", w / "p1/lib/node_modules")
+    (w / "пусто").mkdir()
+    assert run_main(m, "--schema-only", PATH=str(w / "пусто")) == 0, m.logged
+    assert "name: solo" in solo_text(m) and any(pkg in line for line in m.logged), m.logged
+
+# 10. openspec не принимает схему: ошибка и код 1, прежняя схема цела, текст ошибки в журнале
+with tempfile.TemporaryDirectory() as t:
+    home = Path(t); w = home / ".w"; m = load(home)
+    pkg = fake_pkg(w / "p1", w / "mark")
+    sh(w / "p1/bin/openspec", 'echo "ошибка-схемы-xyz" >&2\nexit 1\n')
+    old_solo(m)
+    assert run_main(m, "--schema-only", OPENSPEC_PKG=pkg) == 1, m.logged
+    assert old_solo_intact(m) and any("ошибка-схемы-xyz" in line for line in m.logged), m.logged
 print("OK: пакет ищется через OPENSPEC_PKG, npm и Homebrew, PATH и источник раскладки, --schema-only")
