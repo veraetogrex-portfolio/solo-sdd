@@ -190,6 +190,7 @@ with tempfile.TemporaryDirectory() as t:
     cwd = os.getcwd(); os.chdir(env_pkg + "/..")
     with patch.dict(os.environ, {"OPENSPEC_PKG": "openspec"}):
         assert m.find_pkg()[0] == "openspec"
+        assert os.path.isabs(m.ENV["PATH"].split(":")[0]), m.ENV["PATH"]
     os.chdir(cwd)
 
 # 3. Пакета нет: код 1, четыре источника в журнале, прежняя схема цела, sync не вызывался

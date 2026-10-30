@@ -267,7 +267,7 @@ def find_pkg():
     for label, p in candidates():
         sources.append(label)
         if p and os.path.isfile(f"{p}/schemas/spec-driven/schema.yaml"):
-            ENV["PATH"] = os.path.normpath(f"{p}/../../../../bin") + ":" + path  # <prefix>/lib/node_modules/@fission-ai/openspec
+            ENV["PATH"] = os.path.abspath(f"{p}/../../../../bin") + ":" + path  # <prefix>/lib/node_modules/@fission-ai/openspec
             return p, sources
     return None, sources
 
