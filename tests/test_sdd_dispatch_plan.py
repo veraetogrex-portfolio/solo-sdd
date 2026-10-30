@@ -10,7 +10,7 @@ import time
 import unittest
 from unittest import mock
 
-from hypothesis import given, settings, strategies as st
+from hypothesis import example, given, settings, strategies as st
 
 SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "global/sdd_dispatch_plan.py"
 
@@ -161,7 +161,7 @@ class PlanTests(Base):
         p.change("d", deps="- `nope`\n- `none`")
         _, out = p.run()
         self.assertIn("запустить: нет", out)
-        for s in ("c — CLAIM", "w — WAITING", "x — не смёрджен: ветка change/x", "d — зависит от nope"):
+        for s in ("c — CLAIM", "w — WAITING", "x — не смёрджен: ветка change/x", "d — неизвестная зависимость: nope"):
             self.assertIn(s, out)
 
     def test_unmerged_names_worktree(self):
@@ -300,6 +300,147 @@ class PlanTests(Base):
         self.assertEqual(ch["a"]["shared"], {"AGENTS.md"})
         self.assertEqual(ch["a"]["reqs"], {("cap", "R")})
         self.assertTrue(ch["a"]["waiting"] and not ch["a"]["claim"] and not ch["a"]["branch"])
+
+
+def run_raw(main, *extra):
+    r = subprocess.run(["/usr/bin/python3", str(SCRIPT), str(main)] + list(extra),
+                       capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL)
+    return r.returncode, r.stdout, r.stderr
+
+
+class UnknownDependency(Base):
+    def spec(self, p, name):
+        put(p.main, "openspec/specs/%s/spec.md" % name, "x\n")
+
+    def test_spec_in_depends(self):
+        p = self.project()
+        self.spec(p, "cli-participants")
+        p.change("fix-pin", deps="`cli-participants`")
+        _, out = p.run()
+        self.assertIn("запустить: нет", out)
+        self.assertIn("fix-pin — неизвестная зависимость: cli-participants (это спека, не change)", out)
+        _, out = p.run("--ignore-dep", "fix-pin:cli-participants")
+        self.assertIn("запустить: fix-pin\n", out)
+
+    def test_typo(self):
+        p = self.project()
+        p.change("add-words")
+        p.change("add-top-words", deps="`add-wrods`")
+        _, out = p.run()
+        self.assertIn("add-top-words — неизвестная зависимость: add-wrods\n", out + "\n")
+        self.assertNotIn("спека", out)
+        self.assertNotIn("зависит от", out)
+
+    def test_several_unknown_mark_each_spec(self):
+        p = self.project()
+        self.spec(p, "s1")
+        self.spec(p, "s2")
+        p.change("t", deps="`s1`, `typo`, `s2`")
+        _, out = p.run()
+        self.assertIn("t — неизвестная зависимость: s1 (это спека, не change), typo, s2 (это спека, не change)", out)
+
+    def test_none_values_mean_no_dependencies(self):
+        for v in ["нет", "Нет.", "None", "НЕТ:", "Нет, всё независимое", "-.", "-", "—", "none,",
+                  "`нет`", "`None` — всё независимое", "- нет\n- -."]:
+            with self.subTest(v=v):
+                p = self.project()
+                p.change("x", deps=v)
+                code, out = p.run()
+                self.assertEqual(code, 0)
+                self.assertIn("запустить: x\n", out)
+                self.assertNotIn("ждут", out)
+
+    def test_parse_deps_none_position(self):
+        self.assertEqual(dp.parse_deps(["none, old"]), [])
+        self.assertEqual(dp.parse_deps(["old, none"]), ["old"])
+        self.assertEqual(dp.parse_deps(["`none`, `old`"]), [])
+        self.assertEqual(dp.parse_deps(["`old`, `нет`"]), ["old"])
+        self.assertEqual(dp.parse_deps(["- нет", "- old"]), ["old"])
+        self.assertEqual(dp.parse_deps(["Пояснение: foo"]), [])
+        self.assertEqual(dp.parse_deps(["Пояснение: foo, bar"]), ["bar"])
+
+    def test_none_word_before_backticks(self):
+        for v in ("Нет (см. ниже): `old`", "Нет, `old`", "нет: `old`", "none `old`"):
+            self.assertEqual(dp.parse_deps([v]), [], v)
+        self.assertEqual(dp.parse_deps(["`add-words` — x"]), ["add-words"])
+        self.assertEqual(dp.parse_deps(["`None` — всё независимое"]), [])
+        self.assertEqual(dp.parse_deps(["см. `old`"]), ["old"])
+        self.assertEqual(dp.parse_deps(["`..`"]), [".."])
+
+    def test_empty_section(self):
+        self.assertEqual(dp.parse_deps([]), [])
+
+    def test_open_and_unknown_together(self):
+        p = self.project()
+        p.change("add-words")
+        p.change("t", deps="`add-words`, `add-wrods`")
+        _, out = p.run()
+        self.assertIn("t — неизвестная зависимость: add-wrods; зависит от add-words\n", out + "\n")
+        _, out = p.run("--ignore-dep", "t:add-wrods")
+        self.assertIn("t — зависит от add-words", out)
+        self.assertNotIn("неизвестная", out)
+
+    def test_archived_dependency_is_known(self):
+        p = self.project()
+        p.archive("old")
+        p.change("t", deps="`old`")
+        _, out = p.run()
+        self.assertIn("запустить: t\n", out)
+
+    def test_ignore_only_own_change_and_name(self):
+        p = self.project()
+        p.change("a", deps="`ghost`, `other`")
+        p.change("b", deps="`ghost`")
+        for arg in ("zz:ghost", "b:other", "a:nope"):
+            _, out = p.run("--ignore-dep", arg)
+            self.assertIn("a — неизвестная зависимость", out, arg)
+            self.assertIn("b — неизвестная зависимость: ghost", out, arg)
+        _, out = p.run("--ignore-dep", "a:ghost", "--ignore-dep", "a:other")
+        self.assertIn("запустить: a\n", out)
+        self.assertIn("b — неизвестная зависимость: ghost", out)
+
+    def test_ignore_dep_function(self):
+        ch = {"a": {"deps": ["x", "y"]}, "b": {"deps": ["x"]}}
+        out = dp.apply_ignores(ch, [("a", "x"), ("zz", "y")])
+        self.assertEqual((out["a"]["deps"], out["b"]["deps"]), (["y"], ["x"]))
+        self.assertEqual(ch["a"]["deps"], ["x", "y"])
+
+    def test_shared_key_with_running(self):
+        p = self.project()
+        p.change("a", impact=["docs/architecture.md"], claim=True)
+        p.change("b", impact=["docs/architecture.md"])
+        _, out = p.run("--running", "a")
+        self.assertIn("b — конфликт с a: файл docs/architecture.md", out)
+        for val in ("docs/architecture.md", "/docs/architecture.md", "docs/"):
+            _, out = p.run("--running", "a", "--shared", val)
+            self.assertIn("запустить: b\n", out, val)
+            self.assertIn("вместе: b и a — docs/architecture.md\n", out, val)
+
+    def test_bad_keys(self):
+        p = self.project()
+        p.change("a")
+        for args in (["--ignore-dep", "foo"], ["--ignore-dep", ":x"], ["--ignore-dep", "a:"],
+                     ["--ignore-dep"], ["--shared", ""], ["--shared"]):
+            with self.subTest(args=args):
+                code, out, err = run_raw(p.main, *args)
+                self.assertEqual(code, 2)
+                self.assertIn("Запуск:", err)
+                self.assertEqual(out, "")
+
+    def test_dotdot_is_not_a_spec(self):
+        p = self.project()
+        self.spec(p, "real")
+        p.change("t", deps="`..`")
+        _, out = p.run()
+        self.assertIn("t — неизвестная зависимость: ..", out)
+        self.assertNotIn("(это спека", out)
+
+    def test_spec_names(self):
+        p = self.project()
+        self.assertEqual(dp.spec_names(str(p.main)), set())
+        self.spec(p, "s1")
+        put(p.main, "openspec/specs/file.md", "x")
+        self.assertEqual(dp.spec_names(str(p.main)), {"s1"})
 
 
 class UncommittedChangeArtifacts(Base):
@@ -601,6 +742,47 @@ class Property(unittest.TestCase):
         finally:
             p.close()
             shutil.rmtree(home, ignore_errors=True)
+
+    @settings(max_examples=300, deadline=None)
+    @example(deps=["op-a", "ar-a", "sp-a", "no-a"], own=[], other=[])
+    @given(st.lists(st.sampled_from(["op-a", "op-b", "ar-a", "ar-b", "sp-a", "sp-b", "no-a", "no-b"]),
+                    max_size=6, unique=True),
+           st.lists(st.sampled_from(["op-a", "ar-a", "sp-a", "sp-b", "no-a", "no-b"]), max_size=4, unique=True),
+           st.lists(st.sampled_from(["op-a", "ar-a", "sp-a", "sp-b", "no-a", "no-b"]), max_size=4, unique=True))
+    def test_unknown_dependency_property(self, deps, own, other):
+        def mk(d):
+            return dict(claim=False, waiting=False, branch=False, uncommitted=False, deps=list(d),
+                        reqs=set(), files=set(), shared=set())
+        changes = {"t": mk(deps), "op-a": mk([]), "op-b": mk([]), "o": mk(other)}
+        archived, specs = {"ar-a", "ar-b"}, {"sp-a", "sp-b"}
+        pairs = [("t", n) for n in own] + [("o", n) for n in other] + [("zz", n) for n in own]
+        granted, waits = dp.plan(dp.apply_ignores(changes, pairs), archived, 10, specs=specs)
+        left = [d for d in deps if d not in own and d not in archived]
+        unknown = [d for d in left if not d.startswith("op-")]
+        why = dict(waits).get("t")
+        if not left:
+            self.assertIn("t", granted)
+            return
+        self.assertNotIn("t", granted)
+        parts = why.split("; ")
+        seen_unknown, seen_open = [], []
+        for part in parts:
+            if part.startswith("неизвестная зависимость: "):
+                for item in part[len("неизвестная зависимость: "):].replace(" (это спека, не change)", "*").split(", "):
+                    name = item.rstrip("*")
+                    self.assertNotIn(name, changes)
+                    self.assertNotIn(name, archived)
+                    self.assertEqual(item != name, name in specs, item)
+                    seen_unknown.append(name)
+            else:
+                self.assertTrue(part.startswith("зависит от "), why)
+                seen_open = part[len("зависит от "):].split(", ")
+                for name in seen_open:
+                    self.assertIn(name, changes)
+        self.assertEqual(sorted(seen_unknown), sorted(unknown))
+        self.assertEqual(sorted(seen_open), sorted(d for d in left if d.startswith("op-")))
+        if unknown:
+            self.assertTrue(why.startswith("неизвестная зависимость: "), why)
 
     def test_cycle_and_chain_terminate(self):
         granted, waits = dp.plan(chain(), set(), 4)

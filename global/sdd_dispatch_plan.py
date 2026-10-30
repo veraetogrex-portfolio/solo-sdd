@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 """Очередь диспетчера: какие открытые change запускать сейчас.
 
-Запуск: sdd_dispatch_plan.py <MAIN> [--running id1,id2,...]
+Запуск: sdd_dispatch_plan.py <MAIN> [--running id1,id2,...] [--ignore-dep id:имя]... [--shared путь]...
 
 Готов: нет CLAIM и WAITING, нет ветки change/<id>, все Depends On в архиве, папка change закоммичена
 (иначе причина «не закоммичен»: worktree от коммита её не увидит).
 Причины по порядку: ветка («не смёрджен»), CLAIM, WAITING, «не закоммичен», зависимости.
+Зависимости: имя, которого нет ни среди открытых change, ни в архиве, — «неизвестная зависимость: <имя>»
+(«(это спека, не change)», если есть openspec/specs/<имя>), затем через «; » — «зависит от <открытые>».
+Значение none, нет, -, — (без учёта регистра, с .,:; после него) первым в пункте Depends On — зависимостей нет.
+--ignore-dep id:имя не считает имя зависимостью этого change; --shared путь добавляет общий путь (как «Общие:»).
 CLAIM брошен: session=<id>, а файлы сессии в ~/.claude/hook-state не менялись 60 минут или их нет;
 метка без id — файлу 12 часов или больше. Скрипт метку не снимает: это решает владелец.
 Артефакты вне git: если игнорируется openspec/, AGENTS.md или CLAUDE.md, печатается строка «Артефакты вне git: <пути>».
@@ -23,6 +27,7 @@ import time
 
 COMMON = {"AGENTS.md", "CLAUDE.md", "docs/waiting.md", "CHANGELOG.md"}
 LIMIT = 2
+NO_DEPS = {"none", "нет", "-", "—"}
 STATE = os.path.join(os.path.expanduser("~"), ".claude", "hook-state")
 SESSION_SILENCE = 3600
 LABEL_AGE = 12 * 3600
@@ -47,15 +52,26 @@ def sections(src, title):
     return out
 
 
+def is_none(v):
+    """Значение «зависимостей нет»: none, нет, -, — (с .,:;) или пусто."""
+    return v.rstrip(".,:;").lower() in NO_DEPS or v in ("", ".")
+
+
 def parse_deps(lines):
     """Имена из «Depends On»: значения в обратных кавычках, иначе первое слово пункта; пояснения в скобках не мешают."""
     deps = []
     for ln in lines:
         s = ln.strip().lstrip("-* ")
         vals = s.split("`")[1::2] or [v.split()[0] for v in s.split(",") if v.split()]
-        for v in vals:
+        head = s.split("`")[0].replace(",", " ").split()
+        if head and is_none(head[0]):
+            continue
+        for i, v in enumerate(vals):
             v = v.strip()
-            if re.fullmatch(r"[\w.-]+", v) and v != "none":
+            if is_none(v):
+                if i == 0:
+                    break
+            elif re.fullmatch(r"[\w.-]+", v):
                 deps.append(v)
     return deps
 
@@ -69,6 +85,22 @@ def is_file(v, main):
 def is_common(v, common):
     """Путь назван в common или лежит под каталогом оттуда (значение с / на конце)."""
     return v in common or any(p.endswith("/") and v.startswith(p) for p in common)
+
+
+def spec_names(main):
+    """Имена подпапок openspec/specs; нет папки — пусто."""
+    d = os.path.join(main, "openspec", "specs")
+    try:
+        return {n for n in os.listdir(d) if os.path.isdir(os.path.join(d, n))}
+    except OSError:
+        return set()
+
+
+def apply_ignores(changes, pairs):
+    """Копия changes без пар (id, имя) в deps; чужие change и несуществующие id не затрагиваются."""
+    pairs = set(pairs)
+    return {cid: dict(c, deps=[d for d in c["deps"] if (cid, d) not in pairs])
+            for cid, c in changes.items()}
 
 
 def agents_section(main):
@@ -141,12 +173,13 @@ def abandoned(claim):
     return "CLAIM брошен: сессия %s молчит %d ч" % (m.group(1)[:8], (now - max(marks or [born])) / 3600)
 
 
-def read_project(main):
+def read_project(main, shared=()):
     """Диск -> (changes, archived, limit); changes: id -> {claim, waiting, branch, deps, reqs, files, shared}."""
     base = os.path.join(main, "openspec", "changes")
     if not os.path.isdir(base):
         raise OSError("нет папки " + base)
     common, limit = agents_section(main)
+    common |= set(shared)
     archived = set()
     arch = os.path.join(base, "archive")
     if os.path.isdir(arch):
@@ -213,7 +246,7 @@ def conflict(a, b):
     return None
 
 
-def plan(changes, archived, limit, running=()):
+def plan(changes, archived, limit, running=(), specs=()):
     """Чистое планирование -> (выданные по порядку, [(id, причина)])."""
     run = [r for r in running if r in changes]
     cands = [c for c in changes if c not in running]
@@ -231,7 +264,10 @@ def plan(changes, archived, limit, running=()):
         elif c.get("uncommitted"):
             waits.append((cid, "не закоммичен"))
         elif miss:
-            waits.append((cid, "зависит от " + ", ".join(miss)))
+            unknown = [d + (" (это спека, не change)" if d in specs else "") for d in miss if d not in changes]
+            opened = [d for d in miss if d in changes]
+            waits.append((cid, "; ".join(([("неизвестная зависимость: " + ", ".join(unknown))] if unknown else [])
+                                         + (["зависит от " + ", ".join(opened)] if opened else []))))
         else:
             ready.append(cid)
     cnt = dependents(changes)
@@ -277,22 +313,29 @@ def render(granted, waits, limit, running, pairs=(), outside=()):
 
 
 def main(argv):
-    args, running = [], []
+    args, running, ignores, shared = [], [], [], []
     it = iter(argv)
     for a in it:
         if a == "--running":
             running = [x for x in next(it, "").split(",") if x]
+        elif a == "--ignore-dep":
+            cid, _, name = next(it, "").partition(":")
+            ignores.append((cid, name))
+        elif a == "--shared":
+            shared.append(next(it, "").lstrip("/"))
         else:
             args.append(a)
-    if len(args) != 1:
-        print("Запуск: sdd_dispatch_plan.py <MAIN> [--running id1,id2]", file=sys.stderr)
+    if len(args) != 1 or not all(all(i) for i in ignores) or not all(shared):
+        print("Запуск: sdd_dispatch_plan.py <MAIN> [--running id1,id2] [--ignore-dep id:имя]... [--shared путь]...",
+              file=sys.stderr)
         return 2
     try:
-        changes, archived, limit = read_project(os.path.abspath(args[0]))
+        changes, archived, limit = read_project(os.path.abspath(args[0]), shared)
     except OSError as e:
         print("ошибка чтения: %s" % e, file=sys.stderr)
         return 1
-    granted, waits = plan(changes, archived, limit, running)
+    granted, waits = plan(apply_ignores(changes, ignores), archived, limit, running,
+                          spec_names(os.path.abspath(args[0])))
     run = [r for r in running if r in changes]
     print(render(granted, waits, limit, run, together(changes, granted, run),
                  ignored_artifacts(os.path.abspath(args[0]))))
