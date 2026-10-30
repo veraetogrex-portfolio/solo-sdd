@@ -104,7 +104,10 @@ def loose_ignored(main):
     if r.returncode:
         raise RuntimeError("git ls-files: " + r.stderr.decode("utf-8", "replace").strip())
     names = [x.decode("utf-8", "replace") for x in r.stdout.split(b"\0") if x and not x.endswith(b"/")]
-    return sorted(f for f in names if regular(os.path.join(main, f)) and not set(f.split("/")) & set(LINKED))
+    # git не сворачивает игнорируемую папку с отслеживаемым файлом: её файлы приходят поштучно
+    hidden = set(ignored(main, sorted({os.path.dirname(f) for f in names} - {""})))
+    return sorted(f for f in names if regular(os.path.join(main, f)) and os.path.dirname(f) not in hidden
+                  and not set(f.split("/")) & set(LINKED))
 
 
 def is_document(main, f):

@@ -549,6 +549,21 @@ class IndividuallyIgnoredTests(unittest.TestCase):
         self.assertEqual((r.main / "out/app.md").read_text(), "o\n")
         self.assertNotIn("не перенесены", res.stdout)
 
+    def test_ignored_folder_with_tracked_file(self):
+        r = Repo(ignore=IGNORED, tracked=["docs/notes.md", "out/keep.txt"])
+        self.addCleanup(r.close)
+        put(r.main, "out/app.md", "o\n")
+        put(r.main, "out/sub/b.md", "o\n")
+        self.setup_ok(r)
+        self.assertFalse((r.wt / "out/app.md").exists())
+        self.assertFalse((r.wt / "out/sub/b.md").exists())
+        self.assertEqual(os.listdir(str(r.wt) + ".base"), [])
+        put(r.wt, "out/app.md", "changed\n")
+        res = run("transport", r.main, r.wt)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertEqual((r.main / "out/app.md").read_text(), "o\n")
+        self.assertNotIn("не перенесены", res.stdout)
+
     def test_generated_and_env_named(self):
         r = self.make()
         put(r.main, "tsconfig.tsbuildinfo", "t\n")
