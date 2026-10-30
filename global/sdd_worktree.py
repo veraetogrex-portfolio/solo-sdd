@@ -14,17 +14,24 @@
 
 Пути относительные к корню, файлы или папки. Подготовка выполняется через sh -c в WORKTREE.
 
+Кроме того, setup берёт в набор отдельно игнорируемые документы MAIN (не целой игнорируемой
+папкой): .md, .txt, .rst, .adoc до 1 МиБ, без ссылок, node_modules, .venv и .env*. Их список
+лежит в снимке (<WORKTREE>.base/.sdd-ignored); дальше они обрабатываются как весь набор.
+
 setup      копирует нужное в WORKTREE, снимок кладёт в <WORKTREE>.base/, ставит ссылки
            на node_modules и .venv, дописывает их в info/exclude, запускает подготовку.
 refresh    переносит в WORKTREE правки MAIN после setup (трёхстороннее слияние: база = снимок);
            при конфликте файл в WORKTREE получает маркеры, код 3; снимок обновляется до MAIN.
 transport  переносит правки артефактов в MAIN (трёхстороннее слияние: база = снимок);
            при конфликте MAIN не меняется (код 3). Прежнее состояние лежит в <WORKTREE>.undo/.
+           Отдельно игнорируемые файлы вне набора, разные в MAIN и WORKTREE, называет строкой
+           «не перенесены: ...», код выхода от этого не меняется.
 undo       возвращает MAIN к состоянию до последнего переноса.
 remove     убирает ссылки, снимок, .undo, запись .start и сам worktree.
 discard    убирает worktree без своих коммитов (HEAD равен записи <WORKTREE>.start, сделанной setup,
            коммит есть не только в удаляемой ветке) вместе с его веткой; иначе код 1, ничего не меняется.
 """
+import filecmp
 import os
 import shutil
 import subprocess
@@ -33,6 +40,9 @@ import sys
 ROOTS = ["openspec", "AGENTS.md", "CLAUDE.md"]
 LINKED = ["node_modules", ".venv"]
 MARK = ".sdd-worktree"
+LISTED = ".sdd-ignored"  # в снимке: отдельно игнорируемые документы набора, разделитель \0
+DOCS = (".md", ".txt", ".rst", ".adoc")
+DOC_LIMIT = 1024 * 1024
 
 
 def git(repo, *args, data=None):
@@ -73,8 +83,44 @@ def section(main):
     return paths, cmd
 
 
-def roots(main):
-    return ROOTS + section(main)[0]
+def listed(wt):
+    try:
+        return read(os.path.join(wt + ".base", LISTED)).decode("utf-8").split("\0")
+    except OSError:
+        return []
+
+
+def roots(main, wt):
+    return ROOTS + section(main)[0] + listed(wt)
+
+
+def regular(p):
+    return os.path.isfile(p) and not os.path.islink(p)
+
+
+def loose_ignored(main):
+    """Файлы, которые git игнорирует по отдельности: записи с --directory без / на конце."""
+    r = git(main, "ls-files", "-z", "--others", "--ignored", "--exclude-standard", "--directory")
+    if r.returncode:
+        raise RuntimeError("git ls-files: " + r.stderr.decode("utf-8", "replace").strip())
+    names = [x.decode("utf-8", "replace") for x in r.stdout.split(b"\0") if x and not x.endswith(b"/")]
+    return sorted(f for f in names if regular(os.path.join(main, f)) and not set(f.split("/")) & set(LINKED))
+
+
+def is_document(main, f):
+    return (f.lower().endswith(DOCS) and not os.path.basename(f).startswith(".env")
+            and os.path.getsize(os.path.join(main, f)) <= DOC_LIMIT)
+
+
+def not_carried(main, wt):
+    """Отдельно игнорируемые файлы вне набора, которые есть с двух сторон и отличаются."""
+    known = set(files_under(main, roots(main, wt)))
+    out = []
+    for f in loose_ignored(main):
+        w = os.path.join(wt, f)
+        if f not in known and regular(w) and not filecmp.cmp(os.path.join(main, f), w, shallow=False):
+            out.append(f)
+    return out
 
 
 def files_under(base, rels):
@@ -173,13 +219,18 @@ def setup(main, wt):
     write(wt + ".start", head.stdout)
     base = wt + ".base"
     paths, cmd = section(main)
-    cand = [f for f in files_under(main, ROOTS + paths) if not os.path.exists(os.path.join(wt, f))]
+    known = files_under(main, ROOTS + paths)
+    extra = [f for f in loose_ignored(main) if f not in known and is_document(main, f)]
+    cand = [f for f in known + extra if not os.path.exists(os.path.join(wt, f))]
     copied = ignored(main, cand)
     os.makedirs(base, exist_ok=True)  # refresh требует снимок и тогда, когда копировать нечего
     for f in copied:
         data = read(os.path.join(main, f))
         write(os.path.join(wt, f), data)
         write(os.path.join(base, f), data)
+    extra = [f for f in extra if os.path.isfile(os.path.join(base, f))]
+    if extra:
+        write(os.path.join(base, LISTED), "\0".join(extra).encode("utf-8"))
     links = 0
     for rel in find_links(main):
         dst = os.path.join(wt, rel)
@@ -208,7 +259,7 @@ def merge3(mine, base, theirs):
 def plan(main, wt):
     """Что сделать с MAIN: (создать/записать {rel: bytes}, удалить [rel], конфликты [rel])."""
     base = wt + ".base"
-    rels = roots(main)
+    rels = roots(main, wt)
     in_base = set(files_under(base, rels)) if os.path.isdir(base) else set()
     in_wt = set(ignored(wt, files_under(wt, rels))) | (in_base & set(files_under(wt, rels)))
     put, drop, bad = {}, [], []
@@ -251,7 +302,7 @@ def refresh(main, wt):
     base = wt + ".base"
     if not os.path.isdir(base):
         raise RuntimeError("нет снимка %s: сначала setup" % base)
-    rels = roots(main)
+    rels = roots(main, wt)
     in_base = set(files_under(base, rels))
     names = sorted(set(ignored(main, files_under(main, rels))) | in_base)
     copied = merged = deleted = 0
@@ -304,6 +355,9 @@ def refresh(main, wt):
 
 
 def transport(main, wt):
+    skipped = not_carried(main, wt)
+    if skipped:
+        print("не перенесены: " + ", ".join(skipped))
     put, drop, bad = plan(main, wt)
     if bad:
         print("конфликт, MAIN не изменён: " + ", ".join(bad))
