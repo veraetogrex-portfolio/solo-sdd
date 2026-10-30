@@ -9,20 +9,27 @@ excluding hidden and service directories. For an already processed version, only
 missing owner rules; --force reruns the update.
 From launchd it cannot read ~/Desktop (macOS privacy), so it only rebuilds the schema there;
 the project part is finished by the next run from a terminal - /spec-next calls it.
+--schema-only rebuilds only the `solo` schema: no layout, no project walk, no notification,
+no version stamp; exit 0 if the schema is installed, otherwise 1.
+The OpenSpec package is searched in order: $OPENSPEC_PKG, `npm root -g`, Homebrew
+(/opt/homebrew, /usr/local); the first folder with schemas/spec-driven/schema.yaml wins and
+its <prefix>/bin leads the PATH of child calls. The layout source is $SOLO_SDD_REPO, then
+`_source` in ~/.local/share/solo-sdd/state.json (written by every sync.py push).
+launchd and the macOS notification exist only on macOS.
 Log: ~/.local/share/openspec/after-update.log
 """
 import glob, json, os, re, shutil, subprocess, sys, time
 
 HOME = os.path.expanduser("~")
-PKG = "/opt/homebrew/lib/node_modules/@fission-ai/openspec"
+BREW_PKGS = ("/opt/homebrew/lib/node_modules/@fission-ai/openspec",
+             "/usr/local/lib/node_modules/@fission-ai/openspec")
+CALL_PATH = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"  # launchd starts with a short PATH
 DATA = f"{HOME}/.local/share/openspec"
 SOLO = f"{DATA}/schemas/solo"
 STAMP = f"{DATA}/.solo-built-for"
 LOG = f"{DATA}/after-update.log"
 SKILL_DIRS = (".claude/skills", ".agents/skills", ".codex/skills")
-# The solo-sdd repository is the source of truth for owner skills, global rules and this script.
-SDD_REPO = os.environ.get("SOLO_SDD_REPO", f"{HOME}/Code/tools/sdd/solo-sdd")
-ENV = dict(os.environ, PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin")
+ENV = dict(os.environ, PATH=CALL_PATH)
 
 OVERRIDE = """<!-- solo-override -->
 > **Правила владельца — главнее всего текста ниже.**
@@ -226,6 +233,8 @@ def log(msg):
 
 
 def notify(text):
+    if sys.platform != "darwin":
+        return
     subprocess.run(["osascript", "-e", f'display notification "{text}" with title "OpenSpec"'],
                    capture_output=True)
 
@@ -234,11 +243,40 @@ def run(cmd, cwd=None):
     return subprocess.run(cmd, cwd=cwd, env=ENV, capture_output=True, text=True, timeout=300)
 
 
-def build_solo():
+def find_pkg():
+    """(package or None, sources checked, for the log). Reads the environment at call time."""
+    path = os.environ.get("PATH", "") + ":" + CALL_PATH
+
+    def candidates():
+        env_pkg = os.environ.get("OPENSPEC_PKG")
+        yield (f"OPENSPEC_PKG={env_pkg}" if env_pkg else "OPENSPEC_PKG (не задан)"), env_pkg
+        npm, root = shutil.which("npm", path=path), None
+        if npm:
+            try:
+                r = subprocess.run([npm, "root", "-g"], capture_output=True, text=True, timeout=30,
+                                   env=dict(os.environ, PATH=os.path.dirname(npm) + ":" + path))
+                root = r.stdout.strip() if r.returncode == 0 and r.stdout.strip() else None
+            except (OSError, subprocess.SubprocessError):
+                pass
+        yield (f"npm root -g: {root}" if root else "npm root -g (npm недоступен)"), \
+            root and root + "/@fission-ai/openspec"
+        for p in BREW_PKGS:
+            yield p, p
+
+    sources = []
+    for label, p in candidates():
+        sources.append(label)
+        if p and os.path.isfile(f"{p}/schemas/spec-driven/schema.yaml"):
+            ENV["PATH"] = os.path.abspath(f"{p}/../../../../bin") + ":" + path  # <prefix>/lib/node_modules/@fission-ai/openspec
+            return p, sources
+    return None, sources
+
+
+def build_solo(pkg):
     """Returns a list of problems; empty means the new schema is installed."""
     tmp = SOLO + ".new"
     shutil.rmtree(tmp, ignore_errors=True)
-    shutil.copytree(f"{PKG}/schemas/spec-driven", tmp)
+    shutil.copytree(f"{pkg}/schemas/spec-driven", tmp)
     s = open(f"{tmp}/schema.yaml").read()
     missing = []
     for anchor, repl in PATCHES:
@@ -259,12 +297,17 @@ def build_solo():
     if os.path.exists(SOLO):
         os.rename(SOLO, bak)
     os.rename(tmp, SOLO)
-    r = run(["openspec", "schema", "validate", "solo"], cwd="/tmp")
-    if r.returncode != 0 or "is valid" not in r.stdout + r.stderr:
+    try:
+        r = run(["openspec", "schema", "validate", "solo"], cwd="/tmp")
+        out = (r.stdout + r.stderr).strip()
+        reason = "" if r.returncode == 0 and "is valid" in out else out[-200:] or f"код {r.returncode}"
+    except (OSError, subprocess.SubprocessError) as e:
+        reason = f"openspec не запускается: {e}"
+    if reason:
         shutil.rmtree(SOLO)
         if os.path.exists(bak):
             os.rename(bak, SOLO)
-        return ["новая схема solo не прошла проверку, оставлена прежняя: " + (r.stdout + r.stderr).strip()[-200:]]
+        return ["новая схема solo не прошла проверку, оставлена прежняя: " + reason]
     return []
 
 
@@ -290,14 +333,27 @@ def patch_skills(project):
     return n
 
 
+def source_repo():
+    """$SOLO_SDD_REPO, else `_source` from solo-sdd state.json (written by sync.py push), else None."""
+    if os.environ.get("SOLO_SDD_REPO"):
+        return os.environ["SOLO_SDD_REPO"]
+    try:
+        src = json.load(open(f"{HOME}/.local/share/solo-sdd/state.json")).get("_source")
+    except (OSError, ValueError, AttributeError):
+        return None
+    return src if isinstance(src, str) and src else None
+
+
 def sync_owner_skills():
     """Lays out skills and rules from the solo-sdd repository (sync.py push). Copies edited in
     place are left alone and reported by sync.py; a failure is logged and never stops the run."""
-    script = f"{SDD_REPO}/sync.py"
+    repo = source_repo()
+    script = f"{repo}/sync.py"
     try:
-        if not os.path.isfile(script):
-            log(f"репозиторий solo-sdd не найден ({SDD_REPO}): скиллы не синхронизированы")
+        if not repo or not os.path.isfile(script):
+            log(f"репозиторий solo-sdd не найден ({repo or 'SOLO_SDD_REPO и _source не заданы'}): скиллы не синхронизированы")
             return
+        log(f"раскладка из {repo}")
         r = subprocess.run([sys.executable, script, "push", "--quiet"], env=ENV,
                            capture_output=True, text=True, timeout=120)
     except (OSError, subprocess.SubprocessError) as e:
@@ -322,8 +378,19 @@ def find_projects():
 def main():
     force = "--force" in sys.argv
     time.sleep(30 if "--wait" in sys.argv else 0)  # launchd passes --wait: let npm finish writing
+    pkg, sources = find_pkg()
+    if not pkg:
+        log("пакет OpenSpec не найден; проверено: " + "; ".join(sources))
+        return 1
+    if "--schema-only" in sys.argv:
+        problems = build_solo(pkg)
+        for p in problems:
+            log("ОШИБКА схема: " + p)
+        if not problems:
+            log(f"схема solo пересобрана и проверена (пакет {pkg})")
+        return 1 if problems else 0
     try:
-        version = json.load(open(f"{PKG}/package.json"))["version"]
+        version = json.load(open(f"{pkg}/package.json"))["version"]
     except Exception as e:
         log(f"пакет OpenSpec не читается: {e}")
         return 1
@@ -336,9 +403,9 @@ def main():
             if n:
                 log(f"{os.path.basename(project)}: правила владельца возвращены в {n} скиллов")
         return 0
-    log(f"OpenSpec {done or '?'} -> {version}")
+    log(f"OpenSpec {done or '?'} -> {version} (пакет {pkg})")
 
-    problems = build_solo()
+    problems = build_solo(pkg)
     for p in problems:
         log("ОШИБКА схема: " + p)
     if not problems:

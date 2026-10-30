@@ -73,6 +73,29 @@ class SyncTest(unittest.TestCase):
         self.assertEqual(self.run_sync("push")[0], 0)
         self.assertEqual(self.text(self.home_path(".agents/skills/alpha/SKILL.md")), "alpha v2\n")
 
+    def source(self):
+        with open(self.home_path(".local/share/solo-sdd/state.json")) as f:
+            return os.path.realpath(json.load(f)["_source"])
+
+    def test_push_records_source_repo(self):
+        self.assertEqual(self.run_sync("push")[0], 0)
+        self.assertEqual(self.source(), os.path.realpath(self.repo))
+        self.assertEqual(self.kinds(), ["ok", "ok", "ok"])
+        self.assertEqual(self.run_sync("pull", "alpha")[0], 0)
+
+    def test_push_with_drift_still_records_source(self):
+        self.run_sync("push")
+        with open(self.home_path(".codex/skills/alpha/SKILL.md"), "w") as f:
+            f.write("edited\n")
+        state_file = self.home_path(".local/share/solo-sdd/state.json")
+        with open(state_file) as f:
+            state = json.load(f)
+        del state["_source"]
+        with open(state_file, "w") as f:
+            json.dump(state, f)
+        self.assertEqual(self.run_sync("push")[0], 1)
+        self.assertEqual(self.source(), os.path.realpath(self.repo))
+
     def test_edit_on_site_is_kept_and_pulled(self):
         self.run_sync("push")
         edited = self.home_path(".codex/skills/alpha/SKILL.md")
