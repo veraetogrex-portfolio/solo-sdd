@@ -599,6 +599,21 @@ class IndividuallyIgnoredTests(unittest.TestCase):
         self.assertEqual(res.returncode, 0, res.stderr)
         self.assertNotIn("не перенесены", res.stdout)
 
+    def test_linked_folders_skipped(self):
+        names = ["pkg/node_modules/readme.md", ".venv/readme.md"]
+        r = Repo(ignore=GITIGNORE.replace("node_modules/\n", "") + "".join(x + "\n" for x in names))
+        self.addCleanup(r.close)
+        for name in names:
+            put(r.main, name, "m\n")
+        self.setup_ok(r)
+        self.assertEqual(sorted(tree(str(r.wt) + ".base")), [])
+        put(r.wt, names[0], "w\n")
+        res = run("transport", r.main, r.wt)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertNotIn("не перенесены", res.stdout)
+        for name in names:
+            self.assertEqual((r.main / name).read_text(), "m\n")
+
     def test_conflict(self):
         r = self.make()
         self.setup_ok(r)
