@@ -60,6 +60,45 @@ class EntryPoint(unittest.TestCase):
         self.assertTrue(first.startswith("источник: "), first)
         self.assertEqual(rest, run([sys.executable, "sync.py", "status"], self.home)[1])
 
+    def test_status_first_line_clean_home(self):
+        code, out, _ = run([sys.executable, "-m", "solo_sdd", "status"], self.home)
+        self.assertEqual(code, 0)
+        self.assertEqual(out.splitlines()[0], f"источник: {layout.REPO} {__version__}")
+
+    def test_status_first_line_from_state(self):
+        data = os.path.join(self.home, ".local", "share", "solo-sdd")
+        os.makedirs(data)
+        with open(os.path.join(data, "state.json"), "w") as f:
+            json.dump({"_source": "/где/то/ещё", "_version": "9.9.9"}, f)
+        code, out, _ = run([sys.executable, "-m", "solo_sdd", "status"], self.home)
+        self.assertEqual((code, out.splitlines()[0]), (0, "источник: /где/то/ещё 9.9.9"))
+
+    def pull_from_copy(self, with_git):
+        repo = os.path.join(self.tmp, "repo-git" if with_git else "repo-pkg")
+        os.makedirs(repo)
+        copy_repo(repo)
+        if with_git:
+            os.makedirs(os.path.join(repo, ".git"))
+        env = {"PYTHONPATH": repo}
+        self.assertEqual(run([sys.executable, os.path.join(repo, "sync.py"), "push"], self.home, cwd=repo)[0], 0)
+        edited = os.path.join(self.home, ".claude/skills/spec-next/SKILL.md")
+        with open(edited, "a", encoding="utf-8") as f:
+            f.write("\nправка на месте\n")
+        code, out, err = run([sys.executable, "-m", "solo_sdd", "sync", "pull", "spec-next"], self.home,
+                             cwd=repo, extra=env)
+        self.assertEqual(code, 0, err)
+        with open(os.path.join(repo, "skills/spec-next/SKILL.md"), encoding="utf-8") as f:
+            self.assertIn("правка на месте", f.read())
+        return out
+
+    HINT = "источник — установленный пакет: правка пропадёт при обновлении, перенесите её в клон"
+
+    def test_pull_without_git_warns(self):
+        self.assertIn(self.HINT, self.pull_from_copy(False).splitlines())
+
+    def test_pull_with_git_silent(self):
+        self.assertNotIn(self.HINT, self.pull_from_copy(True))
+
     def test_upgrade_hint(self):
         git = os.path.join(self.tmp, "clone")
         os.makedirs(os.path.join(git, ".git"))
@@ -69,7 +108,8 @@ class EntryPoint(unittest.TestCase):
         self.assertEqual(cli.upgrade_hint("/x/pipx/venvs/solo-sdd", git), "pipx upgrade solo-sdd")
         self.assertEqual(cli.upgrade_hint("/usr", "/x/node_modules/solo-sdd"), "npm update -g solo-sdd")
         self.assertEqual(cli.upgrade_hint("/usr", git), f"git pull в {git}")
-        self.assertTrue(cli.upgrade_hint("/usr", plain).startswith("python3 -m pip install --upgrade git+https://"))
+        self.assertEqual(cli.upgrade_hint("/usr", plain),
+                         "python3 -m pip install --upgrade git+https://github.com/veraetogrex-portfolio/solo-sdd")
 
     def test_wheel(self):
         wheels = os.path.join(self.tmp, "wheels")
@@ -119,7 +159,45 @@ class Install(unittest.TestCase):
         self.assertIn("fail openspec:", out)
         self.assertIn("npm i -g @fission-ai/openspec", out)
         self.assertTrue(os.path.exists(os.path.join(self.home, ".claude/skills/spec-next/SKILL.md")))
-        self.assertTrue(os.path.exists(os.path.join(self.home, ".claude/CLAUDE.md")))
+        with open(os.path.join(self.home, ".claude/CLAUDE.md"), encoding="utf-8", newline="") as f:
+            self.assertEqual(f.read(), rules_block.block(layout.read(os.path.join(REPO, RULES))))
+        self.assertFalse(os.path.exists(os.path.join(self.home, ".local/share/openspec/schemas/solo")))
+
+    def fake_openspec(self):
+        bin_dir = os.path.join(self.tmp, "bin")
+        os.makedirs(bin_dir)
+        with open(os.path.join(bin_dir, "openspec"), "w") as f:
+            f.write("#!/bin/sh\nexit 0\n")
+        os.chmod(os.path.join(bin_dir, "openspec"), 0o755)
+        return bin_dir
+
+    def test_schema_build_failure(self):
+        bin_dir = self.fake_openspec()
+        data = os.path.join(self.home, ".local", "share", "solo-sdd")
+        failed = subprocess.CompletedProcess([], 1, "ОШИБКА схема: нет якоря\n", "")
+        out = io.StringIO()
+        with mock.patch.multiple(layout, HOME=self.home, DATA=data, STATE=os.path.join(data, "state.json")), \
+                mock.patch.dict(os.environ, {"PATH": bin_dir}), \
+                mock.patch.object(cli.subprocess, "run", return_value=failed), \
+                contextlib.redirect_stdout(out):
+            code = cli.main(["install"])
+        self.assertEqual(code, 1)
+        self.assertIn("fail openspec: схема solo не собрана: ОШИБКА схема: нет якоря", out.getvalue().splitlines())
+
+    @unittest.skipUnless(shutil.which("openspec"), "openspec не установлен")
+    def test_real_schema_build_on_clean_home(self):
+        code, out, err = run([sys.executable, "-m", "solo_sdd", "install"], self.home)
+        self.assertEqual(code, 0, out + err)
+        for _, _, target, _ in layout.pairs():
+            self.assertTrue(os.path.exists(target.replace(layout.HOME, self.home, 1)), target)
+        code, out, err = run(["openspec", "schemas"], self.home)
+        self.assertRegex(out, r"(?m)^\s*solo\b")
+
+    def test_update_prints_upgrade_hint_last(self):
+        for schema in (1, 0):
+            code, out = inproc(self.home, "update", schema=schema, prefix="/x/uv/tools/solo-sdd")
+            self.assertEqual(code, schema)
+            self.assertEqual(out.splitlines()[-1], "uv tool upgrade solo-sdd")
 
     def test_repeat_changes_nothing(self):
         bin_dir = os.path.join(self.tmp, "bin")
@@ -272,6 +350,59 @@ class ManagedBlock(unittest.TestCase):
                 self.assertIn("битые метки", out)
                 self.assertEqual(self.get(), bad.encode())
 
+    def erased(self):
+        """Блок стоял, метки стёрты, человек дописал текст."""
+        self.assertEqual(self.sync("push")[0], 0)
+        text = self.get().decode().replace(rules_block.BEGIN + "\n", "").replace(rules_block.END + "\n", "")
+        text += "личная дописка\n"
+        self.put(text.encode())
+        return text.encode()
+
+    def test_erased_marks_are_never_written_or_pulled(self):
+        mine = self.erased()
+        self.assertEqual(self.kind(), "drift")
+        for args in (("push",), ("push", "--force")):
+            code, out = self.sync(*args)
+            self.assertEqual(code, 1)
+            self.assertIn("битые метки", out)
+            self.assertEqual(self.get(), mine)
+        repo = os.path.join(self.tmp, "repo")
+        os.makedirs(repo)
+        copy_repo(repo)
+        code, out = self.sync("pull", RULES, repo=repo)
+        self.assertEqual(code, 1)
+        self.assertIn("CLAUDE.md", out)
+        with open(os.path.join(repo, RULES), encoding="utf-8") as f:
+            self.assertEqual(f.read(), self.source)
+
+    def test_pull_with_broken_marks_names_file(self):
+        self.put(f"a\n{rules_block.BEGIN}\nx\n".encode())
+        repo = os.path.join(self.tmp, "repo")
+        os.makedirs(repo)
+        copy_repo(repo)
+        code, out = self.sync("pull", RULES, repo=repo)
+        self.assertEqual(code, 1)
+        self.assertIn("~/.claude/CLAUDE.md", out)
+        self.assertNotIn("копий, отличных от репозитория, нет", out)
+        with open(os.path.join(repo, RULES), encoding="utf-8") as f:
+            self.assertEqual(f.read(), self.source)
+
+    def test_old_layout_edited_in_place_force_appends_block(self):
+        mine = ("старая раскладка\n" + self.source + "правка\n").encode()
+        self.put(mine)
+        self.set_state(**{"~/.claude/CLAUDE.md": digest(self.source)})
+        self.assertEqual(self.kind(), "drift")
+        self.assertEqual(self.sync("push", "--force")[0], 0)
+        self.assertTrue(self.get().startswith(mine))
+        self.assertIn(rules_block.block(self.body).encode(), self.get())
+        self.assertEqual(self.backups(), [mine])
+
+    def test_no_rules_file_equals_block(self):
+        self.assertFalse(os.path.exists(self.claude))
+        self.assertEqual(self.sync("push")[0], 0)
+        self.assertEqual(self.get().decode(), rules_block.block(self.source))
+        self.assertEqual(self.kind(), "ok")
+
     def test_mark_substring_inside_line_is_text(self):
         human = f"см. {rules_block.BEGIN} в середине строки\n".encode()
         self.put(human)
@@ -365,14 +496,16 @@ D = "CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH"
 MINE = {"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "echo mine"}]}]}}
 
 
-def inproc(home, *args, repo=None):
+def inproc(home, *args, repo=None, schema=0, prefix=None):
     """cli.main в этом процессе на временной домашней папке; схема solo не собирается."""
     data = os.path.join(home, ".local", "share", "solo-sdd")
     out = io.StringIO()
     with contextlib.ExitStack() as stack:
         stack.enter_context(mock.patch.multiple(layout, HOME=home, DATA=data, STATE=os.path.join(data, "state.json")))
         stack.enter_context(mock.patch.dict(os.environ, {"HOME": home}))
-        stack.enter_context(mock.patch.object(cli, "build_schema", lambda force: 0))
+        stack.enter_context(mock.patch.object(cli, "build_schema", lambda force: schema))
+        if prefix:
+            stack.enter_context(mock.patch.object(cli.sys, "prefix", prefix))
         if repo:
             stack.enter_context(mock.patch.object(layout, "REPO", repo))
         stack.enter_context(contextlib.redirect_stdout(out))
@@ -580,6 +713,16 @@ class Hooks(unittest.TestCase):
         self.assertFalse(os.path.exists(schema))
         self.assertFalse(os.path.exists(os.path.join(self.home, ".local/share/solo-sdd")))
 
+    def test_purge_with_broken_settings_keeps_schema(self):
+        schema = os.path.join(self.home, ".local/share/openspec/schemas/solo")
+        os.makedirs(schema)
+        inproc(self.home, "install", "--hooks")
+        self.put(b'{"hooks": [')
+        code, out = inproc(self.home, "uninstall", "--purge")
+        self.assertEqual(code, 1)
+        self.assertIn("fail purge:", out)
+        self.assertTrue(os.path.isdir(schema))
+
     def test_unknown_flags(self):
         self.assertEqual(inproc(self.home, "install", "--bogus")[0], 2)
         self.assertEqual(inproc(self.home, "uninstall", "--hooks")[0], 2)
@@ -597,10 +740,10 @@ class Doctor(unittest.TestCase):
         self.schema = os.path.join(self.home, ".local/share/openspec/schemas/solo/schema.yaml")
         self.state_file = os.path.join(self.home, ".local/share/solo-sdd/state.json")
 
-    def fake(self, version):
+    def fake(self, version, schemas="  solo (user override)"):
         path = os.path.join(self.bin, "openspec")
         with open(path, "w") as f:
-            f.write('#!/bin/sh\ncase "$1" in --version) echo %s;; schemas) echo "  solo (user override)";; esac\n' % version)
+            f.write('#!/bin/sh\ncase "$1" in --version) echo %s;; schemas) echo "%s";; esac\n' % (version, schemas))
         os.chmod(path, 0o755)
 
     def installed(self, version="1.14.0"):
@@ -641,6 +784,31 @@ class Doctor(unittest.TestCase):
         for name in ("python", "openspec", "schema", "layout", "hooks", "depth"):
             self.assertRegex(out, r"(?m)^(ok|warn) %s: " % name)
         self.assertNotIn("fail", out)
+
+    def test_schema_missing(self):
+        self.fake("1.14.0", schemas="  spec-driven")
+        code, out, _ = self.go("doctor")
+        self.assertEqual(code, 1)
+        self.assertRegex(out, r"(?m)^fail schema: ")
+
+    def test_no_gh_is_warning(self):
+        self.installed()
+        code, out, _ = self.go("doctor", extra={"CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH": "2"})
+        self.assertEqual(code, 0, out)
+        self.assertRegex(out, r"(?m)^warn gh: ")
+
+    def test_empty_depth_falls_back_to_settings(self):
+        self.installed()
+        os.makedirs(os.path.join(self.home, ".claude"), exist_ok=True)
+        with open(os.path.join(self.home, ".claude/settings.json"), "w") as f:
+            json.dump({"env": {D: "2"}}, f)
+        code, out, _ = self.go("doctor")
+        self.assertIn("ok depth: 2", out.splitlines())
+
+    @unittest.skipUnless(os.path.exists("/usr/bin/python3"), "нет /usr/bin/python3")
+    def test_python_hooks_ok(self):
+        self.fake("1.14.0")
+        self.assertRegex(self.go("doctor")[1], r"(?m)^ok python-hooks: ")
 
     def test_drift(self):
         self.installed()

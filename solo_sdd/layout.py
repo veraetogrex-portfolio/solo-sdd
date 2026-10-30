@@ -118,6 +118,8 @@ def classify(source_text, target, state, block=False):
             return ("outdated" if recorded == digest(body) else "drift"), body
         if recorded is None:
             return "first", None
+        if recorded != digest(text) and short(target) in state.get("_blocks", {}):
+            return "drift", None  # блок стоял, метки стёрты: как битые, чтобы личный текст не ушёл в репозиторий
         return ("outdated" if recorded == digest(text) else "drift"), text
     if text == source_text:
         return "ok", text
@@ -293,7 +295,10 @@ def uninstall(purge=False):
     for key in [k for k in state if not k.startswith("_")] + ["_source", "_version", "_blocks"]:
         state.pop(key, None)
     save_state(state)
-    if purge and "_hooks" not in state:
+    if purge and "_hooks" in state:
+        print("fail purge: хуки не сняты, схема и данные оставлены")
+        code = 1
+    elif purge:
         for folder in (os.path.join(HOME, ".local", "share", "openspec", "schemas", "solo"), DATA):
             try:
                 shutil.rmtree(folder)
@@ -313,6 +318,7 @@ def pull(name, origin=None):
     found = {}
     source = None
     blocks = set()
+    broken = False
     for item, src, target, block in pairs():
         if item != name:
             continue
@@ -323,6 +329,9 @@ def pull(name, origin=None):
                 continue
         kind, text = classify(read(src), target, state, block)
         # outdated — копию не трогали, новее репозиторий: забирать её значит откатить репозиторий.
+        if block and kind == "drift" and text is None:
+            print(f"пропущено  {item:38} {short(target)} — битые метки solo-sdd")
+            broken = True
         if kind in ("drift", "first") and text is not None:
             found.setdefault(text, []).append(target)
             if block:
@@ -331,6 +340,8 @@ def pull(name, origin=None):
         print(f"нет такого: {name}")
         return 1
     if not found:
+        if broken:
+            return 1
         print(f"{name}: копий, отличных от репозитория, нет")
         return 0
     if len(found) > 1:

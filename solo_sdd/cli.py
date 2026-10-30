@@ -89,6 +89,9 @@ def main(argv=None):
     if argv and argv[0] == "uninstall" and argv[1:] in ([], ["--purge"]):
         return uninstall(bool(argv[1:]))
     if argv[:2] == ["sync", "pull"]:
-        return layout.main(argv[1:])
+        code = layout.main(argv[1:])
+        if not os.path.exists(os.path.join(layout.REPO, ".git")):
+            print("источник — установленный пакет: правка пропадёт при обновлении, перенесите её в клон")
+        return code
     print(COMMANDS)
     return 2

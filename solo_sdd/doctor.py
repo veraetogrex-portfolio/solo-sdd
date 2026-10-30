@@ -81,7 +81,7 @@ def _hooks(state):
 
 
 def _depth():
-    value = os.environ.get(hooks.D)
+    value = os.environ.get(hooks.D) or None
     if value is None:
         try:
             s, _ = hooks.load(hooks.path())
