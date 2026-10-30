@@ -497,6 +497,221 @@ class DiscardTests(unittest.TestCase):
         self.assertTrue(r.root.exists())
 
 
+MIB = 1024 * 1024
+DOC = "docs/architecture.md"
+IGNORED = "\n".join([GITIGNORE.rstrip(), DOC, "out/", ".stand-data/", "docs/dump.md", "tsconfig.tsbuildinfo", ".env"]) + "\n"
+
+
+class IndividuallyIgnoredTests(unittest.TestCase):
+    def make(self, doc="a\nb\nc\nd\n"):
+        r = Repo(ignore=IGNORED, tracked=["docs/notes.md"])
+        self.addCleanup(r.close)
+        put(r.main, DOC, doc)
+        return r
+
+    def setup_ok(self, r):
+        res = run("setup", r.main, r.wt)
+        self.assertEqual(res.returncode, 0, res.stderr)
+
+    def test_both_sides_merged(self):
+        r = self.make()
+        self.setup_ok(r)
+        self.assertEqual((r.wt / DOC).read_text(), "a\nb\nc\nd\n")
+        self.assertEqual((pathlib.Path(str(r.wt) + ".base") / DOC).read_text(), "a\nb\nc\nd\n")
+        put(r.main, DOC, "M\na\nb\nc\nd\n")
+        put(r.wt, DOC, "a\nb\nc\nd\nW\n")
+        res = run("transport", r.main, r.wt)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertEqual((r.main / DOC).read_text(), "M\na\nb\nc\nd\nW\n")
+        self.assertNotIn("не перенесены", res.stdout)
+
+    def test_cyrillic_name(self):
+        name = "docs/архитектура.md"
+        r = Repo(ignore=GITIGNORE + name + "\n", tracked=["docs/notes.md"])
+        self.addCleanup(r.close)
+        put(r.main, name, "a\n")
+        self.setup_ok(r)
+        put(r.wt, name, "a\nb\n")
+        self.assertEqual(run("transport", r.main, r.wt).returncode, 0)
+        self.assertEqual((r.main / name).read_text(), "a\nb\n")
+
+    def test_ignored_folder_not_in_set(self):
+        r = self.make()
+        put(r.main, "out/app.md", "o\n")
+        put(r.main, ".stand-data/s.md", "c\n")
+        self.setup_ok(r)
+        self.assertFalse((r.wt / "out").exists())
+        self.assertFalse((r.wt / ".stand-data").exists())
+        put(r.wt, "out/app.md", "changed\n")
+        put(r.wt, ".stand-data/s.md", "changed\n")
+        res = run("transport", r.main, r.wt)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertEqual((r.main / "out/app.md").read_text(), "o\n")
+        self.assertNotIn("не перенесены", res.stdout)
+
+    def test_ignored_folder_with_tracked_file(self):
+        r = Repo(ignore=IGNORED, tracked=["docs/notes.md", "out/keep.txt"])
+        self.addCleanup(r.close)
+        put(r.main, "out/app.md", "o\n")
+        put(r.main, "out/sub/b.md", "o\n")
+        self.setup_ok(r)
+        self.assertFalse((r.wt / "out/app.md").exists())
+        self.assertFalse((r.wt / "out/sub/b.md").exists())
+        self.assertEqual(os.listdir(str(r.wt) + ".base"), [])
+        put(r.wt, "out/app.md", "changed\n")
+        res = run("transport", r.main, r.wt)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertEqual((r.main / "out/app.md").read_text(), "o\n")
+        self.assertNotIn("не перенесены", res.stdout)
+
+    def test_generated_and_env_named(self):
+        r = self.make()
+        put(r.main, "tsconfig.tsbuildinfo", "t\n")
+        put(r.main, ".env", "e\n")
+        self.setup_ok(r)
+        self.assertFalse((r.wt / "tsconfig.tsbuildinfo").exists())
+        self.assertFalse((r.wt / ".env").exists())
+        put(r.wt, "tsconfig.tsbuildinfo", "t2\n")
+        put(r.wt, ".env", "e2\n")
+        res = run("transport", r.main, r.wt)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertIn("не перенесены: .env, tsconfig.tsbuildinfo", res.stdout)
+        self.assertEqual((r.main / "tsconfig.tsbuildinfo").read_text(), "t\n")
+        self.assertEqual((r.main / ".env").read_text(), "e\n")
+
+    def test_big_document_named(self):
+        r = self.make()
+        put(r.main, "docs/dump.md", "x\n" * (3 * MIB))
+        self.setup_ok(r)
+        self.assertFalse((r.wt / "docs/dump.md").exists())
+        put(r.wt, "docs/dump.md", "y\n" * (3 * MIB))
+        res = run("transport", r.main, r.wt)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertIn("не перенесены: docs/dump.md", res.stdout)
+        self.assertEqual((r.main / "docs/dump.md").read_text(), "x\n" * (3 * MIB))
+
+    def test_equal_or_wt_only_not_named(self):
+        r = self.make()
+        put(r.main, "tsconfig.tsbuildinfo", "t\n")
+        self.setup_ok(r)
+        put(r.wt, "tsconfig.tsbuildinfo", "t\n")
+        put(r.wt, ".env", "только в worktree\n")
+        res = run("transport", r.main, r.wt)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertNotIn("не перенесены", res.stdout)
+        self.assertFalse((r.main / ".env").exists())
+
+    def test_links_skipped(self):
+        r = self.make()
+        (r.main / "docs/target.md").write_text("t\n")
+        os.symlink("target.md", r.main / "docs/dump.md")
+        os.symlink("docs", r.main / ".env")
+        self.setup_ok(r)
+        self.assertFalse(os.path.lexists(r.wt / "docs/dump.md"))
+        (r.wt / "docs/dump.md").write_text("w\n")
+        os.symlink("elsewhere", r.wt / ".env")
+        res = run("transport", r.main, r.wt)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertNotIn("не перенесены", res.stdout)
+
+    def test_linked_folders_skipped(self):
+        names = ["pkg/node_modules/readme.md", ".venv/readme.md"]
+        r = Repo(ignore=GITIGNORE.replace("node_modules/\n", "") + "".join(x + "\n" for x in names))
+        self.addCleanup(r.close)
+        for name in names:
+            put(r.main, name, "m\n")
+        self.setup_ok(r)
+        self.assertEqual(sorted(tree(str(r.wt) + ".base")), [])
+        put(r.wt, names[0], "w\n")
+        res = run("transport", r.main, r.wt)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertNotIn("не перенесены", res.stdout)
+        for name in names:
+            self.assertEqual((r.main / name).read_text(), "m\n")
+
+    def test_conflict(self):
+        r = self.make()
+        self.setup_ok(r)
+        put(r.main, DOC, "M\nb\nc\nd\n")
+        put(r.wt, DOC, "W\nb\nc\nd\n")
+        before = tree(r.main)
+        res = run("transport", r.main, r.wt)
+        self.assertEqual(res.returncode, 3)
+        self.assertIn(DOC, res.stdout)
+        self.assertEqual(tree(r.main), before)
+
+    def test_refresh_brings_main_edit(self):
+        r = self.make()
+        self.setup_ok(r)
+        put(r.main, DOC, "M\na\nb\nc\nd\n")
+        put(r.wt, DOC, "a\nb\nc\nd\nW\n")
+        res = run("refresh", r.main, r.wt)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertEqual((r.wt / DOC).read_text(), "M\na\nb\nc\nd\nW\n")
+        self.assertEqual((pathlib.Path(str(r.wt) + ".base") / DOC).read_text(), "M\na\nb\nc\nd\n")
+
+    def test_undo_returns_document(self):
+        r = self.make()
+        self.setup_ok(r)
+        put(r.main, DOC, "M\na\nb\nc\nd\n")
+        before = tree(r.main)
+        put(r.wt, DOC, "a\nb\nc\nd\nW\n")
+        self.assertEqual(run("transport", r.main, r.wt).returncode, 0)
+        self.assertNotEqual(tree(r.main), before)
+        self.assertEqual(run("undo", r.main, r.wt).returncode, 0)
+        self.assertEqual(tree(r.main), before)
+
+    def test_remove_cleans_list(self):
+        r = self.make()
+        self.setup_ok(r)
+        self.assertEqual(run("remove", r.main, r.wt).returncode, 0)
+        self.assertFalse(os.path.exists(str(r.wt) + ".base"))
+
+
+class IndividuallyIgnoredPropertyTests(unittest.TestCase):
+    @settings(max_examples=60, deadline=None)
+    @example(1, ".md", "docs/x", True, True, 0)
+    @example(1, ".md", "docs/x", True, True, 1)
+    @example(0, ".md", "out/x", True, False, 0)
+    @example(0, ".log", "docs/x", True, False, 0)
+    @given(st.sampled_from([0, 1]), st.sampled_from([".md", ".txt", ".rst", ".adoc", ".MD", ".log", ".json", ""]),
+           st.sampled_from(["docs/x", "out/x", "docs/.env", "docs/.env.local"]),
+           st.booleans(), st.booleans(), st.sampled_from([-1, 0, 1]))
+    def test_individually_ignored_round_trip(self, big, ext, stem, edit_main, edit_wt, delta):
+        rel = stem + ext
+        r = Repo(ignore=GITIGNORE + "out/\n" + rel + "\n", tracked=["docs/notes.md"])
+        try:
+            pad = (MIB + delta - 6) if big else 0
+            body = "a\nb\nc\n" + "p" * pad + ("\n" if not big else "")
+            put(r.main, rel, body)
+            self.assertEqual(run("setup", r.main, r.wt).returncode, 0)
+            carried = (not rel.startswith("out/") and rel.lower().endswith((".md", ".txt", ".rst", ".adoc"))
+                       and not os.path.basename(rel).startswith(".env")
+                       and len(body.encode()) <= MIB)
+            self.assertEqual(rel in tree(str(r.wt) + ".base"), carried, "снимок")
+            if not carried and os.path.exists(r.wt / rel):
+                self.fail("копия вне набора: " + rel)
+            if edit_main:
+                put(r.main, rel, "M\n" + body)
+            if edit_wt:
+                put(r.wt, rel, body + "W\n")
+            before = tree(r.main)
+            res = run("transport", r.main, r.wt)
+            self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+            got = (r.main / rel).read_bytes()
+            if carried and edit_wt:
+                want = ("M\n" if edit_main else "") + body + "W\n"
+                self.assertEqual(got, want.encode())
+            else:
+                self.assertEqual(tree(r.main), before)
+            named = edit_wt and not carried and not rel.startswith("out/")
+            self.assertEqual("не перенесены: " + rel in res.stdout, named, res.stdout)
+            self.assertEqual(run("undo", r.main, r.wt).returncode, 0)
+            self.assertEqual(tree(r.main), before, "undo не вернул MAIN")
+        finally:
+            r.close()
+
+
 @st.composite
 def scenario(draw):
     base = ["l%d" % i for i in range(draw(st.integers(0, 7)))]
