@@ -6,6 +6,7 @@ from unittest import mock
 from hypothesis import given, settings, strategies as st
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, REPO)
 SECOND = "20261021-145202"
 # Запуск sync.py, в котором время и pid не меняются: все запуски попадают в одну секунду с одним pid.
 FROZEN = ("import os, runpy, sys, time; time.strftime = lambda *a: %r; os.getpid = lambda: 1; "
@@ -21,6 +22,8 @@ class SyncTest(unittest.TestCase):
         os.makedirs(os.path.join(self.repo, "skills", "alpha"))
         os.makedirs(os.path.join(self.repo, "global"))
         shutil.copy(os.path.join(REPO, "sync.py"), self.repo)
+        shutil.copytree(os.path.join(REPO, "solo_sdd"), os.path.join(self.repo, "solo_sdd"),
+                        ignore=shutil.ignore_patterns("__pycache__"))
         self.put("skills/alpha/SKILL.md", "alpha v1\n")
         self.put("global/AGENTS.md", "rules v1\n")
         self.put("targets.json", json.dumps({
@@ -174,9 +177,10 @@ class SyncTest(unittest.TestCase):
 
     def load_sync(self, home):
         """Свой экземпляр sync.py на домашнюю папку home, без запуска процесса: так быстрее в property-тесте."""
-        spec = importlib.util.spec_from_file_location("sync_under_test", os.path.join(self.repo, "sync.py"))
+        spec = importlib.util.spec_from_file_location("sync_under_test", os.path.join(self.repo, "solo_sdd", "layout.py"))
         sync = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(sync)
+        sync.REPO = self.repo
         sync.HOME, sync.DATA = home, os.path.join(home, ".local", "share", "solo-sdd")
         sync.STATE = os.path.join(sync.DATA, "state.json")
         return sync

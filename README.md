@@ -19,31 +19,30 @@
 
 ## Установка
 
-Первая раскладка заменяет целиком существующие `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md` и `~/AGENTS.md`. Прежний текст лежит только в `~/.local/share/solo-sdd/backup/`. Если там есть ваши правила, сначала сохраните их или попробуйте на временной домашней папке (`sync.py` берёт её из `HOME`):
+Пакет ставится одной командой:
 
 ```bash
-git clone https://github.com/veraetogrex-portfolio/solo-sdd
-cd solo-sdd
-T=$(mktemp -d)
-HOME="$T" python3 sync.py push
-HOME="$T" python3 sync.py status
+pip install git+https://github.com/veraetogrex-portfolio/solo-sdd
+uv tool install git+https://github.com/veraetogrex-portfolio/solo-sdd
 ```
 
-Все строки `status` должны быть `ok`. Затем настоящая раскладка:
+Из клона работает то же без установки: `python3 -m solo_sdd <команда>`. Клон остаётся способом разработки, `sync.py` работает как раньше.
 
-```bash
-cd solo-sdd
-python3 sync.py push
-```
+| Команда | Что делает |
+|---|---|
+| `solo-sdd install [--hooks]` | Раскладывает скиллы и правила, собирает схему `solo`; с `--hooks` подключает хуки в `~/.claude/settings.json` |
+| `solo-sdd status` | Показывает состояние каждой копии |
+| `solo-sdd update` | Повторяет раскладку и сборку схемы, подсказывает, как обновить пакет |
+| `solo-sdd doctor` | Проверяет окружение: python, `openspec`, схему, копии, хуки, глубину субагентов, `gh` |
+| `solo-sdd uninstall [--purge]` | Снимает копии и хуки; `--purge` удаляет ещё схему `solo` и `~/.local/share/solo-sdd` |
+| `solo-sdd sync pull <имя> [--from <место>]` | Забирает правку, сделанную на месте, в репозиторий |
+| `solo-sdd --version` | Печатает версию |
 
-Хуки Claude Code подключаются отдельно, один раз:
+Правила в `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md` и `~/AGENTS.md` дополняются блоком между метками. Текст вне блока не меняется, ваши правила остаются на месте. Файла ещё нет — он создаётся.
 
-```bash
-cd solo-sdd
-python3 global/work_hooks_settings.py
-```
+`--hooks` добавляет в `~/.claude/settings.json` хуки рабочего процесса, глубину субагентов (`env.CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH`), правило `autoMode.allow` и `statusLine` (см. «Что и куда ставится»). `uninstall` убирает ровно это и возвращает файл байт в байт; правленные на месте копии оставляет и называет. `--purge` дополнительно удаляет схему `solo` и `~/.local/share/solo-sdd`.
 
-Скрипт дописывает существующий `~/.claude/settings.json`: файла ещё нет — создайте его с содержимым `{}`. Кроме хуков он добавляет `env.CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH` и правило `autoMode.allow` (см. «Что и куда ставится»).
+Хуки можно подключить и без раскладки: `python3 global/work_hooks_settings.py` делает то же с `settings.json`. Файла нет — он создаётся.
 
 ## Что и куда ставится
 
@@ -54,7 +53,8 @@ python3 global/work_hooks_settings.py
 | `skills/<имя>/SKILL.md`: `spec-plan`, `spec-analyze`, `spec-next`, `spec-audit`, `project-init`, `context-resume`, `work-status`, `ship`, `ui-check`, `debug-profile`, `evidence-research`, `agent-quality`, `relay`, `blockers`, `report`, `health`, `changes` | `~/.agents/skills`, `~/.codex/skills`, `~/.claude/skills` |
 | `skills/codex-orchestration/SKILL.md` | `~/.agents/skills`, `~/.claude/skills` |
 | `skills/spec-dispatch/SKILL.md` (раздача change Opus-оркестраторам, только Claude Code) | `~/.claude/skills` |
-| `global/AGENTS.md` (глобальные правила обоих агентов) | `~/AGENTS.md`, `~/.codex/AGENTS.md`, `~/.claude/CLAUDE.md` |
+| `global/AGENTS.md` (глобальные правила обоих агентов, блоком) | `~/AGENTS.md`, `~/.codex/AGENTS.md`, `~/.claude/CLAUDE.md` |
+| `pyproject.toml`, `solo_sdd/` (команда `solo-sdd`; логика раскладки в `solo_sdd/layout.py`, `sync.py` — обёртка) | не раскладываются, ставятся пакетом |
 | `global/process-guard.py` (хук запрета прямой остановки процессов) | `~/.claude/hooks/process-guard.py` |
 | `global/work_hooks.py`, `global/model-policy.json` (хуки рабочего процесса и политика моделей) | `~/.claude/hooks/` |
 | `global/sdd_worktree.py` (Подготовка worktree для `spec-dispatch`: `setup` копирует игнорируемые git `openspec/`, `AGENTS.md` и пути раздела «Рабочая копия», ставит ссылки на `node_modules` и `.venv`; `transport` переносит их обратно трёхсторонним слиянием, `undo` отменяет перенос, `remove` убирает worktree, `discard` убирает worktree без своих коммитов вместе с веткой после неудачной подготовки) | `~/.local/bin/sdd-worktree.py` |
