@@ -17,6 +17,7 @@
 
 Хеши разложенного хранятся в ~/.local/share/solo-sdd/state.json по путям от ~ (так состояние одно
 и для этого компьютера, и для сессии, где домашняя папка подключена по другому пути);
+там же ключ _source — путь этого репозитория для openspec-after-update.py;
 резервные копии — рядом в backup/.
 """
 import hashlib, json, os, shutil, sys, time
@@ -165,6 +166,7 @@ def push(force=False, quiet=False):
             continue
         state[short(target)] = digest(source_text)
         print(f"{'создано' if kind == 'missing' else 'обновлено':10} {name:38} {short(target)}{note}")
+    state["_source"] = REPO
     save_state(state)
     if not quiet and problems == 0:
         print("всё разложено")
