@@ -43,7 +43,11 @@ elif a[:2] == ["pr", "checks"]:
 elif a[:2] == ["run", "view"]:
     sys.stdout.write(open(d + "/log.txt").read())
 elif a[:2] == ["pr", "view"]:
-    seq = sc("view.json", [{{"headRefOid": "abc123", "baseRefName": "main", "state": "OPEN"}}])
+    if os.path.exists(d + "/viewfail.txt"):
+        sys.stderr.write("TLS handshake timeout\\n")
+        sys.exit(1)
+    seq = sc("view.json", [{{"headRefOid": "abc123", "headRefName": "change/x", "baseRefName": "main",
+                            "state": "OPEN", "title": "Заголовок PR"}}])
     try:
         n = int(open(d + "/vn").read())
     except OSError:
@@ -51,11 +55,14 @@ elif a[:2] == ["pr", "view"]:
     open(d + "/vn", "w").write(str(n + 1))
     print(json.dumps(seq[min(n, len(seq) - 1)]))
 elif a[:1] == ["api"]:
+    if a[1:3] in (["-X", "PUT"], ["-X", "DELETE"]):
+        m = sc("merge.json" if a[2] == "PUT" else "delete.json", {{"code": 0, "err": ""}})
+        sys.stderr.write(m["err"])
+        sys.exit(m["code"])
     print(sc("behind.json", 0))
 elif a[:2] == ["pr", "merge"]:
-    m = sc("merge.json", {{"code": 0, "err": ""}})
-    sys.stderr.write(m["err"])
-    sys.exit(m["code"])
+    sys.stderr.write("base branch policy prohibits the merge; use --admin\\n")
+    sys.exit(1)
 """
 
 
@@ -181,26 +188,120 @@ class Wait(Base):
         self.assertEqual(r.returncode, 4)
 
 
-class Merge(Base):
-    def test_ok(self):
-        e = self.env()
-        r = e.run("merge", URL, "squash", "abc123")
-        self.assertEqual((r.returncode, r.stdout.strip()), (0, f"PR #7 {URL} merged (squash)"))
-        c = e.calls("gh", "pr", "merge")[0]
-        self.assertEqual(c[3:], [URL, "--squash", "--match-head-commit", "abc123", "--delete-branch"])
+GREEN = [[chk("pass"), chk("skipping")]]
+OPEN = {"headRefOid": "abc123", "headRefName": "change/x", "baseRefName": "main", "state": "OPEN"}
+MERGE_API = "repos/o/r/pulls/7/merge"
 
-    def test_refused(self):
-        e = self.env(merge_json={"code": 1, "err": "head commit mismatch"})
-        r = e.run("merge", URL, "squash", "abc123")
-        self.assertEqual(r.returncode, 1)
-        self.assertIn("head commit mismatch", r.stderr)
-        self.assertEqual(r.stdout, "")
+
+class Merge(Base):
+    def merge(self, *extra, how="squash", **files):
+        files.setdefault("checks_json", GREEN)
+        e = self.env(**files)
+        return e, e.run("merge", URL, how, "abc123", *extra)
+
+    def puts(self, e):
+        return e.calls("gh", "api", "-X", "PUT")
 
     def no_merge(self, e):
         self.assertEqual(e.calls("gh", "pr", "merge"), [])
+        self.assertEqual(self.puts(e), [])
+
+    def fields(self, e):
+        c = self.puts(e)[0]
+        return c[4], [x for x in c[5:] if "=" in x]
+
+    def test_owner_bypass_squash(self):  # PR закрыт правилом с обходом владельца
+        e, r = self.merge()
+        self.assertEqual((r.returncode, r.stdout.strip()), (0, f"PR #7 {URL} merged (squash)"), r.stderr)
+        self.assertEqual(len(self.puts(e)), 1)
+        path, f = self.fields(e)
+        self.assertEqual(path, MERGE_API)
+        for x in ("merge_method=squash", "sha=abc123", "commit_title=Заголовок PR (#7)"):
+            self.assertIn(x, f)
+        self.assertEqual(e.calls("gh", "pr", "merge"), [])
+        self.assertEqual(len(e.calls("gh", "api", "-X", "DELETE")), 1)
+        self.assertEqual(e.calls("gh", "api", "-X", "DELETE")[0][4], "repos/o/r/git/refs/heads/change/x")
+
+    def test_ci_not_green(self):  # CI не зелёный
+        for bad in ("fail", "pending", "cancel"):
+            e, r = self.merge(checks_json=[[chk("pass"), chk(bad)]])
+            self.assertEqual(r.returncode, 1, bad)
+            self.assertIn("CI не зелёный", r.stderr)
+            self.no_merge(e)
+
+    def test_no_checks(self):  # Проверок нет
+        e = self.env()
+        r = e.run("merge", URL, "squash", "abc123")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("CI не зелёный", r.stderr)
+        self.no_merge(e)
+
+    def test_github_refused(self):  # GitHub отказал
+        e, r = self.merge(merge_json={"code": 1, "err": "gh: Head branch was modified (HTTP 409)\n"})
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("Head branch was modified", r.stderr)
+        self.assertEqual((r.stdout, e.calls("gh", "api", "-X", "DELETE")), ("", []))
+
+    def test_delete_failed(self):  # Ветку удалить не удалось
+        e, r = self.merge(delete_json={"code": 1, "err": "gh: Server Error (HTTP 500)\n"})
+        self.assertEqual(r.returncode, 0)
+        lines = r.stdout.splitlines()
+        self.assertEqual(lines[0], f"PR #7 {URL} merged (squash)")
+        self.assertTrue(lines[1].startswith("ветка change/x не удалена: "), r.stdout)
+        self.assertEqual(len(lines), 2)
+
+    def test_delete_already_gone(self):
+        for code in (404, 422):
+            e, r = self.merge(delete_json={"code": 1, "err": f"gh: Reference does not exist (HTTP {code})\n"})
+            self.assertEqual((r.returncode, r.stdout.strip()), (0, f"PR #7 {URL} merged (squash)"), code)
+
+    def test_fork_branch_kept(self):  # Ветка PR из форка
+        e, r = self.merge(view_json=[dict(OPEN, title="T", isCrossRepository=True)])
+        self.assertEqual((r.returncode, r.stdout.strip()), (0, f"PR #7 {URL} merged (squash)"), r.stderr)
+        self.assertEqual(e.calls("gh", "api", "-X", "DELETE"), [])
+
+    def test_empty_title(self):  # Пустой заголовок
+        for t in ("", "   "):
+            e, r = self.merge(view_json=[dict(OPEN, title=t)])
+            self.assertEqual(r.returncode, 1, repr(t))
+            self.assertIn("заголов", r.stderr)
+            self.no_merge(e)
+        e, r = self.merge("--title", "")
+        self.assertEqual(r.returncode, 1)
+        self.no_merge(e)
+
+    def test_view_failed(self):  # gh pr view упал
+        e, r = self.merge(viewfail_txt="x")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("TLS handshake timeout", r.stderr)
+        self.no_merge(e)
+
+    def test_title_from_local_commit(self):  # Заголовок из локального коммита
+        e, r = self.merge("--title", "fix(222-ooxml): read templates")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("commit_title=fix(222-ooxml): read templates (#7)", self.fields(e)[1])
+
+    def test_rebase_no_title(self):
+        e, r = self.merge(how="rebase", view_json=[dict(OPEN, title="")])
+        self.assertEqual(r.returncode, 0, r.stderr)
+        f = self.fields(e)[1]
+        self.assertIn("merge_method=rebase", f)
+        self.assertFalse([x for x in f if x.startswith("commit_title")])
+
+    def test_merge_method(self):
+        e, r = self.merge(how="merge")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        f = self.fields(e)[1]
+        self.assertIn("merge_method=merge", f)
+        self.assertIn("commit_title=Заголовок PR (#7)", f)
+
+    def test_behind_before_ci(self):  # порядок: behind раньше CI
+        e, r = self.merge(behind_json=2, checks_json=[[chk("fail")]])
+        self.assertEqual(r.returncode, 5)
+        self.no_merge(e)
 
     def test_already_merged(self):
-        e = self.env(view_json=[{"headRefOid": "zzz", "baseRefName": "main", "state": "MERGED"}])
+        e = self.env(view_json=[dict(OPEN, headRefOid="zzz", state="MERGED")])
         r = e.run("merge", URL, "squash", "abc123")
         self.assertEqual((r.returncode, r.stdout.strip()), (0, "PR #7 merged (уже)"))
         self.no_merge(e)
@@ -213,33 +314,19 @@ class Merge(Base):
         self.no_merge(e)
 
     def test_behind(self):
-        e = self.env(behind_json=2)
-        r = e.run("merge", URL, "squash", "abc123")
+        e, r = self.merge(behind_json=2)
         self.assertEqual(r.returncode, 5)
         self.assertIn("behind 2", r.stdout)
         self.assertEqual(e.calls("gh", "api")[0][2], "repos/o/r/compare/main...abc123")
         self.no_merge(e)
-
-    def test_merge_error_but_merged(self):
-        open_ = {"headRefOid": "abc123", "baseRefName": "main", "state": "OPEN"}
-        e = self.env(merge_json={"code": 1, "err": "cannot delete branch"},
-                     view_json=[open_, {"state": "MERGED"}])
-        r = e.run("merge", URL, "squash", "abc123")
-        self.assertEqual((r.returncode, r.stdout.strip()), (0, f"PR #7 {URL} merged (squash)"))
-
-    def test_merge_refused_state_open(self):
-        open_ = {"headRefOid": "abc123", "baseRefName": "main", "state": "OPEN"}
-        e = self.env(merge_json={"code": 1, "err": "nope"}, view_json=[open_])
-        r = e.run("merge", URL, "squash", "abc123")
-        self.assertEqual(r.returncode, 1)
-        self.assertIn("nope", r.stderr)
 
 
 class Args(Base):
     def test_usage(self):
         e = self.env()
         for a in ([], ["open", "x"], ["wait"], ["wait", URL, "--bogus", "1"], ["wait", URL, "--timeout", "x"],
-                  ["merge", URL, "fast", "h"], ["nope"]):
+                  ["merge", URL, "fast", "h"], ["nope"],
+                  ["merge", URL, "squash", "h", "--title"], ["merge", URL, "squash", "h", "--bogus", "x"]):
             r = e.run(*a)
             self.assertEqual(r.returncode, 2, a)
             self.assertIn("использование", r.stderr)
