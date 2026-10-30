@@ -851,7 +851,8 @@ class Doctor(unittest.TestCase):
         os.makedirs(os.path.dirname(self.schema))
         with open(self.schema, "w") as f:
             f.write("name: solo\n")
-        self.assertEqual(self.go("install")[0], 0)
+        # sync.py, не install: сборка схемы ищет настоящий пакет OpenSpec, а не поддельную команду стенда
+        self.assertEqual(run([sys.executable, "sync.py", "push"], self.home, path=self.bin)[0], 0)
 
     def go(self, *args, extra=None):
         env = {"CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH": ""}
