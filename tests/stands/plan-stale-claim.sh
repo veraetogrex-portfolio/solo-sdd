@@ -19,8 +19,8 @@ for id in a-stale b-stale c-live; do
 done
 git add -A
 git -c user.name=t -c user.email=t@t commit -qm init
-echo "claude 2026-10-21 session=deadbeef-0000" > openspec/changes/a-stale/CLAIM
-echo "claude 2026-10-21 session=deadbeef-0000" > openspec/changes/b-stale/CLAIM
+echo "claude 2026-10-21 session=stalesid-0000" > openspec/changes/a-stale/CLAIM
+echo "claude 2026-10-21 session=stalesid-0000" > openspec/changes/b-stale/CLAIM
 echo "claude 2026-10-21 session=live0000-0000" > openspec/changes/c-live/CLAIM
 touch "$HOME/.claude/hook-state/live0000-0000.json"
 
@@ -34,8 +34,8 @@ want() {
 echo "--- шаг 2: две брошенные, одна живая"
 OUT="$(python3 "$SCRIPT" .)"
 echo "$OUT" | grep ' — '
-want "a-stale — CLAIM брошен: сессия deadbeef молчит"
-want "b-stale — CLAIM брошен: сессия deadbeef молчит"
+want "a-stale — CLAIM брошен: сессия stalesid молчит"
+want "b-stale — CLAIM брошен: сессия stalesid молчит"
 want "c-live — CLAIM"
 case "$OUT" in *"c-live — CLAIM брошен"*) echo "живая метка брошена" >&2; exit 1 ;; esac
 git branch change/a-stale

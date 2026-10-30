@@ -388,7 +388,7 @@ POOL_C = ["a/", "b/", "b/y.py", "c.md"]
 
 
 class AbandonedClaims(Base):
-    SID = "157c88ff-0000-4000-8000-000000000000"
+    SID = "quietsid-0000-4000-8000-000000000000"
 
     def setUp(self):
         self.home = pathlib.Path(tempfile.mkdtemp()).resolve()
@@ -427,13 +427,13 @@ class AbandonedClaims(Base):
         self.session("json", 7 * 60 + 5)
         self.session("claims", 7 * 60 + 30)
         for c in ids:
-            self.assertEqual(self.why(c), "CLAIM брошен: сессия 157c88ff молчит 7 ч")
+            self.assertEqual(self.why(c), "CLAIM брошен: сессия quietsid молчит 7 ч")
         self.assertIn("запустить: нет\n", self.out)
         self.assertTrue(all(c.exists() for c in claims))
 
     def test_no_session_traces(self):
-        self.label("a", "claude 2026-10-21 session=deadbeef-0000\n", hours=3)
-        self.assertEqual(self.why("a"), "CLAIM брошен: сессия deadbeef молчит 3 ч")
+        self.label("a", "claude 2026-10-21 session=stalesid-0000\n", hours=3)
+        self.assertEqual(self.why("a"), "CLAIM брошен: сессия stalesid молчит 3 ч")
 
     def test_live_session_one_fresh_file_is_enough(self):
         self.label("a", "claude 2026-10-21 session=%s\n" % self.SID, hours=9)
@@ -572,13 +572,13 @@ class Property(unittest.TestCase):
         home = tempfile.mkdtemp()
         try:
             p.change("a", waiting=waiting)
-            body = "claude 2026-10-21 session=deadbeef-0000\n" if with_id else "codex 2026-10-21\n"
+            body = "claude 2026-10-21 session=stalesid-0000\n" if with_id else "codex 2026-10-21\n"
             claim = p.main / "openspec/changes/a/CLAIM"
             claim.write_text(body, encoding="utf-8")
             os.utime(claim, (now - label_age * 3600,) * 2)
             for suffix, age in (("json", json_age), ("claims", claims_age)):
                 if age is not None:
-                    f = pathlib.Path(home, "deadbeef-0000." + suffix)
+                    f = pathlib.Path(home, "stalesid-0000." + suffix)
                     f.write_text("{}")
                     os.utime(f, (now - age * 60,) * 2)
             if branch:
@@ -594,9 +594,9 @@ class Property(unittest.TestCase):
             elif not with_id:
                 want = "CLAIM брошен: метка %d ч" % label_age if label_age >= 12 else "CLAIM"
             elif not marks:
-                want = "CLAIM брошен: сессия deadbeef молчит %d ч" % label_age
+                want = "CLAIM брошен: сессия stalesid молчит %d ч" % label_age
             else:
-                want = "CLAIM брошен: сессия deadbeef молчит 1 ч" if min(marks) >= 60 else "CLAIM"
+                want = "CLAIM брошен: сессия stalesid молчит 1 ч" if min(marks) >= 60 else "CLAIM"
             self.assertEqual(dict(waits)["a"], want)
         finally:
             p.close()
