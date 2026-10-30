@@ -54,6 +54,8 @@ def load(p):
             raw = f.read()
     except FileNotFoundError:
         return None, None
+    except OSError as e:
+        raise ValueError(f"нет доступа: {e.strerror}")
     try:
         s = json.loads(raw.decode("utf-8"))
     except ValueError as e:
@@ -192,16 +194,16 @@ def setup():
         before, _ = load(p)
         state = layout.load_state()
         step = connect()
-    except ValueError as e:
+    except (ValueError, OSError) as e:
         print(f"fail settings: {e}")
         return 1
     if step is not None:
         state = layout.load_state()
         state.setdefault("_hooks", []).append(step)
         layout.save_state(state)
-    ours = any("env" in x for x in state.get("_hooks", []))
-    own = D in (before or {}).get("env", {}) and not ours
     value = load(p)[0]["env"][D]
+    ours = any(x.get("env", {}).get(D) == value for x in state.get("_hooks", []))
+    own = D in (before or {}).get("env", {}) and not ours
     print("ok: хуки подключены, откройте /hooks или перезапустите Claude Code")
     print(f"глубина субагентов {value}: " + ("задана владельцем, не меняю" if own else "записана, действует в новых сессиях"))
     return 0
@@ -223,14 +225,14 @@ def restore(steps):
         before = load_bytes(before_raw)
         result = prune(disconnect(copy.deepcopy(s), steps), before)
         data = None if first is None and result == {} else (before_raw if before_raw is not None and result == before else _dump(result))
-    except ValueError as e:
+        _bak(p, raw)
+        if data is None:
+            os.remove(p)
+        else:
+            _put(p, data)
+    except (ValueError, OSError) as e:
         print(f"fail settings: {e}")
         return 1
-    _bak(p, raw)
-    if data is None:
-        os.remove(p)
-    else:
-        _put(p, data)
     return 0
 
 

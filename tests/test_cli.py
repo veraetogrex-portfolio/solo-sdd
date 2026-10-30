@@ -7,7 +7,7 @@ from hypothesis import assume, given, settings, strategies as st
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO)
-from solo_sdd import __version__, cli, layout, rules_block  # noqa: E402
+from solo_sdd import __version__, cli, hooks, layout, rules_block  # noqa: E402
 
 RULES = "global/AGENTS.md"
 NET = ("Could not find a version", "No matching distribution", "Temporary failure", "ConnectionError", "Max retries")
@@ -496,6 +496,10 @@ D = "CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH"
 MINE = {"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "echo mine"}]}]}}
 
 
+def rules_key():
+    return "~/.claude/CLAUDE.md"
+
+
 def inproc(home, *args, repo=None, schema=0, prefix=None):
     """cli.main в этом процессе на временной домашней папке; схема solo не собирается."""
     data = os.path.join(home, ".local", "share", "solo-sdd")
@@ -569,6 +573,102 @@ class Hooks(unittest.TestCase):
         self.assertEqual(len(steps), 1)
         self.assertEqual(steps[0]["env"], {D: "2"})
         self.assertEqual(steps[0]["backup"], "~/.claude/" + baks[0])
+        s = json.loads(text)
+        for event in ("SessionStart", "PreToolUse", "SubagentStart", "PostToolUse", "PostToolUseFailure",
+                      "Stop", "UserPromptSubmit", "SubagentStop", "SessionEnd"):
+            self.assertIn("work_hooks.py", json.dumps(s["hooks"][event]), event)
+        self.assertIn("echo mine", json.dumps(s["hooks"]["Stop"]))
+        self.assertIn("work_hooks.py", s["statusLine"]["command"])
+        allow = s["autoMode"]["allow"]
+        self.assertEqual(allow[0], "$defaults")
+        self.assertEqual(len([x for x in allow if x.startswith(hooks.P)]), 1)
+
+    def test_depth_changed_by_human_is_not_ours(self):
+        self.put(json.dumps(MINE))
+        inproc(self.home, "install", "--hooks")
+        s = json.loads(self.get())
+        s["env"][D] = "3"
+        self.put(json.dumps(s))
+        code, out = inproc(self.home, "install", "--hooks")
+        self.assertEqual(code, 0, out)
+        self.assertIn("глубина субагентов 3: задана владельцем, не меняю", out)
+
+    def test_backup_name_taken_keeps_both(self):
+        raw = json.dumps(MINE)
+        self.put(raw)
+        with mock.patch.object(hooks.time, "strftime", return_value="20260101-000000"):
+            self.assertEqual(inproc(self.home, "install", "--hooks")[0], 0)
+            first = self.get().decode()
+            s = json.loads(first)
+            del s["statusLine"]
+            self.put(json.dumps(s))
+            changed = self.get()
+            self.assertEqual(inproc(self.home, "install", "--hooks")[0], 0)
+        baks = self.baks()
+        self.assertEqual(len(baks), 2)
+        folder = os.path.dirname(self.settings)
+        self.assertEqual(self.get(os.path.join(folder, baks[0])), raw.encode())
+        self.assertEqual(self.get(os.path.join(folder, baks[1])), changed)
+
+    @unittest.skipIf(os.geteuid() == 0, "root читает любые файлы")
+    def test_unreadable_settings(self):
+        self.assertEqual(inproc(self.home, "install", "--hooks")[0], 0)
+        os.chmod(self.settings, 0)
+        self.addCleanup(os.chmod, self.settings, 0o644)
+        code, out = inproc(self.home, "install", "--hooks")
+        self.assertEqual(code, 1)
+        self.assertIn("fail settings: нет доступа", out)
+        code, out = inproc(self.home, "uninstall")
+        self.assertEqual(code, 1)
+        self.assertIn("fail settings:", out)
+        self.assertIn("_hooks", self.state())
+
+    def test_uninstall_edited_skill_then_install_sees_drift(self):
+        inproc(self.home, "install")
+        edited = os.path.join(self.home, ".codex/skills/spec-next/SKILL.md")
+        with open(edited, "a") as f:
+            f.write("правка\n")
+        mine = self.get(edited)
+        inproc(self.home, "uninstall")
+        key = "~/.codex/skills/spec-next/SKILL.md"
+        self.assertEqual(list(self.state()), [key])
+        code, out = inproc(self.home, "install")
+        self.assertEqual(code, 1)
+        self.assertIn("пропущено", out)
+        self.assertEqual(self.get(edited), mine)
+        self.assertRegex(inproc(self.home, "status")[1], r"(?m)^drift .*\.codex/skills/spec-next/SKILL\.md")
+
+    def test_uninstall_edited_block_keeps_record(self):
+        rules = os.path.join(self.home, ".claude", "CLAUDE.md")
+        inproc(self.home, "install")
+        text = self.get(rules).decode().replace("\n", "\nправка\n", 3)
+        self.put(text.encode(), rules)
+        self.assertEqual(inproc(self.home, "uninstall")[0], 0)
+        self.assertEqual(self.get(rules), text.encode())
+        self.assertIn(rules_key(), self.state()["_blocks"])
+        self.assertEqual(inproc(self.home, "uninstall")[0], 0)
+        self.assertEqual(self.get(rules), text.encode())
+
+    def test_block_only_file_removed_empty_file_stays(self):
+        rules = os.path.join(self.home, ".claude", "CLAUDE.md")
+        inproc(self.home, "install")
+        inproc(self.home, "uninstall")
+        self.assertFalse(os.path.exists(rules))
+        self.put(b"", rules)
+        inproc(self.home, "install")
+        self.assertNotEqual(self.get(rules), b"")
+        inproc(self.home, "uninstall")
+        self.assertEqual(self.get(rules), b"")
+
+    def test_uninstall_ignores_copy_without_record(self):
+        inproc(self.home, "install")
+        state = self.state()
+        del state["~/.codex/skills/spec-next/SKILL.md"]
+        self.put(json.dumps(state), self.state_file)
+        code, out = inproc(self.home, "uninstall")
+        self.assertEqual(code, 0)
+        self.assertTrue(os.path.exists(os.path.join(self.home, ".codex/skills/spec-next/SKILL.md")))
+        self.assertNotIn(".codex/skills/spec-next", out)
 
     def test_depth_of_owner_kept(self):
         self.put(json.dumps({"env": {D: "3"}}))
@@ -828,6 +928,25 @@ class Doctor(unittest.TestCase):
         code, out, _ = self.go("doctor")
         self.assertEqual(code, 1)
         self.assertIn("fail hooks:", out)
+
+    def test_hooks_not_connected_and_copy_missing(self):
+        self.installed()
+        self.assertIn("ok hooks: не подключены", self.go("doctor")[1])
+        os.remove(os.path.join(self.home, ".claude/skills/spec-next/SKILL.md"))
+        code, out, _ = self.go("doctor")
+        self.assertEqual(code, 1)
+        self.assertRegex(out, r"(?m)^fail layout: ")
+
+    @unittest.skipIf(os.geteuid() == 0, "root читает любые файлы")
+    def test_unreadable_settings_fails_hooks(self):
+        self.installed()
+        self.assertEqual(self.go("install", "--hooks")[0], 0)
+        settings = os.path.join(self.home, ".claude/settings.json")
+        os.chmod(settings, 0)
+        self.addCleanup(os.chmod, settings, 0o644)
+        code, out, _ = self.go("doctor")
+        self.assertEqual(code, 1)
+        self.assertRegex(out, r"(?m)^fail hooks: ")
 
     def test_depth_one(self):
         self.installed()

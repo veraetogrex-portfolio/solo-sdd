@@ -241,6 +241,7 @@ def uninstall(purge=False):
     roots = {expand(value) for value in targets["roots"].values()}
     removed = code = 0
     recorded_any = False
+    kept = set()  # оставленные копии: их записи остаются, чтобы повторный install видел drift, а не first
     for name, source, target, block in pairs():
         key = short(target)
         recorded = state.get(key)
@@ -289,10 +290,18 @@ def uninstall(purge=False):
         except (OSError, UnicodeDecodeError) as e:
             print(f"нет доступа {name:37} {key}: {getattr(e, 'strerror', None) or 'не UTF-8'}")
             code = 1
+            kept.add(key)
             continue
         if keep:
+            kept.add(key)
             print(f"оставлено  {name:38} {key} — {keep}")
-    for key in [k for k in state if not k.startswith("_")] + ["_source", "_version", "_blocks"]:
+    blocks = state.get("_blocks", {})
+    for key in [k for k in state if not k.startswith("_") and k not in kept]:
+        del state[key]
+        blocks.pop(key, None)
+    for key in [k for k in blocks if k not in kept]:
+        del blocks[key]
+    for key in ("_source", "_version") + (() if blocks else ("_blocks",)):
         state.pop(key, None)
     save_state(state)
     if purge and "_hooks" in state:
