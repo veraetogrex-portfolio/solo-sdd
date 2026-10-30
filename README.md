@@ -96,6 +96,8 @@ python3 sync.py push
 
 Раскладку делает и сам процесс: шаг 0 скилла `spec-next` запускает `openspec-after-update.py`, а тот — `sync.py push`.
 
+`openspec-after-update.py --schema-only` собирает только схему `solo`, без раскладки и обхода проектов. Пакет OpenSpec ищется через `OPENSPEC_PKG`, `npm root -g`, Homebrew; источник раскладки — `SOLO_SDD_REPO`, затем `_source` из `state.json`, который пишет каждый `sync.py push`.
+
 ## Проверка
 
 ```bash
