@@ -5,6 +5,9 @@
 
 Готов: нет CLAIM и WAITING, нет ветки change/<id>, все Depends On в архиве, папка change закоммичена
 (иначе причина «не закоммичен»: worktree от коммита её не увидит).
+Причины по порядку: ветка («не смёрджен»), CLAIM, WAITING, «не закоммичен», зависимости.
+CLAIM брошен: session=<id>, а файлы сессии в ~/.claude/hook-state не менялись 60 минут или их нет;
+метка без id — файлу 12 часов или больше. Скрипт метку не снимает: это решает владелец.
 Артефакты вне git: если игнорируется openspec/, AGENTS.md или CLAUDE.md, печатается строка «Артефакты вне git: <пути>».
 Жёсткий конфликт двух change: общее требование (capability, имя) или общий файл из Impact.
 Общие пути конфликта не дают: COMMON и пункт «Общие:» раздела AGENTS.md «Рабочая копия»;
@@ -16,9 +19,13 @@ import os
 import re
 import subprocess
 import sys
+import time
 
 COMMON = {"AGENTS.md", "CLAUDE.md", "docs/waiting.md", "CHANGELOG.md"}
 LIMIT = 2
+STATE = os.path.join(os.path.expanduser("~"), ".claude", "hook-state")
+SESSION_SILENCE = 3600
+LABEL_AGE = 12 * 3600
 
 
 def text(p):
@@ -112,6 +119,28 @@ def worktree_of(main, cid):
     return ""
 
 
+def abandoned(claim):
+    """Причина ожидания для брошенной метки или None. Не удалось прочитать — не брошена: важнее не спросить о живой."""
+    now = time.time()
+    try:
+        born = os.path.getmtime(claim)
+        with open(claim, encoding="utf-8", errors="replace") as f:
+            m = re.search(r"session=([\w-]+)", f.read())
+        if not m:
+            return "CLAIM брошен: метка %d ч" % ((now - born) / 3600) if now - born >= LABEL_AGE else None
+        marks = []
+        for suffix in ("json", "claims"):
+            try:
+                marks.append(os.path.getmtime(os.path.join(STATE, "%s.%s" % (m.group(1), suffix))))
+            except FileNotFoundError:
+                pass
+    except OSError:
+        return None
+    if marks and now - max(marks) < SESSION_SILENCE:
+        return None
+    return "CLAIM брошен: сессия %s молчит %d ч" % (m.group(1)[:8], (now - max(marks or [born])) / 3600)
+
+
 def read_project(main):
     """Диск -> (changes, archived, limit); changes: id -> {claim, waiting, branch, deps, reqs, files, shared}."""
     base = os.path.join(main, "openspec", "changes")
@@ -146,6 +175,7 @@ def read_project(main):
                     files.add(v)
         changes[cid] = {
             "claim": os.path.exists(os.path.join(d, "CLAIM")),
+            "abandoned": abandoned(os.path.join(d, "CLAIM")),
             "waiting": os.path.exists(os.path.join(d, "WAITING")),
             "branch": has_branch(main, cid),
             "worktree": worktree_of(main, cid),
@@ -191,13 +221,13 @@ def plan(changes, archived, limit, running=()):
     for cid in cands:
         c = changes[cid]
         miss = [d for d in c["deps"] if d not in archived]
-        if c["claim"]:
-            waits.append((cid, "CLAIM"))
-        elif c["waiting"]:
-            waits.append((cid, "WAITING"))
-        elif c["branch"]:
+        if c["branch"]:
             wt = c.get("worktree")
             waits.append((cid, "не смёрджен: ветка change/" + cid + (", worktree " + wt if wt else "")))
+        elif c["claim"]:
+            waits.append((cid, c.get("abandoned") or "CLAIM"))
+        elif c["waiting"]:
+            waits.append((cid, "WAITING"))
         elif c.get("uncommitted"):
             waits.append((cid, "не закоммичен"))
         elif miss:
