@@ -1,11 +1,14 @@
 """Проверка sdd_dispatch_plan.py: готовые change, порядок, жёсткие конфликты."""
 import importlib.util
+import os
 import pathlib
 import re
 import shutil
 import subprocess
 import tempfile
+import time
 import unittest
+from unittest import mock
 
 from hypothesis import given, settings, strategies as st
 
@@ -384,6 +387,96 @@ POOL_F = ["a/x.py", "b/y.py", "c.md", "c.md.bak", "a-old/z.py"]
 POOL_C = ["a/", "b/", "b/y.py", "c.md"]
 
 
+class AbandonedClaims(Base):
+    SID = "157c88ff-0000-4000-8000-000000000000"
+
+    def setUp(self):
+        self.home = pathlib.Path(tempfile.mkdtemp()).resolve()
+        self.addCleanup(shutil.rmtree, self.home, ignore_errors=True)
+        self.state = self.home / ".claude/hook-state"
+        self.state.mkdir(parents=True)
+        self.p = self.project()
+
+    def label(self, cid, body, hours=0):
+        self.p.change(cid)
+        claim = self.p.main / "openspec/changes" / cid / "CLAIM"
+        claim.write_bytes(body if isinstance(body, bytes) else body.encode())
+        t = time.time() - hours * 3600
+        os.utime(claim, (t, t))
+        return claim
+
+    def session(self, suffix, minutes, sid=None):
+        f = self.state / ("%s.%s" % (sid or self.SID, suffix))
+        f.write_text("{}")
+        t = time.time() - minutes * 60
+        os.utime(f, (t, t))
+
+    def why(self, cid):
+        r = subprocess.run(["/usr/bin/python3", str(SCRIPT), str(self.p.main)], capture_output=True, text=True,
+                           timeout=60, stdin=subprocess.DEVNULL, env=dict(os.environ, HOME=str(self.home)))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.out = r.stdout
+        for ln in r.stdout.splitlines():
+            if ln.startswith("  %s — " % cid):
+                return ln.split(" — ", 1)[1]
+        return None
+
+    def test_silent_session(self):
+        ids = ["c%d" % i for i in range(8)]
+        claims = [self.label(c, "claude 2026-10-21 session=%s\n" % self.SID) for c in ids]
+        self.session("json", 7 * 60 + 5)
+        self.session("claims", 7 * 60 + 30)
+        for c in ids:
+            self.assertEqual(self.why(c), "CLAIM брошен: сессия 157c88ff молчит 7 ч")
+        self.assertIn("запустить: нет\n", self.out)
+        self.assertTrue(all(c.exists() for c in claims))
+
+    def test_no_session_traces(self):
+        self.label("a", "claude 2026-10-21 session=deadbeef-0000\n", hours=3)
+        self.assertEqual(self.why("a"), "CLAIM брошен: сессия deadbeef молчит 3 ч")
+
+    def test_live_session_one_fresh_file_is_enough(self):
+        self.label("a", "claude 2026-10-21 session=%s\n" % self.SID, hours=9)
+        self.session("json", 300)
+        self.session("claims", 5)
+        self.assertEqual(self.why("a"), "CLAIM")
+
+    def test_claim_removed_change_is_granted(self):
+        claim = self.label("a", "claude 2026-10-21 session=%s\n" % self.SID, hours=3)
+        self.assertTrue(self.why("a").startswith("CLAIM брошен"))
+        claim.unlink()
+        self.assertIsNone(self.why("a"))
+        self.assertIn("запустить: a\n", self.out)
+
+    def test_branch_wins(self):
+        self.label("a", "claude 2026-10-21 session=%s\n" % self.SID, hours=3)
+        self.session("json", 180)
+        git(self.p.main, "branch", "change/a")
+        self.assertEqual(self.why("a"), "не смёрджен: ветка change/a")
+
+    def test_label_without_session_id(self):
+        self.label("old", "codex 2026-10-21\n", hours=13)
+        self.label("new", "codex 2026-10-21\n", hours=11)
+        self.assertEqual(self.why("old"), "CLAIM брошен: метка 13 ч")
+        self.assertEqual(self.why("new"), "CLAIM")
+
+    def test_binary_label(self):
+        self.label("a", b"\xff\xfe\x00")
+        self.assertEqual(self.why("a"), "CLAIM")
+
+    def test_unreadable_label_is_not_abandoned(self):
+        claim = self.label("a", "codex 2026-10-21\n", hours=13)
+        claim.chmod(0)
+        self.addCleanup(claim.chmod, 0o644)
+        self.assertEqual(self.why("a"), "CLAIM")
+
+    def test_unreadable_state_is_not_abandoned(self):
+        self.label("a", "claude 2026-10-21 session=%s\n" % self.SID, hours=3)
+        self.state.chmod(0)
+        self.addCleanup(self.state.chmod, 0o755)
+        self.assertEqual(self.why("a"), "CLAIM")
+
+
 @st.composite
 def projects(draw):
     n = draw(st.integers(1, 6))
@@ -469,6 +562,45 @@ class Property(unittest.TestCase):
             self.assertNotIn(cid, granted)
             if not (c["claim"] or c["waiting"] or c["branch"]) and cid not in running:
                 self.assertEqual(why[cid], "не закоммичен")
+
+    @settings(max_examples=120, deadline=None)
+    @given(st.booleans(), st.sampled_from([None, 0, 59, 60, 61]), st.sampled_from([None, 0, 59, 60, 61]),
+           st.sampled_from([11, 12, 13]), st.booleans(), st.booleans())
+    def test_abandoned_claims_property(self, with_id, json_age, claims_age, label_age, branch, waiting):
+        now = 2000000000
+        p = Project()
+        home = tempfile.mkdtemp()
+        try:
+            p.change("a", waiting=waiting)
+            body = "claude 2026-10-21 session=deadbeef-0000\n" if with_id else "codex 2026-10-21\n"
+            claim = p.main / "openspec/changes/a/CLAIM"
+            claim.write_text(body, encoding="utf-8")
+            os.utime(claim, (now - label_age * 3600,) * 2)
+            for suffix, age in (("json", json_age), ("claims", claims_age)):
+                if age is not None:
+                    f = pathlib.Path(home, "deadbeef-0000." + suffix)
+                    f.write_text("{}")
+                    os.utime(f, (now - age * 60,) * 2)
+            if branch:
+                git(p.main, "branch", "change/a")
+            with mock.patch.object(dp, "STATE", home), mock.patch.object(dp.time, "time", return_value=now):
+                changes, archived, limit = dp.read_project(str(p.main))
+            granted, waits = dp.plan(changes, archived, limit)
+            self.assertEqual(claim.read_text(encoding="utf-8"), body)
+            self.assertEqual(granted, [])
+            marks = [a for a in (json_age, claims_age) if a is not None]
+            if branch:
+                want = "не смёрджен: ветка change/a"
+            elif not with_id:
+                want = "CLAIM брошен: метка %d ч" % label_age if label_age >= 12 else "CLAIM"
+            elif not marks:
+                want = "CLAIM брошен: сессия deadbeef молчит %d ч" % label_age
+            else:
+                want = "CLAIM брошен: сессия deadbeef молчит 1 ч" if min(marks) >= 60 else "CLAIM"
+            self.assertEqual(dict(waits)["a"], want)
+        finally:
+            p.close()
+            shutil.rmtree(home, ignore_errors=True)
 
     def test_cycle_and_chain_terminate(self):
         granted, waits = dp.plan(chain(), set(), 4)
