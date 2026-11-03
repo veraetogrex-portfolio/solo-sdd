@@ -9,8 +9,7 @@ cd /путь/к/solo-sdd
 cp -r tests/stands/ui-gate-stand /tmp/ui-gate-stand
 cd /tmp/ui-gate-stand
 mkdir /tmp/ui-gate-aux
-mv EXPECTED.md DESIGN-step3.md stand-form.patch /tmp/ui-gate-aux/
-rm -rf openspec/changes/stand-form
+mv EXPECTED.md DESIGN-step3.md stand-form.patch stand-form /tmp/ui-gate-aux/
 git init
 git add -A
 git commit -m base
@@ -18,7 +17,7 @@ openspec init --tools claude,codex
 python3 -m http.server 8765
 ```
 
-`EXPECTED.md`, `DESIGN-step3.md` и `stand-form.patch` в рабочую копию не входят: их держи в `/tmp/ui-gate-aux/`. Папка `openspec/changes/stand-form` берётся из репозитория для шага 6 (копируется в копию шага 6). Сервер запускай отдельной фоновой задачей.
+`EXPECTED.md`, `DESIGN-step3.md`, `stand-form.patch` и папка `stand-form/` (артефакты готового change для шага 6; в репозитории лежат вне `openspec/`, потому что `openspec/` игнорируется git) в рабочую копию не входят: их держи в `/tmp/ui-gate-aux/`. Сервер запускай отдельной фоновой задачей.
 
 ## Шаг 3
 
@@ -35,7 +34,7 @@ cp /tmp/ui-gate-aux/DESIGN-step3.md DESIGN.md
 ```
 cp -r /tmp/ui-gate-stand /tmp/ui-gate-stand-6
 cd /tmp/ui-gate-stand-6
-cp -r /путь/к/solo-sdd/tests/stands/ui-gate-stand/openspec/changes/stand-form openspec/changes/stand-form
+cp -r /tmp/ui-gate-aux/stand-form openspec/changes/stand-form
 git apply /tmp/ui-gate-aux/stand-form.patch
 git add -A
 git commit -m "stand-form"
