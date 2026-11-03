@@ -11,7 +11,7 @@ from solo_sdd import __version__, cli, hooks, layout, rules_block  # noqa: E402
 
 RULES = "global/AGENTS.md"
 NET = ("Could not find a version", "No matching distribution", "Temporary failure", "ConnectionError", "Max retries")
-DATA_DIRS = ("solo_sdd", "global", "skills", "schema", "templates")
+DATA_DIRS = ("solo_sdd", "global", "skills", "schema", "templates", "vendor")
 
 
 def run(args, home, cwd=REPO, path=None, extra=None):

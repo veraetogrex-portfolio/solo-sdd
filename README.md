@@ -53,6 +53,7 @@ pipx install git+https://github.com/veraetogrex-portfolio/solo-sdd
 | Что | Куда |
 |---|---|
 | `skills/<имя>/SKILL.md`: `spec-plan`, `spec-analyze`, `spec-next`, `spec-audit`, `project-init`, `context-resume`, `work-status`, `ship`, `ui-check`, `debug-profile`, `evidence-research`, `agent-quality`, `relay`, `blockers`, `report`, `health`, `changes` | `~/.agents/skills`, `~/.codex/skills`, `~/.claude/skills` |
+| `vendor/antislop/` (закреплённая копия правил anti-slop: ядро `core.md`, `ui.md`, `human.md`, `layoutmobile.md`, `contrast-check.py`, `references/`; лицензии, README и VERSION копии не раскладываются; обновление только заменой копии) | `<корень>/ui-check/antislop/` в `~/.agents/skills`, `~/.codex/skills`, `~/.claude/skills` |
 | `skills/codex-orchestration/SKILL.md` | `~/.agents/skills`, `~/.claude/skills` |
 | `skills/spec-dispatch/SKILL.md` (раздача change Opus-оркестраторам, только Claude Code) | `~/.claude/skills` |
 | `global/AGENTS.md` (глобальные правила обоих агентов, блоком) | `~/AGENTS.md`, `~/.codex/AGENTS.md`, `~/.claude/CLAUDE.md` |

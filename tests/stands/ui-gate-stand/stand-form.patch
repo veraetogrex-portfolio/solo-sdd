@@ -1,0 +1,19 @@
+diff --git a/index.html b/index.html
+index 485e22b..6528d96 100644
+--- a/index.html
++++ b/index.html
+@@ -61,6 +61,14 @@ section{margin-bottom:32px}
+ </form>
+ <p id="msg" role="status"></p>
+ </section>
++<section id="feedback">
++<h2>Feedback</h2>
++<form>
++<textarea name="message" placeholder="Message" rows="3"></textarea>
++<input name="name" placeholder="Name">
++<button type="submit">Send</button>
++</form>
++</section>
+ </main>
+ <footer><p>Osen, 2026</p></footer>
+ <script>

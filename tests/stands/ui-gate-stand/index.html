@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Notes Landing</title>
+<style>
+:root{--text:#1a1a1a;--bg:#ffffff;--accent:#0b5fff}
+*{box-sizing:border-box}
+body{margin:0;font:16px/1.5 system-ui,sans-serif;color:var(--text);background:var(--bg)}
+a[href],button,summary,label[for]{cursor:pointer}
+a{color:var(--accent)}
+a:hover{text-decoration:none}
+a:active,button:active{opacity:.7}
+button{min-height:44px;min-width:44px;padding:0 16px;font:inherit;color:#fff;background:var(--accent);border:0;border-radius:4px}
+button:hover{background:#0847c2}
+input{min-height:44px;padding:0 8px;font:inherit;border:1px solid var(--text);border-radius:4px;max-width:100%}
+nav a{display:inline-flex;align-items:center;min-height:44px;min-width:44px;margin-right:16px}
+header,main,footer{max-width:640px;margin:0 auto;padding:16px}
+section{margin-bottom:32px}
+.muted{color:#999999;background:#FFFFFF}
+.clickable{display:inline-block;padding:12px 0;color:var(--accent);text-decoration:underline}
+#out,#details,#msg{min-height:1.5em}
+@media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+</style>
+</head>
+<body>
+<header>
+<nav>
+<a href="#features">Features</a>
+<a href="#pricing">Pricing</a>
+</nav>
+</header>
+<main>
+<h1>Osen</h1>
+<p>Fast — and simple</p>
+<p>Осень — приложение для заметок</p>
+<p>10K+ users</p>
+<p class="muted">Sync happens in the background when you are online.</p>
+<p><button type="button" id="start">Get Started</button></p>
+
+<section id="features">
+<h2>Features</h2>
+<p>Write a note and it is saved on your device.</p>
+<p>Search finds a note by any word in it.</p>
+<p>Export gives you plain text files.</p>
+<div class="clickable" onclick="document.getElementById('details').textContent='Details shown'">Show details</div>
+<p id="details"></p>
+</section>
+
+<section id="testimonials">
+<h2>Testimonials</h2>
+<p>[нужны данные: отзывы клиентов]</p>
+</section>
+
+<section id="contact">
+<h2>Contact</h2>
+<form id="form">
+<input type="email" id="email" name="email" placeholder="Email">
+<button type="submit">Subscribe</button>
+</form>
+<p id="msg" role="status"></p>
+</section>
+</main>
+<footer><p>Osen, 2026</p></footer>
+<script>
+document.getElementById('start').addEventListener('click',function(){
+  document.getElementById('features').scrollIntoView();
+});
+document.getElementById('form').addEventListener('submit',function(e){
+  e.preventDefault();
+  document.getElementById('msg').textContent=
+    document.getElementById('email').value.trim()?'Thanks, we will write to you':'Enter your email';
+});
+</script>
+</body>
+</html>
