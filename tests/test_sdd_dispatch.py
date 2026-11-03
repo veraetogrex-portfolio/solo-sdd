@@ -97,21 +97,27 @@ class AcceptTest(Base):
     def test_hostile_inputs_exit2_no_commands(self):
         marker = os.path.join(self.tmp, "ran")
         cases = {
-            "empty": self.status(""),
-            "missing": os.path.join(self.tmp, "нет-такого"),
-            "live no arrow": self.block(live="touch %s" % marker),
-            "live empty text": self.block(live="touch %s -> " % marker),
-            "no worktree dir": self.block(validate="touch " + marker, wt=os.path.join(self.tmp, "нет")),
-            "empty validate": self.block(validate="", live="touch %s -> x" % marker),
-            "empty worktree": self.block(wt="", validate="touch " + marker),
+            "empty": (lambda: self.status(""), "пуст"),
+            "missing": (lambda: os.path.join(self.tmp, "нет-такого"), "не читается"),
+            "live no arrow": (lambda: self.block(live="touch %s" % marker), "' -> '"),
+            "live empty text": (lambda: self.block(live="touch %s -> " % marker), "' -> '"),
+            "no worktree dir": (lambda: self.block(validate="touch " + marker, wt=os.path.join(self.tmp, "нет")), "папки WORKTREE нет"),
+            "empty validate": (lambda: self.block(validate="", live="touch %s -> x" % marker), "поле VALIDATE пусто"),
+            "empty worktree": (lambda: self.block(wt="", validate="touch " + marker), "поле WORKTREE пусто"),
         }
-        for name, path in cases.items():
+        for name, (path, reason) in cases.items():
             with self.subTest(name):
-                r = dispatch(SCRIPT, "accept", path)
+                r = dispatch(SCRIPT, "accept", path())
                 self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
-                self.assertTrue(r.stdout.strip())
+                self.assertIn(reason, r.stdout)
                 self.assertNotIn("Traceback", r.stderr)
                 self.assertFalse(os.path.exists(marker))
+
+    def test_live_exit_code_under_pipe(self):
+        r = dispatch(SCRIPT, "accept", self.block(live="sh -c 'echo ok; exit 1' | cat -> ok"))
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("LIVE", r.stdout)
+        self.assertIn("exit 1", r.stdout)
 
     def test_non_utf8_output(self):
         r = dispatch(SCRIPT, "accept", self.block(live="printf '\\377\\376ok' -> ok"))
@@ -243,11 +249,9 @@ class LandTest(Base):
         check = "if [ -e archive-c.txt ]; then seq 1 30; exit 1; fi"
         r = self.land("--check", check)
         self.assertEqual(r.returncode, 3, r.stdout)
-        self.assertIn("проверка красная с change", r.stdout)
-        self.assertIn(check, r.stdout)
-        self.assertIn("30", r.stdout)
-        self.assertIn("11", r.stdout)
-        self.assertNotIn("\n    10\n", r.stdout)
+        lines = r.stdout.splitlines()
+        i = lines.index("не смёрджен: проверка красная с change: " + check)
+        self.assertEqual(lines[i + 1:], ["    %d" % n for n in range(11, 31)])
         self.assert_rolled_back(head)
         self.assertFalse(os.path.exists(os.path.join(self.main, "archive-c.txt")))
 
@@ -279,7 +283,8 @@ class LandTest(Base):
         pathlib.Path(self.bin, "openspec").write_text("#!/bin/sh\necho invalid spec\nexit 1\n")
         r = self.land()
         self.assertEqual(r.returncode, 4, r.stdout)
-        self.assertIn("openspec validate", r.stdout)
+        self.assertIn("основная красная: openspec validate --all --strict --no-interactive", r.stdout.splitlines())
+        self.assertIn("    invalid spec", r.stdout.splitlines())
 
     def test_missing_branch(self):
         head = g(self.main, "rev-parse", "HEAD")
@@ -296,6 +301,45 @@ class LandTest(Base):
         head = g(self.main, "rev-parse", "HEAD")
         self.assertIn("смёрджен %s, не убрано: remove" % head, r.stdout)
         self.assertTrue(os.path.exists(os.path.join(self.main, "feature.txt")))
+
+    def test_check_exit_code_under_pipe(self):
+        self.make_change(rel="archive-c.txt")
+        self.put(self.tmp, "check.sh", "[ -e archive-c.txt ] && exit 1\nexit 0\n")
+        r = self.land("--check", "sh %s/check.sh | cat" % self.tmp)
+        self.assertEqual(r.returncode, 3, r.stdout)
+
+    def test_rollback_failure_reports_reason_and_stuck_merge(self):
+        self.make_change()
+        script = self.fake_worktree("if sub == 'undo':\n    print('ошибка: undo сломан')\n    sys.exit(1)")
+        check = "seq 1 25; exit 1"
+        r = self.land("--check", check, script=script)
+        self.assertEqual(r.returncode, 1, r.stdout)
+        lines = r.stdout.splitlines()
+        i = lines.index("проверка красная: " + check)
+        self.assertEqual(lines[i + 1:i + 21], ["    %d" % n for n in range(6, 26)])
+        head = g(self.main, "rev-parse", "HEAD")
+        self.assertTrue(lines[-1].startswith("смёрджен %s, откат не удался: undo" % head), lines[-1])
+        self.assertTrue(os.path.exists(self.wt))
+
+    def test_transport_failure_rollback_failure(self):
+        self.make_change()
+        script = self.fake_worktree("if sub == 'transport':\n    print('ошибка: сломано')\n    sys.exit(1)\n"
+                                    "if sub == 'undo':\n    print('ошибка: undo сломан')\n    sys.exit(1)")
+        r = self.land(script=script)
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("не смёрджен: transport", r.stdout)
+        self.assertIn("откат не удался: undo", r.stdout)
+
+    def test_branch_delete_failure_keeps_merge(self):
+        self.make_change()
+        script = self.fake_worktree(
+            "if sub == 'remove':\n    subprocess.run(['git', '-C', sys.argv[3], '-c', 'user.name=t', '-c', 'user.email=t@t',"
+            " 'commit', '-q', '--allow-empty', '-m', 'late'])")
+        r = self.land(script=script)
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        head = g(self.main, "rev-parse", "HEAD")
+        self.assertIn("смёрджен %s, не убрано: branch -d" % head, r.stdout)
+        self.assertEqual(len(g(self.main, "rev-list", "--parents", "-n", "1", "HEAD").split()), 3)
 
     def test_usage(self):
         r = dispatch(SCRIPT, "land-local", self.main)

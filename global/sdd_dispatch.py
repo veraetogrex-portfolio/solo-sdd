@@ -15,8 +15,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 
 
 def run(cmd, cwd=None, shell=False):
-    """Вывод stdout+stderr вместе, код выхода снимается у самой команды."""
-    p = subprocess.run(cmd, shell=shell, cwd=cwd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    """Вывод stdout+stderr вместе, код выхода снимается у самой команды; shell: bash с pipefail."""
+    if shell:
+        cmd = ["bash", "-o", "pipefail", "-c", cmd]
+    p = subprocess.run(cmd, cwd=cwd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     return p.returncode, p.stdout.decode("utf-8", "replace")
 
 
@@ -30,7 +32,7 @@ def tail(text, n):
 
 
 def field(text, name):
-    m = re.search(r"^[ \t]*%s:[ \t]*(.*?)[ \t]*$" % name, text, re.M)
+    m = re.search(r"^[ \t]*%s:[ \t]*(.*?)[ \t\r]*$" % name, text, re.M)
     return m.group(1) if m else ""
 
 
@@ -110,6 +112,11 @@ def rollback(main, wt, prev):
     return ""
 
 
+def stuck(main, err):
+    print("смёрджен %s, откат не удался: %s" % (git(main, "rev-parse", "HEAD").stdout.strip(), err))
+    return 1
+
+
 def land_local(main, wt, cid, checks):
     main, wt = os.path.abspath(main), os.path.abspath(wt)
     branch = "change/" + cid
@@ -131,27 +138,27 @@ def land_local(main, wt, cid, checks):
     code, out = wt_run("transport", main, wt)
     if code:
         if code == 3:
+            m = re.search(r"конфликт, MAIN не изменён: (.*)", out)
+            reason, rc = "не смёрджен: конфликт переноса: " + (m.group(1).strip() if m else ""), 6
             r = git(main, "reset", "--keep", prev)  # при конфликте transport MAIN не менял
             err = "reset: " + r.stderr.strip() if r.returncode else ""
         else:
+            reason, rc = "не смёрджен: transport: " + out.strip(), 1
             err = rollback(main, wt, prev)
+        print(reason)
         if err:
-            print("не смёрджен: " + err)
-            return 1
-        if code == 3:
-            m = re.search(r"конфликт, MAIN не изменён: (.*)", out)
-            print("не смёрджен: конфликт переноса: " + (m.group(1).strip() if m else ""))
-            return 6
-        print("не смёрджен: transport: " + out.strip())
-        return 1
+            return stuck(main, err)
+        return rc
     for cmd in checks + [VALIDATE_CMD]:
         code, out = run(cmd, main, True)
         if not code:
             continue
         err = rollback(main, wt, prev)
         if err:
-            print("не смёрджен: " + err)
-            return 1
+            print("проверка красная: " + cmd)
+            for l in tail(out, 20):
+                print("    " + l)
+            return stuck(main, err)
         code2, out2 = run(cmd, main, True)
         if code2:
             print("основная красная: " + cmd)
