@@ -64,6 +64,7 @@ pipx install git+https://github.com/veraetogrex-portfolio/solo-sdd
 | `global/sdd_worktree.py` (Подготовка worktree для `spec-dispatch`: `setup` копирует игнорируемые git `openspec/`, `AGENTS.md`, пути раздела «Рабочая копия» и отдельно игнорируемые документы проекта, ставит ссылки на `node_modules` и `.venv`; `transport` переносит их обратно трёхсторонним слиянием, `undo` отменяет перенос, `remove` убирает worktree, `discard` убирает worktree без своих коммитов вместе с веткой после неудачной подготовки) | `~/.local/bin/sdd-worktree.py` |
 | `global/sdd_dispatch_plan.py` (Очередь для `spec-dispatch`: считает готовые открытые change (нет `CLAIM`, `WAITING`, ветки `change/<id>`, папка change закоммичена, зависимости в архиве), порядок по критическому пути и жёсткие конфликты по требованиям и файлам `Impact`, кроме общих путей; выдаёт, кого запустить, кто ждёт и какие пары идут вместе при общем пути; печатает, какие из `openspec/`, `AGENTS.md`, `CLAUDE.md` игнорируются git) | `~/.local/bin/sdd-dispatch-plan.py` |
 | `global/sdd_pr.py` (PR для `spec-dispatch`: `open` пушит ветку worktree и открывает PR (или берёт уже открытый), `wait` ждёт CI и отвечает `green`, `red` или `infra` с хвостом журнала, `merge` сливает PR запросом REST API по хешу проверенного коммита после сверки проверок) | `~/.local/bin/sdd-pr.py` |
+| `global/sdd_dispatch.py` (Механика `spec-dispatch`: `accept` разбирает блок статуса, выполняет команды `VALIDATE` и `LIVE` в worktree и сверяет коды и вывод, `TESTS` не запускает; `land-local` в режиме `local` проверяет чистоту основной папки, делает merge `--no-ff`, перенос, проверки, откат с повтором упавшей на основной и уборку) | `~/.local/bin/sdd-dispatch.py` |
 | `schema/openspec-after-update.py` (сборка схемы `solo`, правила в скиллах OpenSpec, вызов `sync.py`) | `~/.local/bin/openspec-after-update.py` |
 | `schema/test_openspec_after_update.py` (его тест) | `~/.local/bin/test_openspec_after_update.py` |
 
@@ -117,6 +118,7 @@ python3 tests/test_work_hooks.py
 python3 tests/test_sdd_worktree.py
 python3 tests/test_sdd_dispatch_plan.py
 python3 tests/test_sdd_pr.py
+python3 tests/test_sdd_dispatch.py
 python3 tests/test_public_tree.py
 python3 tests/test_init.py
 ```
