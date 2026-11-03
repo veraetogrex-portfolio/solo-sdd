@@ -147,7 +147,8 @@ class LandTest(Base):
         fake = os.path.join(self.bin, "openspec")
         pathlib.Path(fake).write_text("#!/bin/sh\nexit 0\n")
         os.chmod(fake, 0o755)
-        self.env = dict(os.environ, PATH=self.bin + os.pathsep + os.environ["PATH"])
+        self.env = dict(os.environ, PATH=self.bin + os.pathsep + os.environ["PATH"],  # merge-коммит скрипта: на CI нет глобальной git-идентичности
+                        GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
         os.makedirs(self.main)
         g(self.main, "init", "-q", "-b", "main")
         self.put(self.main, "README.md", "base\n")
