@@ -115,6 +115,28 @@ class SyncTest(unittest.TestCase):
         self.assertEqual(self.text(self.home_path(".agents/skills/alpha/SKILL.md")), "alpha improved by codex\n")
         self.assertEqual(self.kinds(), ["ok", "ok", "ok"])
 
+    def test_algorithm_and_templates_folder(self):
+        self.put("ALGORITHM.md", "алгоритм\n")
+        os.makedirs(os.path.join(self.repo, "templates", "openspec"))
+        self.put("templates/openspec/config.yaml", "schema: solo\n")
+        self.put("templates/.hidden", "x\n")
+        self.put("targets.json", json.dumps({
+            "roots": {}, "skills": {},
+            "files": {"ALGORITHM.md": ["~/.local/share/solo-sdd/ALGORITHM.md"],
+                      "templates/**": ["~/.local/share/solo-sdd/templates/"]},
+        }))
+        self.assertEqual(self.run_sync("push")[0], 0)
+        algo = self.home_path(".local/share/solo-sdd/ALGORITHM.md")
+        cfg = self.home_path(".local/share/solo-sdd/templates/openspec/config.yaml")
+        self.assertEqual(self.text(algo), "алгоритм\n")
+        self.assertEqual(self.text(cfg), "schema: solo\n")
+        self.assertFalse(os.path.exists(self.home_path(".local/share/solo-sdd/templates/.hidden")))
+        with open(cfg, "w") as f:
+            f.write("edited\n")
+        self.assertEqual(self.kinds(), ["ok", "drift"])
+        self.assertEqual(self.run_sync("push")[0], 1)
+        self.assertEqual(self.text(cfg), "edited\n", "правку шаблона на месте затёрли")
+
     def test_first_adoption_keeps_backup(self):
         os.makedirs(self.home_path(".agents/skills/alpha"))
         with open(self.home_path(".agents/skills/alpha/SKILL.md"), "w") as f:

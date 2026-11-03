@@ -24,6 +24,7 @@
 ```bash
 pip install git+https://github.com/veraetogrex-portfolio/solo-sdd
 uv tool install git+https://github.com/veraetogrex-portfolio/solo-sdd
+pipx install git+https://github.com/veraetogrex-portfolio/solo-sdd
 ```
 
 Из клона работает то же без установки: `python3 -m solo_sdd <команда>`. Клон остаётся способом разработки, `sync.py` работает как раньше.
@@ -31,6 +32,7 @@ uv tool install git+https://github.com/veraetogrex-portfolio/solo-sdd
 | Команда | Что делает |
 |---|---|
 | `solo-sdd install [--hooks]` | Раскладывает скиллы и правила, собирает схему `solo`; с `--hooks` подключает хуки в `~/.claude/settings.json` |
+| `solo-sdd init [папка]` | В git-репозитории проекта выполняет `openspec init`, кладёт конфиг со схемой `solo`, `openspec/analyze.md`, `docs/waiting.md`; повтор ничего не меняет, свой конфиг не трогает |
 | `solo-sdd status` | Показывает состояние каждой копии |
 | `solo-sdd update` | Повторяет раскладку и сборку схемы, подсказывает, как обновить пакет |
 | `solo-sdd doctor` | Проверяет окружение: python, `openspec`, схему, копии, хуки, глубину субагентов, `gh` |
@@ -54,6 +56,8 @@ uv tool install git+https://github.com/veraetogrex-portfolio/solo-sdd
 | `skills/codex-orchestration/SKILL.md` | `~/.agents/skills`, `~/.claude/skills` |
 | `skills/spec-dispatch/SKILL.md` (раздача change Opus-оркестраторам, только Claude Code) | `~/.claude/skills` |
 | `global/AGENTS.md` (глобальные правила обоих агентов, блоком) | `~/AGENTS.md`, `~/.codex/AGENTS.md`, `~/.claude/CLAUDE.md` |
+| `ALGORITHM.md` | `~/.local/share/solo-sdd/ALGORITHM.md` |
+| `templates/` (`openspec/config.yaml`, `openspec/analyze.md`, `docs/waiting.md`, `DESIGN.md`) | `~/.local/share/solo-sdd/templates/` |
 | `pyproject.toml`, `solo_sdd/` (команда `solo-sdd`; логика раскладки в `solo_sdd/layout.py`, `sync.py` — обёртка) | не раскладываются, ставятся пакетом |
 | `global/process-guard.py` (хук запрета прямой остановки процессов) | `~/.claude/hooks/process-guard.py` |
 | `global/work_hooks.py`, `global/model-policy.json` (хуки рабочего процесса и политика моделей) | `~/.claude/hooks/` |
@@ -65,11 +69,14 @@ uv tool install git+https://github.com/veraetogrex-portfolio/solo-sdd
 
 Вручную запускается `global/work_hooks_settings.py`: он подключает хуки в `~/.claude/settings.json` и ставит глубину субагентов 2 (`env.CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH`; заданное вами значение не меняет), а в `autoMode.allow` держит одно правило о merge своих PR (`sdd-pr.py merge`, `land`, `gh pr merge` из `/ship`) и обновлении ветки change: повторный запуск заменяет его по постоянному префиксу. `sync.py` настройки не трогает.
 
-Не раскладываются, лежат в репозитории: `templates/` (`openspec/config.yaml`, `openspec/analyze.md`, `docs/waiting.md`, `DESIGN.md` для нового проекта; копируются вручную или скиллом `project-init`), `tests/` (`tests/stands/` — стенды живых сценариев), `scripts/publish-first.sh` (первая публикация, разовый), `.github/workflows/test.yml` (CI). `AGENTS.md` и `CLAUDE.md` в корне — внутренняя работа над самим solo-sdd; `openspec/` и `docs/waiting.md` лежат только в рабочей папке автора и в репозиторий не входят.
+Шаблоны нового проекта раскладываются в `~/.local/share/solo-sdd/templates/`; `solo-sdd init` берёт их из пакета. Не раскладываются, лежат в репозитории: `tests/` (`tests/stands/` — стенды живых сценариев), `scripts/publish-first.sh` (первая публикация, разовый), `.github/workflows/test.yml` (CI). `AGENTS.md` и `CLAUDE.md` в корне — внутренняя работа над самим solo-sdd; `openspec/` и `docs/waiting.md` лежат только в рабочей папке автора и в репозиторий не входят.
 
-## Первый шаг в проекте
+## Первый проект
 
-В папке своего проекта запустите `/project-init`, затем `/spec-plan` (план в очередь маленьких change) и `/spec-next` (реализация change от выбора до архива).
+1. В git-репозитории проекта выполните `solo-sdd init`.
+2. В Claude Code или Codex запустите `/project-init`: правила проекта, `AGENTS.md`, `.env.example`.
+3. `/spec-plan` — план в очередь маленьких change.
+4. `/spec-next` — реализация change от выбора до архива.
 
 Алгоритм целиком — [ALGORITHM.md](ALGORITHM.md). Уроки, из которых выросли правила, — [LESSONS.md](LESSONS.md). Что взято у OpenSpec, Spec Kit, Kiro и GSD 2 и что нет — [SOURCES.md](SOURCES.md).
 
@@ -111,6 +118,7 @@ python3 tests/test_sdd_worktree.py
 python3 tests/test_sdd_dispatch_plan.py
 python3 tests/test_sdd_pr.py
 python3 tests/test_public_tree.py
+python3 tests/test_init.py
 ```
 
 ## Хуки рабочего процесса Claude Code

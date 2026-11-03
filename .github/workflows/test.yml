@@ -23,3 +23,9 @@ jobs:
       - name: Run tests
         run: |
           for t in tests/test_*.py schema/test_*.py; do echo "== $t"; /usr/bin/python3 "$t" < /dev/null || exit 1; done
+      - name: Wheel install smoke
+        run: |
+          /usr/bin/python3 -m pip wheel . --no-deps -w dist
+          /usr/bin/python3 -m venv "$RUNNER_TEMP/wheelenv"
+          "$RUNNER_TEMP/wheelenv/bin/pip" install dist/solo_sdd-*.whl
+          "$RUNNER_TEMP/wheelenv/bin/solo-sdd" --version
