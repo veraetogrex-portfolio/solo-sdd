@@ -132,6 +132,17 @@ class RejectTests(unittest.TestCase):
         self.assertIn("oracle", r.stderr)
         self.assertFalse((e.root / "out").exists())
 
+    def test_oracle_only_deletes_test(self):
+        e = make_env(self)
+        git(e.proj, "rm", "-q", "x0.test.js")
+        git(e.proj, "commit", "-qm", "delete")
+        e.write_set(changes=[{"id": c, "oracle": git(e.proj, "rev-parse", "HEAD") if c == IDS[0] else o}
+                             for c, o in e.oracles.items()])
+        r = e.setup()
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("оракул без тестов: " + IDS[0], r.stderr)
+        self.assertFalse((e.root / "out").exists())
+
     def test_not_in_archive(self):
         e = make_env(self)
         shutil.rmtree(e.arch(IDS[2]))
@@ -239,6 +250,19 @@ class CopyTests(unittest.TestCase):
         self.assertEqual((c / "openspec/specs/cap/spec.md").read_text(encoding="utf-8"), SPEC_CAP)
         self.assertEqual(json.loads((c / ".sdd-eval").read_text(encoding="utf-8"))["spec_notes"], [line])
 
+    def test_removed_renamed_noted(self):
+        e = make_env(self)
+        e.delta(IDS[0], "## REMOVED Requirements\n\n### Requirement: B\n\n## RENAMED Requirements\n\n"
+                        "- FROM: `### Requirement: C`\n- TO: `### Requirement: C2`\n")
+        r = e.setup()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        lines = ["спека после изменения: %s %s" % (IDS[0], n) for n in ("B", "C", "C2")]
+        c = e.root / "out" / IDS[0]
+        for ln in lines:
+            self.assertIn(ln, r.stdout.splitlines())
+        self.assertEqual(json.loads((c / ".sdd-eval").read_text(encoding="utf-8"))["spec_notes"], lines)
+        self.assertEqual((c / "openspec/specs/cap/spec.md").read_text(encoding="utf-8"), SPEC_CAP)
+
     def test_dependencies(self):
         e = make_env(self)
         r = e.setup()
@@ -338,6 +362,13 @@ class ReplayCopyProperties(unittest.TestCase):
 
 FAKE_CLAUDE = """#!/bin/sh
 echo "$@" >> "$FAKE_COUNT"
+if [ -n "$FAKE_PAR" ]; then
+  mkdir "$FAKE_PAR/run.$$"
+  n=$(ls "$FAKE_PAR" | grep -c '^run\\.')
+  echo "$n" >> "$FAKE_PAR/seen"
+  sleep 0.3
+  rmdir "$FAKE_PAR/run.$$"
+fi
 case "$(cat mode)" in
  fail) exit 1;;
  nocommit) exit 0;;
@@ -380,8 +411,10 @@ class RunTests(unittest.TestCase):
         self.folder = self.root / "copies"
         self.folder.mkdir()
 
-    def run_cmd(self, *args, path=None):
+    def run_cmd(self, *args, path=None, par=None):
         env = dict(os.environ, FAKE_COUNT=str(self.count), PATH=path or "%s:/usr/bin:/bin" % self.bin)
+        if par:
+            env["FAKE_PAR"] = str(par)
         return subprocess.run(["/usr/bin/python3", str(SCRIPT), "run", str(self.folder)] + list(args),
                               capture_output=True, text=True, timeout=120, stdin=subprocess.DEVNULL, env=env)
 
@@ -433,6 +466,31 @@ class RunTests(unittest.TestCase):
         self.assertEqual(j["dispatcher_model"], "haiku")
         self.assertEqual({v["status"] for v in j["copies"].values()}, {"смёрджен"})
         self.assertIn("завершено 5 из 5", r.stdout)
+
+    def max_parallel(self, n):
+        for i in range(6):
+            make_copy(self.folder, "c%d" % i, "merge")
+        par = self.root / "par"
+        par.mkdir()
+        r = self.run_cmd("--label", "L1", "--parallel", str(n), par=par)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return max(int(x) for x in (par / "seen").read_text().split())
+
+    def test_parallel_limit(self):
+        self.assertEqual(self.max_parallel(1), 1)
+
+    def test_parallel_three(self):
+        self.assertTrue(1 < self.max_parallel(3) <= 3)
+
+    def test_claude_not_executable(self):
+        (self.bin / "claude").chmod(0o644)
+        make_copy(self.folder, "c1", "merge")
+        make_copy(self.folder, "c2", "merge")
+        r = self.run_cmd("--label", "L1")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(sorted(self.journal()["copies"]), ["c1", "c2"])
+        for v in self.journal()["copies"].values():
+            self.assertEqual((v["exit"], v["status"]), (127, "не завершён"))
 
     def test_no_claude(self):
         make_copy(self.folder, "c1", "merge")
@@ -516,11 +574,14 @@ class MetricsSession(unittest.TestCase):
     def set_prices(self, d):
         self.prices.write_text(json.dumps(d))
 
-    def hand(self, sid="hand"):
-        (self.proj / (sid + ".jsonl")).write_text(main_log(), encoding="utf-8")
+    def hand(self, sid="hand", big=False):
+        extra = L(DAY + "10:30:00.000Z", "msg_big", OP, read=6000000) + "\n" if big else ""
+        (self.proj / (sid + ".jsonl")).write_text(main_log() + extra, encoding="utf-8")
         sub = self.proj / sid / "subagents"
         sub.mkdir(parents=True)
         for n, desc, body in (("agent-1", "Implement: a", SUB_IMPL), ("agent-2", "Explore b", SUB_GEN)):
+            if big and n == "agent-1":
+                body += L(DAY + "10:30:00.000Z", "msg_big2", SN, read=3000000) + "\n"
             (sub / (n + ".jsonl")).write_text(body, encoding="utf-8")
             (sub / (n + ".meta.json")).write_text(json.dumps({"description": desc}))
 
@@ -570,14 +631,15 @@ class MetricsSession(unittest.TestCase):
         self.assertAlmostEqual(self.load()["cost_usd"], (2284 + 948 * 20 + 15350) / 1e6, places=12)
 
     def test_cli_session(self):
-        self.hand()
+        self.hand(big=True)
         r = self.metrics("--session", "hand", "--prices", str(self.prices))
         self.assertEqual(r.returncode, 0, r.stderr)
+        # диспетчер 1211 + 6 000 000, исполнитель 455 + 3 000 000; делим на 3 мёрджа
         self.assertEqual(r.stdout.splitlines(), [
             "смёрджено: 3", "время: 3.00 ч",
-            "dispatcher/%s: 0.00M на change" % OP, "implement/%s: 0.00M на change" % SN,
+            "dispatcher/%s: 2.00M на change" % OP, "implement/%s: 1.00M на change" % SN,
             "агенты: orchestrator 0, implement 1, general 1, review 0",
-            "возвраты: 2, отклонённых статусов: 1", "стоимость: $0.02 (cost-state $2.50)"])
+            "возвраты: 2, отклонённых статусов: 1", "стоимость: $1.52 (cost-state $2.50)"])
 
     def test_fixture(self):
         shutil.copy(FIX / "fixture-session.jsonl", self.proj)
@@ -585,7 +647,7 @@ class MetricsSession(unittest.TestCase):
         r = self.metrics("--session", "fixture-session", "--prices", str(ROOT / "tests/eval/prices.json"))
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn("смёрджено: 1", r.stdout)
-        self.assertIn("время: 0.", r.stdout)
+        self.assertIn("\nвремя: 0.47 ч\n", "\n" + r.stdout)  # 20:02:00 -> 20:30:00 = 28 мин
         self.assertIn("агенты: orchestrator 1, implement 1, general 0, review 1", r.stdout)
         self.assertIn("возвраты: 1, отклонённых статусов: 1", r.stdout)
         self.assertIn("(cost-state $1.50)", r.stdout)
@@ -637,6 +699,12 @@ class MetricsProperties(unittest.TestCase):
         want = ev.usage_by_message(FIX_LINES)
         self.assertTrue(want)
         self.assertEqual(ev.usage_by_message(list(perm) + [FIX_LINES[i] for i in extra]), want)
+
+    def test_metrics_null_counter_is_zero(self):
+        got = ev.usage_by_message([L("t", "m", OP, inp=None, out=5), L("t", "m", OP, inp=7, out=None, read=None)])
+        self.assertEqual((got["m"]["input"], got["m"]["output"], got["m"]["cache_read"]), (7, 5, 0))
+        got = ev.usage_by_message([L("t", "m", OP, inp=None), L("t", "m", OP, inp=3)])
+        self.assertEqual(got["m"]["input"], 3)
 
     def test_metrics_one_method_max_not_sum(self):
         got = ev.usage_by_message([L("t", "m", OP, out=5), L("t", "m", OP, out=20), L("t", "m", OP, out=20)])
@@ -838,6 +906,24 @@ class CompareTests(unittest.TestCase):
         r = e.compare(e.E, ["p1", "p2"], ["q1", "q2"])
         self.assertTrue(r.stdout.endswith("Спека после изменения:\n- спека после изменения: c1 Alpha\n"
                                           "- спека после изменения: c1 Zeta\n"), r.stdout)
+
+    def test_spec_notes_from_unfinished_copy(self):
+        e = cmp_env(self)
+        for lb in ("p1", "p2"):
+            e.label(e.E, lb, {"c1": "none", "c2": "good"}, notes=["спека после изменения: c1 Beta"])
+        for lb in ("q1", "q2"):
+            e.label(e.E, lb, G)
+        r = e.compare(e.E, ["p1", "p2"], ["q1", "q2"])
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("- спека после изменения: c1 Beta", r.stdout.splitlines())
+
+    def test_oracle_run_no_files(self):
+        e = cmp_env(self)
+        f = e.label(e.E, "p1", {"c3": "good"})
+        meta = json.loads((f / "c3/.sdd-eval").read_text())
+        self.assertEqual(ev.oracle_tests(meta["project"], meta["oracle"], meta["tests"]), [])
+        o = ev.oracle_run(str(f / "c3"), meta, 60)
+        self.assertEqual((o["green"], o["failed"]), (False, ["нет файлов оракула"]))
 
     def test_no_spec_block_without_notes(self):
         e, out = self.mk({"p1": G, "p2": G}, {"q1": G, "q2": G})

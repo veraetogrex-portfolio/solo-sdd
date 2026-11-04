@@ -85,7 +85,9 @@ def oracle_files(project, oracle):
 
 
 def oracle_tests(project, oracle, patterns):
-    return [f for f in oracle_files(project, oracle) if is_test_file(f, patterns)]
+    """Тестовые файлы оракула; удалённые в нём (нет «<oracle>:<путь>») не считаются."""
+    return [f for f in oracle_files(project, oracle) if is_test_file(f, patterns)
+            and sh(["git", "-C", project, "cat-file", "-e", "%s:%s" % (oracle, f)]).returncode == 0]
 
 
 def copies(folder):
@@ -358,7 +360,7 @@ def run_copy(copy, folder, label, model):
             code = subprocess.run(["claude", "-p", "/spec-dispatch", "--model", model, "--session-id", sid],
                                   cwd=copy, stdin=subprocess.DEVNULL, stdout=f,
                                   stderr=subprocess.STDOUT).returncode
-    except FileNotFoundError:
+    except OSError:
         code = 127
     done = code == 0 and is_merged(copy, meta)
     return meta, {"session": sid, "start": start, "end": now(), "exit": code,
@@ -429,13 +431,13 @@ def usage_by_message(lines):
             cc = u.get("cache_creation")
             c5, c1 = ((cc.get("ephemeral_5m_input_tokens", 0), cc.get("ephemeral_1h_input_tokens", 0))
                       if isinstance(cc, dict) else (u.get("cache_creation_input_tokens", 0), 0))
-            row = dict(zip(COUNTERS, (u.get("input_tokens", 0), c5, c1,
-                                      u.get("cache_read_input_tokens", 0), u.get("output_tokens", 0))))
+            row = dict(zip(COUNTERS, (u.get("input_tokens") or 0, c5 or 0, c1 or 0,
+                                      u.get("cache_read_input_tokens") or 0, u.get("output_tokens") or 0)))
         except (ValueError, KeyError, TypeError, AttributeError):
             continue
         cur = out.setdefault(mid, dict(row, model=m.get("model")))
         for k in COUNTERS:
-            cur[k] = max(cur[k], row[k] or 0)
+            cur[k] = max(cur[k], row[k])
     return out
 
 
@@ -708,8 +710,7 @@ def worktree_script():
 def oracle_run(copy, meta, timeout):
     """Тесты оракула на результате копии: {"green", "failed", "output_tail"}."""
     project, oracle = meta["project"], meta["oracle"]
-    files = [f for f in oracle_tests(project, oracle, meta["tests"])
-             if sh(["git", "-C", project, "cat-file", "-e", "%s:%s" % (oracle, f)]).returncode == 0]
+    files = oracle_tests(project, oracle, meta["tests"])
     if not files:
         return {"green": False, "failed": ["нет файлов оракула"], "output_tail": ""}
     cmd = test_command(copy)
@@ -791,11 +792,12 @@ def cmd_compare(a):
             mets[lb] = {"copies": {}}
         for cid, rec in sorted(runs[lb]["copies"].items()):
             copy = os.path.join(home[lb], cid)
+            mp = os.path.join(copy, ".sdd-eval")
+            meta = read_json(mp) if os.path.isfile(mp) else {}
+            notes.update(meta.get("spec_notes", []))
             if rec["status"] != "смёрджен":
                 res[lb, cid] = {"done": False, "text": "не смёрджен", "failed": None}
                 continue
-            meta = read_json(os.path.join(copy, ".sdd-eval"))
-            notes.update(meta.get("spec_notes", []))
             o = oracle_run(copy, meta, a.timeout)
             res[lb, cid] = {"done": o["green"], "failed": o["failed"],
                             "text": "выполнен" if o["green"] else "смёрджен, оракул красный: " + ", ".join(o["failed"])}
