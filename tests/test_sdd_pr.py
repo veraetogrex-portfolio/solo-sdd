@@ -1,5 +1,6 @@
 """Проверка sdd_pr.py: open, wait, merge на подмене gh и git (первыми в PATH)."""
 import importlib.util
+import io
 import json
 import os
 import pathlib
@@ -7,6 +8,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest import mock
 
@@ -273,6 +275,15 @@ class RequiredChecks(Base):
 
     def test_no_checks_at_all_names_required(self):  # упавшего прогона нет: диспетчеру нужно имя, а не «нет проверок»
         self.assert_stuck(self.wait(self.env(rules_json=RULES), timeout="0.2", stuck="300"))
+
+    def test_no_checks_waits_stuck_limit(self):  # с обязательными пустой список ждёт срок застрявшей, а не 180 с
+        with mock.patch.object(sp, "NO_CHECKS_SEC", 0.05), mock.patch.object(sp, "checks", return_value=[]), \
+                mock.patch.object(sp, "required_checks", return_value={TITLE}), \
+                mock.patch("sys.stdout", new_callable=io.StringIO) as out:
+            t = time.monotonic()
+            code = sp.cmd_wait(URL, 5, 0.02, 0.4)
+        self.assertEqual((code, out.getvalue().splitlines()[1]), (4, STUCK_LINE))
+        self.assertGreaterEqual(time.monotonic() - t, 0.4)
 
     def test_default_limits(self):
         with mock.patch.object(sp, "cmd_wait") as w:

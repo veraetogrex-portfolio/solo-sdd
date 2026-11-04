@@ -152,7 +152,7 @@ def cmd_wait(url, timeout, interval, limit=STUCK_SEC):
             print(head + ("red" if test else "infra"))
             print("\n".join(lines))
             return 3 if test else 4
-        if verdict == "stuck" or elapsed >= timeout or (not rows and elapsed >= min(NO_CHECKS_SEC, timeout)):
+        if verdict == "stuck" or elapsed >= timeout or (not rows and not required and elapsed >= min(NO_CHECKS_SEC, timeout)):
             print(head + "infra")
             print("\n".join(f"не стартовала обязательная проверка {x}" for x in stuck)
                   or ("нет проверок" if not rows else "timeout: проверки не завершились"))
