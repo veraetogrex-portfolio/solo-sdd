@@ -144,6 +144,10 @@ class Contents(unittest.TestCase):
         files = [f["path"] for f in json.loads(p.stdout)[0]["files"]]
         for need in MUST:
             self.assertTrue(any(f == need or f.startswith(need) for f in files), need)
+        sys.path.insert(0, REPO)
+        from solo_sdd import layout
+        laid_out = {os.path.relpath(source, REPO) for _, source, _, _ in layout.pairs()}
+        self.assertEqual(sorted(laid_out - set(files)), [], "в пакете нет файлов, которые раскладывает install")
         for bad in NEVER:
             self.assertEqual([f for f in files if f.startswith(bad)], [], bad)
         if shutil.which("git") and os.path.exists(os.path.join(REPO, ".git")):

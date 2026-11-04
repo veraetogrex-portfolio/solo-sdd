@@ -27,7 +27,6 @@
     "README.md",
     "!**/__pycache__/",
     "!skills/model-council/",
-    "!global/claude-*",
-    "!**/test_*.py"
+    "!global/claude-*"
   ]
 }
