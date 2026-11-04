@@ -1,4 +1,6 @@
 """Проверка sdd_pr.py: open, wait, merge на подмене gh и git (первыми в PATH)."""
+import importlib.util
+import io
 import json
 import os
 import pathlib
@@ -6,10 +8,17 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
+from unittest import mock
+
+from hypothesis import given, settings, strategies as st
 
 SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "global/sdd_pr.py"
 URL = "https://github.com/o/r/pull/7"
+_spec = importlib.util.spec_from_file_location("sdd_pr", SCRIPT)
+sp = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(sp)
 
 STUB = f"""#!{sys.executable}
 import json, os, sys
@@ -55,6 +64,13 @@ elif a[:2] == ["pr", "view"]:
     open(d + "/vn", "w").write(str(n + 1))
     print(json.dumps(seq[min(n, len(seq) - 1)]))
 elif a[:1] == ["api"]:
+    if "/branches/" in a[1]:
+        f = d + ("/rules" if "/rules/" in a[1] else "/branch")
+        if os.path.exists(f + "fail.txt"):
+            sys.stderr.write("gh: Forbidden (HTTP 403)\\n")
+            sys.exit(1)
+        print(open(f + ".json").read() if os.path.exists(f + ".json") else "[]" if "/rules/" in a[1] else "{{}}")
+        sys.exit(0)
     if a[1:3] in (["-X", "PUT"], ["-X", "DELETE"]):
         m = sc("merge.json" if a[2] == "PUT" else "delete.json", {{"code": 0, "err": ""}})
         sys.stderr.write(m["err"])
@@ -66,8 +82,8 @@ elif a[:2] == ["pr", "merge"]:
 """
 
 
-def chk(bucket, link=""):
-    return {"name": "t", "state": bucket.upper(), "bucket": bucket, "link": link}
+def chk(bucket, link="", name="t", state=None):
+    return {"name": name, "state": state or bucket.upper(), "bucket": bucket, "link": link}
 
 
 LINK = "https://github.com/o/r/actions/runs/555/job/9"
@@ -136,7 +152,7 @@ class Wait(Base):
 
     def test_green(self):
         e = self.env(checks_json=[[chk("pending")], [chk("pass"), chk("skipping")]])
-        r = self.wait(e)
+        r = self.wait(e, timeout="10")  # итог приходит на втором опросе; запас на медленный запуск подмены
         self.assertEqual((r.returncode, r.stdout.strip()), (0, f"PR #7 {URL} CI: green"))
         self.assertEqual(e.calls("gh", "pr", "checks")[0][3], URL)
 
@@ -186,6 +202,159 @@ class Wait(Base):
     def test_infra_timeout_pending(self):
         r = self.wait(self.env(checks_json=[[chk("pending")]]), timeout="0.3")
         self.assertEqual(r.returncode, 4)
+
+
+TITLE = "PR title"
+RULES = [{"type": "update", "ruleset_id": 1},
+         {"type": "required_status_checks", "ruleset_id": 2,
+          "parameters": {"strict_required_status_checks_policy": False,
+                         "required_status_checks": [{"context": TITLE, "integration_id": 15368}]}}]
+STUCK_LINE = f"не стартовала обязательная проверка {TITLE}"
+WARNING = "предупреждение: правила ветки не прочитались, обязательные проверки не сверены"
+DONE = chk("pass", name="Checks")
+
+
+class RequiredChecks(Base):
+    def wait(self, e, timeout="5", stuck="0.2"):
+        return e.run("wait", URL, "--timeout", timeout, "--interval", "0.05", "--stuck", stuck)
+
+    def assert_stuck(self, r):
+        self.assertEqual((r.returncode, r.stdout.splitlines()),
+                         (4, [f"PR #7 {URL} CI: infra", STUCK_LINE]), r.stderr)
+
+    def assert_warned_green(self, r, msg=None):
+        self.assertEqual((r.returncode, r.stdout.strip()), (0, f"PR #7 {URL} CI: green"), msg)
+        self.assertEqual(r.stderr.strip(), WARNING, msg)
+
+    def test_stuck_pending(self):
+        self.assert_stuck(self.wait(self.env(rules_json=RULES, checks_json=[[DONE, chk("pending", name=TITLE, state="QUEUED")]])))
+
+    def test_missing(self):  # на прежнем коде green
+        self.assert_stuck(self.wait(self.env(rules_json=RULES, checks_json=[[DONE]])))
+
+    def test_missing_classic(self):
+        e = self.env(branch_json={"protected": True, "protection": {"required_status_checks": {"contexts": [TITLE], "checks": []}}},
+                     checks_json=[[DONE]])
+        self.assert_stuck(self.wait(e))
+        self.assertFalse([c for c in e.calls("gh", "api") if "/protection" in c[2]])  # 404 и права администратора
+
+    def test_missing_classic_checks_field(self):
+        e = self.env(branch_json={"protection": {"required_status_checks": {"checks": [{"context": TITLE, "app_id": None}]}}},
+                     checks_json=[[DONE]])
+        self.assert_stuck(self.wait(e))
+
+    def test_arrives_in_time(self):
+        e = self.env(rules_json=RULES, checks_json=[[DONE], [DONE, chk("pass", name=TITLE)]])
+        r = self.wait(e, stuck="2")
+        self.assertEqual((r.returncode, r.stderr), (0, ""), r.stdout)
+        self.assertEqual(len(e.calls("gh", "api")), 2)  # правила читаются один раз за ожидание
+
+    def test_required_skipping_is_green(self):
+        r = self.wait(self.env(rules_json=RULES, checks_json=[[DONE, chk("skipping", name=TITLE)]]))
+        self.assertEqual(r.returncode, 0, r.stdout)
+
+    def test_running_is_not_stuck(self):
+        running = [DONE, chk("pending", name=TITLE, state="IN_PROGRESS")]
+        e = self.env(rules_json=RULES, checks_json=[running] * 8 + [[DONE, chk("pass", name=TITLE)]])
+        r = self.wait(e, stuck="0.05")
+        self.assertEqual(r.returncode, 0, r.stdout)
+
+    def test_running_hits_timeout_only(self):
+        e = self.env(rules_json=RULES, checks_json=[[DONE, chk("pending", name=TITLE, state="IN_PROGRESS")]])
+        r = self.wait(e, timeout="0.4", stuck="0.05")
+        self.assertEqual((r.returncode, r.stdout.splitlines()[1]), (4, "timeout: проверки не завершились"))
+
+    def test_other_pending_keeps_waiting(self):  # срок застрявшей считается с завершения остальных
+        e = self.env(rules_json=RULES, checks_json=[[chk("pending", name="Checks")]] * 8 + [[DONE]])
+        r = self.wait(e, stuck="0.3")
+        self.assert_stuck(r)
+        self.assertGreater(len(e.calls("gh", "pr", "checks")), 8)
+
+    def test_general_timeout_names_stuck(self):
+        self.assert_stuck(self.wait(self.env(rules_json=RULES, checks_json=[[DONE]]), timeout="0.2", stuck="300"))
+
+    def test_no_checks_at_all_names_required(self):  # упавшего прогона нет: диспетчеру нужно имя, а не «нет проверок»
+        self.assert_stuck(self.wait(self.env(rules_json=RULES), timeout="0.2", stuck="300"))
+
+    def test_no_checks_waits_stuck_limit(self):  # с обязательными пустой список ждёт срок застрявшей, а не 180 с
+        with mock.patch.object(sp, "NO_CHECKS_SEC", 0.05), mock.patch.object(sp, "checks", return_value=[]), \
+                mock.patch.object(sp, "required_checks", return_value={TITLE}), \
+                mock.patch("sys.stdout", new_callable=io.StringIO) as out:
+            t = time.monotonic()
+            code = sp.cmd_wait(URL, 5, 0.02, 0.4)
+        self.assertEqual((code, out.getvalue().splitlines()[1]), (4, STUCK_LINE))
+        self.assertGreaterEqual(time.monotonic() - t, 0.4)
+
+    def test_default_limits(self):
+        with mock.patch.object(sp, "cmd_wait") as w:
+            sp.main(["wait", URL])
+        w.assert_called_once_with(URL, 1200.0, 15.0, 300.0)
+
+    def test_no_required_no_warning(self):
+        e = self.env(branch_json={"protected": True, "protection": {"enabled": False, "required_status_checks":
+                                  {"checks": [], "contexts": [], "enforcement_level": "off"}}},
+                     rules_json=RULES[:1], checks_json=[[DONE]])
+        r = self.wait(e)
+        self.assertEqual((r.returncode, r.stdout.strip(), r.stderr), (0, f"PR #7 {URL} CI: green", ""))
+
+    def test_required_failed_is_red(self):
+        e = self.env(rules_json=RULES, checks_json=[[DONE, chk("fail", LINK, name=TITLE)]], log_txt="job\tstep\tFAIL: t\n")
+        self.assertEqual(self.wait(e).returncode, 3)
+
+    def test_rules_unreadable(self):
+        for fail in ("rulesfail_txt", "branchfail_txt", "viewfail_txt"):
+            self.assert_warned_green(self.wait(self.env(checks_json=[[DONE]], **{fail: "1"})), fail)
+
+    def test_rules_hostile(self):
+        for bad in ('{"type": "required', "", "null", "7", '"text"', {"message": "x"}, [1], [None],
+                    [{"no_type": 1}], [{"type": "required_status_checks"}],
+                    [{"type": "required_status_checks", "parameters": None}],
+                    [{"type": "required_status_checks", "parameters": {"required_status_checks": 3}}],
+                    [{"type": "required_status_checks", "parameters": {"required_status_checks": [{}]}}],
+                    [{"type": "required_status_checks", "parameters": {"required_status_checks": [{"context": 5}]}}],
+                    [{"type": "required_status_checks", "parameters": {"required_status_checks": [{"context": ["x"]}]}}]):
+            self.assert_warned_green(self.wait(self.env(rules_json=bad, checks_json=[[DONE]])), bad)
+
+    def test_branch_hostile(self):
+        for bad in ("{", "[]", '"x"', {"protection": 1}, {"protection": {"required_status_checks": 1}},
+                    {"protection": {"required_status_checks": {"contexts": 5}}},
+                    {"protection": {"required_status_checks": {"contexts": TITLE}}},
+                    {"protection": {"required_status_checks": {"contexts": [{}]}}}):
+            self.assert_warned_green(self.wait(self.env(branch_json=bad, checks_json=[[DONE]])), bad)
+
+    def test_branch_name_quoted(self):
+        for name, path in (("release/1.0", "release/1.0"), ("a#b?c", "a%23b%3Fc")):
+            e = self.env(view_json=[{"baseRefName": name}], checks_json=[[DONE]])
+            self.assertEqual(self.wait(e).returncode, 0)
+            self.assertEqual([c[2] for c in e.calls("gh", "api")],
+                             [f"repos/o/r/rules/branches/{path}?per_page=100", f"repos/o/r/branches/{path}"])
+
+
+ROWS = st.lists(st.fixed_dictionaries({
+    "name": st.sampled_from("abcd"),
+    "bucket": st.sampled_from(["pass", "skipping", "pending", "fail", "cancel"]),
+    "state": st.sampled_from(["QUEUED", "IN_PROGRESS", "SUCCESS", ""]),
+}), max_size=6)
+
+
+class Verdict(unittest.TestCase):
+    @settings(max_examples=500, deadline=None)
+    @given(rows=ROWS, required=st.sets(st.sampled_from("abcde")), sec=st.sampled_from([0, 299, 300, 301, 1200]))
+    def test_required_checks_in_ci_wait_property(self, rows, required, sec):
+        pending = [r for r in rows if r["bucket"] == "pending"]
+        bad = any(r["bucket"] in ("fail", "cancel") for r in rows)
+        passed = all(any(r["name"] == n for r in rows) and all(
+            r["bucket"] in ("pass", "skipping") for r in rows if r["name"] == n) for n in required)
+        quiet = all(r["name"] in required and r["state"] != "IN_PROGRESS" for r in pending)
+        if bad:
+            want = "bad"
+        elif rows and not pending and passed:
+            want = "green"
+        elif quiet and not passed:
+            want = "stuck" if sec >= 300 else None
+        else:
+            want = None
+        self.assertEqual(sp.ci_verdict(rows, required, sec, 300), want)
 
 
 GREEN = [[chk("pass"), chk("skipping")]]
@@ -324,7 +493,7 @@ class Merge(Base):
 class Args(Base):
     def test_usage(self):
         e = self.env()
-        for a in ([], ["open", "x"], ["wait"], ["wait", URL, "--bogus", "1"], ["wait", URL, "--timeout", "x"],
+        for a in ([], ["open", "x"], ["wait"], ["wait", URL, "--bogus", "1"], ["wait", URL, "--timeout", "x"], ["wait", URL, "--stuck", "x"],
                   ["merge", URL, "fast", "h"], ["nope"],
                   ["merge", URL, "squash", "h", "--title"], ["merge", URL, "squash", "h", "--bogus", "x"]):
             r = e.run(*a)
