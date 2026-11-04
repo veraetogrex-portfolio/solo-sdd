@@ -214,6 +214,8 @@ def validate(spec, cfg, out):
     ans = spec.get("answers", {})
     if not isinstance(ans, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in ans.items()):
         bad.append("answers: нужен объект «вопрос → ответ», строки")
+    if not isinstance(spec.get("oracle_prepare", ""), str):
+        bad.append("oracle_prepare: нужна строка")
     if not os.path.isdir(project):
         return bad + ["project: нет папки " + project], project
     if not os.path.isfile(os.path.join(project, "AGENTS.md")):
@@ -310,7 +312,8 @@ def build_copy(project, main, spec, cfg, out, c):
             notes += ["спека после изменения: %s %s" % (cid, n) for n in delta[kind]]
     lines += notes
     meta = {"config": cfg["name"], "id": cid, "oracle": oracle, "base": base, "main": main, "project": project,
-            "spec_notes": notes, "tests": spec.get("tests", DEFAULT_TESTS), "answers": spec.get("answers", {})}
+            "spec_notes": notes, "tests": spec.get("tests", DEFAULT_TESTS), "answers": spec.get("answers", {}),
+            "oracle_prepare": spec.get("oracle_prepare")}
     write(os.path.join(copy, ".sdd-eval"), json.dumps(meta, ensure_ascii=False, indent=1, sort_keys=True) + "\n")
     with open(os.path.join(copy, ".git", "info", "exclude"), "a", encoding="utf-8") as f:
         f.write(".sdd-eval\n")
@@ -387,10 +390,13 @@ def questions(sid):
                     found += [str(q["question"]) for q in qs if isinstance(q, dict) and q.get("question")] \
                         if isinstance(qs, list) else []
                 elif i == 0 and o.get("type") == "assistant" and b.get("type") == "text":
-                    for ln in str(b.get("text", "")).splitlines():
+                    lines = str(b.get("text", "")).splitlines()
+                    for j, ln in enumerate(lines):
                         m = re.search(r"Нужно от вас(.*)", ln)
                         rest = m.group(1).lstrip(":—-* ").strip() if m else ""
-                        if rest and not rest.lower().startswith(("ничего", "нет")):
+                        if m and not rest:  # текст на следующей непустой строке блока
+                            rest = next((x.lstrip("-* ").strip() for x in lines[j + 1:] if x.strip()), "")
+                        if rest and not rest.lower().startswith(("ничего", "нет", "none")):
                             found.append(rest)
     return "; ".join(found)[:300] or None
 
@@ -672,6 +678,7 @@ def label_metrics(folder, label, prices):
         out[cid] = m
     ok = [m for m in out.values() if "error" not in m]
     total = {"cost_usd": None if not ok or any(m["cost_usd"] is None for m in ok) else sum(m["cost_usd"] for m in ok),
+             "unpriced": sorted({u for m in ok for u in m["unpriced"]}),
              "models": {}, "agents": {}, "returns": sum(m["returns"] for m in ok),
              "rejected": sum(m["rejected"] for m in ok)}
     for m in ok:
@@ -704,7 +711,10 @@ def cmd_metrics(a):
             print("%s: %.2fM на change" % (k, m["roles"][k]["input_total"] / 1e6 / div))
         print("агенты: " + ", ".join("%s %d" % kv for kv in m["agents"].items()))
         print("возвраты: %d, отклонённых статусов: %d" % (m["returns"], m["rejected"]))
-        print("стоимость: %s (cost-state %s)" % (money(m["cost_usd"]), money(m["cost_state_usd"])))
+        if m["unpriced"]:
+            print("стоимость: н/д (нет цены: %s)" % ", ".join(m["unpriced"]))
+        else:
+            print("стоимость: %s (cost-state %s)" % (money(m["cost_usd"]), money(m["cost_state_usd"])))
         return 0
     if not a.folder or not a.label:
         print("нужен --session или <папка> --label", file=sys.stderr)
@@ -733,9 +743,9 @@ def test_command(copy):
     except OSError:
         return None
     for ln in sections(text, "Команды"):
-        cells = ln.split("|")
-        if len(cells) > 2 and cells[1].strip() == "Тесты" and "`" in cells[2]:
-            return cells[2].split("`")[1] or None
+        m = re.match(r"\|\s*Тесты\s*\|[^`]*`([^`]*)`", ln)  # «|» внутри кавычек не режет ячейку
+        if m:
+            return m.group(1) or None
     return None
 
 
@@ -757,11 +767,11 @@ def worktree_script():
 
 
 def oracle_run(copy, meta, timeout):
-    """Тесты оракула на результате копии: {"green", "failed", "output_tail"}."""
+    """Тесты оракула на результате копии: {"green", "failed"}."""
     project, oracle = meta["project"], meta["oracle"]
     files = oracle_tests(project, oracle, meta["tests"])
     if not files:
-        return {"green": False, "failed": ["нет файлов оракула"], "output_tail": ""}
+        return {"green": False, "failed": ["нет файлов оракула"]}
     cmd = test_command(copy)
     tmp = tempfile.mkdtemp()
     wt = os.path.join(tmp, "wt")
@@ -784,17 +794,24 @@ def oracle_run(copy, meta, timeout):
             os.makedirs(os.path.dirname(dst), exist_ok=True)
             with open(dst, "wb") as fh:
                 fh.write(data)
+        if meta.get("oracle_prepare"):
+            try:
+                r = subprocess.run(["sh", "-c", meta["oracle_prepare"]], cwd=wt, stdin=subprocess.DEVNULL,
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=timeout)
+            except subprocess.TimeoutExpired:
+                return {"green": False, "failed": ["oracle_prepare: таймаут %s с" % timeout]}
+            if r.returncode:
+                return {"green": False, "failed": ["oracle_prepare: код %d" % r.returncode]}
         try:
             r = subprocess.run(["sh", "-c", cmd + " " + " ".join(shlex.quote(f) for f in files)], cwd=wt,
                                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                timeout=timeout)
         except subprocess.TimeoutExpired:
-            return {"green": False, "failed": ["таймаут %s с" % timeout], "output_tail": ""}
+            return {"green": False, "failed": ["таймаут %s с" % timeout]}
         out = r.stdout.decode("utf-8", "replace")
-        tail = "\n".join(out.splitlines()[-20:])
         if r.returncode == 0:
-            return {"green": True, "failed": [], "output_tail": tail}
-        return {"green": False, "failed": parse_failed(out) or files, "output_tail": tail}
+            return {"green": True, "failed": []}
+        return {"green": False, "failed": parse_failed(out) or files}
     finally:
         if sh([sys.executable, script, "remove", copy, wt]).returncode:
             sh(["git", "-C", copy, "worktree", "remove", "--force", wt])
@@ -842,6 +859,8 @@ def cmd_compare(a):
         return 3
     pp = prices_path(a.prices)
     prices = read_json(pp) if os.path.isfile(pp) else None
+    if prices is None:
+        print("файл цен не найден: %s; время и стоимость н/д" % pp, file=sys.stderr)
     res, mets, notes = {}, {}, set()
     for lb in uniq:
         mp = os.path.join(home[lb], "runs", lb + ".metrics.json")

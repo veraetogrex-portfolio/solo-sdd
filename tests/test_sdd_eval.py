@@ -117,7 +117,7 @@ class RejectTests(unittest.TestCase):
         e.write_set(changes=[{"id": c, "oracle": o} for c, o in list(e.oracles.items())[:7]])
         r = e.setup()
         self.assertEqual(r.returncode, 2, r.stderr)
-        self.assertIn("7", r.stderr)
+        self.assertIn("changes: 7", r.stderr)
         self.assertIn("changes", r.stderr)
         self.assertFalse((e.root / "out").exists())
 
@@ -313,6 +313,22 @@ class CopyTests(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(json.loads((e.root / "out" / IDS[0] / ".sdd-eval").read_text())["answers"],
                          {"Режим?": "local"})
+
+    def test_oracle_prepare_validated_and_in_meta(self):
+        e = make_env(self)
+        for bad in (["x"], 5, {"a": "b"}):
+            e.write_set(oracle_prepare=bad)
+            r = e.setup()
+            self.assertEqual(r.returncode, 2, bad)
+            self.assertIn("oracle_prepare:", r.stderr)
+            self.assertFalse((e.root / "out").exists())
+        e.write_set()
+        self.assertEqual(e.setup("o0").returncode, 0)
+        self.assertIsNone(json.loads((e.root / "o0" / IDS[0] / ".sdd-eval").read_text())["oracle_prepare"])
+        e.write_set(oracle_prepare="npm run build")
+        self.assertEqual(e.setup().returncode, 0)
+        self.assertEqual(json.loads((e.root / "out" / IDS[0] / ".sdd-eval").read_text())["oracle_prepare"],
+                         "npm run build")
 
     def test_repeat_is_identical(self):
         e = make_env(self)
@@ -606,12 +622,31 @@ class RunTests(unittest.TestCase):
         rec, out = self.ask([self.text_line("Итог\n**Нужно от вас:** выбрать режим\nхвост")])
         self.assertEqual(rec["question"], "вопрос: выбрать режим")
 
+    def test_need_from_you_in_subagent_not_counted(self):
+        home = self.root / "home"
+        d = home / ".claude/projects/x"
+        (d / "s-2/subagents").mkdir(parents=True)
+        (d / "s-2.jsonl").write_text(self.text_line("готово") + "\n")
+        (d / "s-2/subagents/agent-1.jsonl").write_text(L(
+            DAY + "09:00:00.000Z", "m2", SN, blocks=[{"type": "text", "text": "Нужно от вас: выбрать режим"}]))
+        old = os.environ["HOME"]
+        os.environ["HOME"] = str(home)
+        self.addCleanup(os.environ.__setitem__, "HOME", old)
+        self.assertIsNone(ev.questions("s-2"))
+
     def test_question_limit(self):
         rec, out = self.ask([self.text_line("Нужно от вас: " + "я" * 400)])
         self.assertEqual(len(rec["question"]), len("вопрос: ") + 300)
 
+    def test_question_on_next_line(self):
+        for i, t in enumerate(("Нужно от вас:\n- выбрать режим", "**Нужно от вас:**\n\nвыбрать режим",
+                               "Итог\nНужно от вас:\n\n* выбрать режим\nхвост")):
+            rec, out = self.ask([self.text_line(t)], cid="c%d" % i)
+            self.assertEqual(rec["question"], "вопрос: выбрать режим", t)
+
     def test_no_question_for_report_field(self):
-        for i, t in enumerate(("Нужно от вас: ничего", "Нужно от вас: — Нет", "Нужно от вас:", "Нужно от вас: нет действий")):
+        for i, t in enumerate(("Нужно от вас: ничего", "Нужно от вас: — Нет", "Нужно от вас:", "Нужно от вас: нет действий",
+                               "Нужно от вас: none", "Нужно от вас:\n\nничего", "Нужно от вас:\n- Нет", "Итог\nНужно от вас:")):
             rec, out = self.ask([self.text_line(t)], cid="c%d" % i)
             self.assertNotIn("question", rec, t)
             self.assertIn("c%d смёрджен" % i, out.splitlines())
@@ -745,6 +780,23 @@ class MetricsSession(unittest.TestCase):
         self.assertIsNone(m["cost_usd"])
         self.assertEqual(m["unpriced"], [SN])
 
+    def test_unpriced_cli_and_total(self):
+        self.hand()
+        self.set_prices({OP: PRICES[OP]})
+        r = self.metrics("--session", "hand", "--prices", str(self.prices))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stdout.splitlines()[-1], "стоимость: н/д (нет цены: %s)" % SN)
+        folder = self.root / "copies"
+        make_copy(folder, "ca")
+        put(folder, "runs/L1.json", json.dumps({"label": "L1", "copies": {
+            "ca": {"session": "hand", "status": "не завершён"}}}))
+        old = os.environ.get("HOME")
+        os.environ["HOME"] = str(self.home)
+        self.addCleanup(os.environ.__setitem__, "HOME", old)
+        data, _ = ev.label_metrics(folder, "L1", json.loads(self.prices.read_text()))
+        self.assertEqual(data["total"]["unpriced"], [SN])
+        self.assertIsNone(data["total"]["cost_usd"])
+
     def test_long_tariff(self):
         self.hand()
         lg = {"above": 400, "input": 20, "output": 100, "cache_write_5m": 25, "cache_write_1h": 40, "cache_read": 1}
@@ -870,6 +922,7 @@ class CmpEnv:
         self.oracle["c4"] = git(self.proj, "rev-parse", "HEAD")
         self.count = self.root / "count"
         self.agents = CMP_AGENTS
+        self.meta_extra = {}
 
     def copy(self, folder, cid, kind, notes=()):
         """kind: good, red (код без функции), missing (кода нет), none (ничего не смёрджено)."""
@@ -886,7 +939,7 @@ class CmpEnv:
             put(c, "built/data.txt", "x\n")
             put(c, ".git/info/exclude", (c / ".git/info/exclude").read_text() + "built/\n")
         meta = {"config": "cfg", "id": cid, "oracle": self.oracle[cid], "base": self.base[cid], "main": "main",
-                "project": str(self.proj), "spec_notes": list(notes), "tests": ["*.test.sh"]}
+                "project": str(self.proj), "spec_notes": list(notes), "tests": ["*.test.sh"], **self.meta_extra}
         put(c, ".sdd-eval", json.dumps(meta))
         with open(c / ".git/info/exclude", "a") as f:
             f.write(".sdd-eval\nAGENTS.md\n")
@@ -951,6 +1004,58 @@ class CompareTests(unittest.TestCase):
         self.assertIn("Перевернувшиеся: нет", out)
         self.assertIn("# Сравнение: a = p1, p2; b = q1, q2", out)
         self.assertIn("н/д", row)
+
+    def test_green_done_metrics_values(self):
+        e = cmp_env(self)
+        for lb in ("p1", "p2", "q1", "q2"):
+            f = e.label(e.E, lb, G)
+            cs = {c: {"hours": 1.25, "cost_usd": 2.5} for c in G}
+            put(f, "runs/%s.metrics.json" % lb, json.dumps({"label": lb, "copies": cs}))
+        r = e.compare(e.E, ["p1", "p2"], ["q1", "q2"])
+        self.assertEqual(r.returncode, 0, r.stderr)
+        row = [ln for ln in r.stdout.splitlines() if ln.startswith("| c1 ")][0]
+        self.assertEqual(row.count("выполнен 1.25 ч $2.50"), 4, row)
+        self.assertIn("| a | 2, 2 из 2 | 5.00 | $10.00 |", r.stdout)
+        self.assertIn("| b | 2, 2 из 2 | 5.00 | $10.00 |", r.stdout)
+
+    def test_oracle_prepare_runs_before_tests(self):
+        e = cmp_env(self)
+        e.meta_extra = {"oracle_prepare": "mkdir -p built && echo x > built/data.txt"}
+        for lb in ("p1", "p2", "q1", "q2"):
+            e.label(e.E, lb, {"c4": "missing"})
+        r = e.compare(e.E, ["p1", "p2"], ["q1", "q2"])
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("| a | 1, 1 из 1 |", r.stdout)
+        self.assertNotIn("красный", r.stdout)
+
+    def test_oracle_prepare_failure_is_red(self):
+        e = cmp_env(self)
+        e.meta_extra = {"oracle_prepare": "exit 5"}
+        for lb in ("p1", "p2", "q1", "q2"):
+            e.label(e.E, lb, {"c4": "built"})  # без oracle_prepare тест оракула был бы зелёным
+        r = e.compare(e.E, ["p1", "p2"], ["q1", "q2"])
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("смёрджен, оракул красный: oracle_prepare: код 5", r.stdout)
+        self.assertIn("| a | 0, 0 из 1 |", r.stdout)
+        self.assertEqual(e.runs(), 0)
+
+    def test_oracle_prepare_timeout(self):
+        e = cmp_env(self)
+        e.meta_extra = {"oracle_prepare": "sleep 30"}
+        for lb in ("p1", "p2", "q1", "q2"):
+            e.label(e.E, lb, {"c4": "built"})
+        r = e.compare(e.E, ["p1", "p2"], ["q1", "q2"], "--timeout", "1")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("oracle_prepare: таймаут 1 с", r.stdout)
+
+    def test_no_prices_file_warning(self):
+        e = cmp_env(self)
+        for lb in ("p1", "p2", "q1", "q2"):
+            e.label(e.E, lb, G)
+        r = e.compare(e.E, ["p1", "p2"], ["q1", "q2"], "--prices", "/no/such.json")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("файл цен не найден: /no/such.json; время и стоимость н/д", r.stderr.splitlines())
+        self.assertIn("| a | 2, 2 из 2 | н/д | н/д |", r.stdout)
 
     def test_missing_module_is_red(self):
         e, out = self.mk({"p1": {"c1": "missing"}, "p2": {"c1": "missing"}}, {"q1": {"c1": "good"}, "q2": {"c1": "good"}})
@@ -1082,6 +1187,15 @@ class CompareTests(unittest.TestCase):
         self.assertIn("команда тестов — цепочка: c1 (%s)" % (e.E / "p1/c1"), r.stderr)
         self.assertEqual(e.runs(), 0)
 
+    def test_chained_pipe_in_backticks(self):
+        e = cmp_env(self)
+        e.agents = CMP_AGENTS.replace("`sh run-tests.sh`", "`a | b`")
+        for lb in ("p1", "p2", "q1", "q2"):
+            e.label(e.E, lb, G)
+        r = e.compare(e.E, ["p1", "p2"], ["q1", "q2"])
+        self.assertEqual((r.returncode, r.stdout), (3, ""))
+        self.assertIn("команда тестов — цепочка: c1 (%s)" % (e.E / "p1/c1"), r.stderr)
+
     def test_oracle_failure_no_traceback(self):
         e = cmp_env(self)
         for lb in ("p1", "p2", "q1", "q2"):
@@ -1141,6 +1255,8 @@ class ParseFailed(unittest.TestCase):
         self.assertIsNone(ev.test_command(str(d)))
         (d / "AGENTS.md").write_text(CMP_AGENTS)
         self.assertEqual(ev.test_command(str(d)), "sh run-tests.sh")
+        (d / "AGENTS.md").write_text("## Команды\n\n| Что | К |\n|---|---|\n| Тесты | `a | b` |\n")
+        self.assertEqual(ev.test_command(str(d)), "a | b")
         (d / "AGENTS.md").write_text("## Команды\n\n| Что | К |\n|---|---|\n| Сборка | `make` |\n")
         self.assertIsNone(ev.test_command(str(d)))
 
