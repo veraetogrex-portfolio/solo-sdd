@@ -1,4 +1,4 @@
-{"_source": "таблица моделей claude-api, кэш 2026-10-06; сверено с cost-state прогона 4 Osen, расхождения таблицы: чтение кэша Sonnet 5.5 и тариф Haiku 5.5 выше 100K",
+{"_source": "таблица моделей claude-api, кэш 2026-10-06; сверено с cost-state прогона 4 проекта-потребителя, расхождения таблицы: чтение кэша Sonnet 5.5 и тариф Haiku 5.5 выше 100K",
  "claude-opus-5-5": {"input": 4, "output": 20, "cache_write_5m": 5, "cache_write_1h": 8, "cache_read": 0.2},
  "claude-sonnet-5-5": {"input": 2, "output": 10, "cache_write_5m": 2.5, "cache_write_1h": 4, "cache_read": 0.1},
  "claude-haiku-5-5": {"input": 0.1, "output": 0.5, "cache_write_5m": 0.125, "cache_write_1h": 0.2, "cache_read": 0.01,

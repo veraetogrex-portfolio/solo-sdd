@@ -55,7 +55,7 @@
 
 ## Рабочая копия
 
-- Пути: `docs/waiting.md`, `docs/debug-profile.md`, `docs/process-safety-verification.md`, `global/claude-gui.py`, `global/claude-process-safety-settings.json`, `global/claude-safe.py`, `skills/model-council/`, `tests/probe_claude_development.py`, `tests/probe_claude_process_safety.py`, `tests/test_claude_gui.py`, `tests/test_claude_safe.py`
+- Пути: `docs/waiting.md`, `docs/debug-profile.md`, `docs/process-safety-verification.md`, `global/claude-gui.py`, `global/claude-process-safety-settings.json`, `global/claude-safe.py`, `skills/model-council/`, `tests/eval/sets/`, `tests/probe_claude_development.py`, `tests/probe_claude_process_safety.py`, `tests/test_claude_gui.py`, `tests/test_claude_safe.py`
 
 ## Границы и инварианты
 
