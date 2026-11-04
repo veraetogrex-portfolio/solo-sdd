@@ -129,12 +129,13 @@ def ci_verdict(rows, required, stuck_sec, limit):
 
 
 def cmd_wait(url, timeout, interval, limit=STUCK_SEC):
-    n, start = number(url), time.monotonic()
+    n = number(url)
     head = f"PR #{n} {url} CI: "
     required = required_checks(url)
     if required is None:
         print("предупреждение: правила ветки не прочитались, обязательные проверки не сверены", file=sys.stderr)
         required = set()
+    start = time.monotonic()  # срок — на CI, чтение правил в него не входит
     since = None  # с какого опроса ждать больше нечего, кроме застрявших
     while True:
         rows = checks(url)

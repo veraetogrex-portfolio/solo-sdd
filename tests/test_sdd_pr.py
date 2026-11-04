@@ -150,7 +150,7 @@ class Wait(Base):
 
     def test_green(self):
         e = self.env(checks_json=[[chk("pending")], [chk("pass"), chk("skipping")]])
-        r = self.wait(e)
+        r = self.wait(e, timeout="10")  # итог приходит на втором опросе; запас на медленный запуск подмены
         self.assertEqual((r.returncode, r.stdout.strip()), (0, f"PR #7 {URL} CI: green"))
         self.assertEqual(e.calls("gh", "pr", "checks")[0][3], URL)
 
