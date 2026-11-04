@@ -774,14 +774,14 @@ def guard_secrets_bash(cmd, cwd):
                 deny("git add захватит файлы с секретами: %s. Добавь их в .gitignore или добавляй файлы поимённо." % ", ".join(bad))
 
 
-WT_RULE = ("Рабочая папка проекта одна. Worktree создавай только во временной папке (scratchpad или /tmp) "
-           "через git worktree add и удаляй после себя.")
+WT_RULE = ("Рабочая папка проекта одна. Копии: встроенный worktree Claude Code или временная папка "
+           "(scratchpad или /tmp) через git worktree add; удаляй их после себя.")
 WT_WRAPPERS = ("env", "exec", "command", "nohup", "time", "caffeinate")
 
 
-def native_worktree_cli(cmd):
-    """Запуск claude или codex со встроенным worktree: Claude кладёт копию в .claude/worktrees проекта,
-    Codex — в ~/.codex/worktrees. Слова внутри кавычек (текст коммита и т. п.) командой не считаются."""
+def codex_worktree_cli(cmd):
+    """Запуск codex со встроенным --worktree: Codex кладёт копию в ~/.codex/worktrees.
+    Слова внутри кавычек (текст коммита и т. п.) командой не считаются."""
     for seg in re.split(r"&&|\|\||[;&|\n()]", cmd):
         try:
             words = shlex.split(seg)
@@ -795,38 +795,15 @@ def native_worktree_cli(cmd):
         prog, args = os.path.basename(words[i]), words[i + 1:]
         if prog == "codex" and any(a == "--worktree" or a.startswith("--worktree=") for a in args):
             return "codex --worktree кладёт копию в ~/.codex/worktrees"
-        if prog == "claude" and any(a in ("-w", "--worktree") or a.startswith("--worktree=") for a in args):
-            return "claude --worktree кладёт копию в .claude/worktrees внутри проекта"
     return None
 
 
 def guard_worktree(cmd):
     if re.search(r"\bworktree\s+add\b", cmd) and not re.search(r"/tmp/|/private/tmp/|/var/folders/|\$\{?TMPDIR|scratchpad", cmd):
         deny(WT_RULE)
-    why = native_worktree_cli(cmd)
+    why = codex_worktree_cli(cmd)
     if why:
-        deny("%s. %s Исполнителю передай путь: codex exec -C <worktree>, claude в cd <worktree>." % (why, WT_RULE))
-
-
-def in_temp(path):
-    return nfc(path).startswith(tuple(r + "/" for r in TMP_ROOTS)) or "/scratchpad/" in path
-
-
-def guard_enter_worktree(cwd, ti):
-    path = ti.get("path")
-    if path:
-        p = nfc(os.path.realpath(os.path.join(cwd, os.path.expanduser(path))))
-        inside = any(p == r or p.startswith(r + "/") for r in project_roots(cwd))
-        if in_temp(p) and not inside:
-            return
-    deny("EnterWorktree создаёт копию в .claude/worktrees внутри проекта. %s "
-         "Потом войди в неё через EnterWorktree с path." % WT_RULE)
-
-
-def guard_agent_worktree(ti):
-    if ti.get("isolation") == "worktree":
-        deny("isolation: worktree кладёт копию субагента в .claude/worktrees внутри проекта. Юниты на один файл "
-             "раздели по волнам или создай worktree во временной папке через git worktree add и дай субагенту его путь.")
+        deny("%s. Для Codex копия только во временной папке: git worktree add, затем codex exec -C <worktree>. %s" % (why, WT_RULE))
 
 
 STATUS_FIELDS = ("STATUS", "CHANGE", "BRANCH", "WORKTREE", "COMMIT", "ARCHIVE", "VALIDATE", "TESTS", "LIVE",
@@ -860,6 +837,28 @@ def exit_zero(value):
     return bool(re.match(EXIT_0, head)) and not any(re.match(bad, a) or re.search(bad + r"\W*[1-9]", a) for a in arrows[1:])
 
 
+def live_problems(value):
+    """LIVE — одна команда: вне кавычек и без `\\` нет `&&`, `||`, `;`, `|` и нет `cd ` в начале (проверяется текст до первой стрелки).
+    Незакрытая кавычка: остаток считается в кавычках, отказа нет."""
+    cmd, sign, q, i = re.split(r"\s*->\s*", value)[0], None, None, 0
+    if cmd.lstrip().startswith("cd "):
+        sign = "cd "
+    while sign is None and i < len(cmd):
+        c = cmd[i]
+        if q:
+            q = None if c == q else q
+            i += 1 if c == "\\" and q == '"' else 0
+        elif c == "\\":
+            i += 1
+        elif c in "'\"":
+            q = c
+        else:
+            sign = next((s for s in ("&&", "||", ";", "|") if cmd.startswith(s, i)), None)
+        i += 1
+    return [] if sign is None else ["LIVE: в команде «%s» вне кавычек — нужна одна команда из корня WORKTREE; многошаговый сценарий оформи "
+                                    "стендом (скрипт в репозитории) и дай в LIVE его вызов, вывод сокращает диспетчер" % sign]
+
+
 def archived_problems(f, cwd):
     problems = ["нет поля или оно пусто: %s" % n for n in STATUS_FIELDS if not f.get(n)]
     wt = os.path.join(cwd, os.path.expanduser(f["WORKTREE"])) if f.get("WORKTREE") else git_root(cwd)
@@ -883,7 +882,7 @@ def archived_problems(f, cwd):
         problems.append("в основной папке %s остался CLAIM change %s: сними его" % (main, name))
     problems += ["%s: после первого « -> » должно быть «exit 0», и ни одна « -> exit » не с другим кодом; сейчас: %s" % (n, f[n])
                  for n in ("VALIDATE", "TESTS") if f.get(n) and not exit_zero(f[n])]
-    return problems
+    return problems + live_problems(f.get("LIVE", ""))
 
 
 def status_problems(message, cwd):
@@ -920,10 +919,7 @@ def cmd_guard(inp):
         guard_archive(sid, cmd, cwd)
         note_claim_cmd(inp, cmd)
     elif tool == "Agent":
-        guard_agent_worktree(ti)
         guard_models_agent(ti, bool(inp.get("agent_id")))
-    elif tool == "EnterWorktree":
-        guard_enter_worktree(cwd, ti)
     elif tool == "SubagentHandback":
         problems = status_problems(ti.get("message") or "", cwd)
         if problems:

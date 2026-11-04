@@ -2,6 +2,7 @@
 import os, shutil, subprocess, sys
 
 from solo_sdd import __version__, doctor, hooks, layout, resources
+from solo_sdd import init as project_init
 
 layout.PULL_HINT = "solo-sdd sync pull"
 
@@ -10,6 +11,7 @@ COMMANDS = """команды solo-sdd:
   status                             состояние всех копий
   install [--hooks]                  разложить скиллы и правила, собрать схему solo; --hooks подключает хуки в settings.json
   uninstall [--purge]                снять копии и хуки; --purge удаляет ещё схему solo и данные solo-sdd
+  init [папка]                       подготовить git-репозиторий проекта: openspec init, конфиг solo, analyze.md, docs/waiting.md
   doctor                             проверить окружение: python, openspec, схему, копии, хуки, gh
   update                             повторить раскладку и сборку схемы, подсказать обновление пакета
   sync pull <имя> [--from <место>]   забрать правку, сделанную на месте, в репозиторий"""
@@ -84,6 +86,8 @@ def main(argv=None):
         return 0
     if argv in (["status"], ["update"], ["doctor"]):
         return {"status": status, "update": update, "doctor": doctor.run}[argv[0]]()
+    if argv and argv[0] == "init" and len(argv) <= 2:
+        return project_init.run(*argv[1:])
     if argv and argv[0] == "install" and argv[1:] in ([], ["--hooks"]):
         return install(bool(argv[1:]))
     if argv and argv[0] == "uninstall" and argv[1:] in ([], ["--purge"]):

@@ -24,13 +24,23 @@
 ```bash
 pip install git+https://github.com/veraetogrex-portfolio/solo-sdd
 uv tool install git+https://github.com/veraetogrex-portfolio/solo-sdd
+pipx install git+https://github.com/veraetogrex-portfolio/solo-sdd
 ```
+
+Через npm — одной командой вместе с OpenSpec:
+
+```bash
+npm i -g @fission-ai/openspec github:veraetogrex-portfolio/solo-sdd
+```
+
+npm-пакет — обёртка над тем же `python3 -m solo_sdd`: нужен Python 3.9+ в `PATH` (или путь к нему в `SOLO_SDD_PYTHON`) и Node 20+. Без подходящего Python команда пишет `solo-sdd: нужен Python 3.9+ (найден: …)` и выходит с кодом 1.
 
 Из клона работает то же без установки: `python3 -m solo_sdd <команда>`. Клон остаётся способом разработки, `sync.py` работает как раньше.
 
 | Команда | Что делает |
 |---|---|
 | `solo-sdd install [--hooks]` | Раскладывает скиллы и правила, собирает схему `solo`; с `--hooks` подключает хуки в `~/.claude/settings.json` |
+| `solo-sdd init [папка]` | В git-репозитории проекта выполняет `openspec init`, кладёт конфиг со схемой `solo`, `openspec/analyze.md`, `docs/waiting.md`; повтор ничего не меняет, свой конфиг не трогает |
 | `solo-sdd status` | Показывает состояние каждой копии |
 | `solo-sdd update` | Повторяет раскладку и сборку схемы, подсказывает, как обновить пакет |
 | `solo-sdd doctor` | Проверяет окружение: python, `openspec`, схему, копии, хуки, глубину субагентов, `gh` |
@@ -54,22 +64,28 @@ uv tool install git+https://github.com/veraetogrex-portfolio/solo-sdd
 | `skills/codex-orchestration/SKILL.md` | `~/.agents/skills`, `~/.claude/skills` |
 | `skills/spec-dispatch/SKILL.md` (раздача change Opus-оркестраторам, только Claude Code) | `~/.claude/skills` |
 | `global/AGENTS.md` (глобальные правила обоих агентов, блоком) | `~/AGENTS.md`, `~/.codex/AGENTS.md`, `~/.claude/CLAUDE.md` |
+| `ALGORITHM.md` | `~/.local/share/solo-sdd/ALGORITHM.md` |
+| `templates/` (`openspec/config.yaml`, `openspec/analyze.md`, `docs/waiting.md`, `DESIGN.md`) | `~/.local/share/solo-sdd/templates/` |
 | `pyproject.toml`, `solo_sdd/` (команда `solo-sdd`; логика раскладки в `solo_sdd/layout.py`, `sync.py` — обёртка) | не раскладываются, ставятся пакетом |
 | `global/process-guard.py` (хук запрета прямой остановки процессов) | `~/.claude/hooks/process-guard.py` |
 | `global/work_hooks.py`, `global/model-policy.json` (хуки рабочего процесса и политика моделей) | `~/.claude/hooks/` |
 | `global/sdd_worktree.py` (Подготовка worktree для `spec-dispatch`: `setup` копирует игнорируемые git `openspec/`, `AGENTS.md`, пути раздела «Рабочая копия» и отдельно игнорируемые документы проекта, ставит ссылки на `node_modules` и `.venv`; `transport` переносит их обратно трёхсторонним слиянием, `undo` отменяет перенос, `remove` убирает worktree, `discard` убирает worktree без своих коммитов вместе с веткой после неудачной подготовки) | `~/.local/bin/sdd-worktree.py` |
 | `global/sdd_dispatch_plan.py` (Очередь для `spec-dispatch`: считает готовые открытые change (нет `CLAIM`, `WAITING`, ветки `change/<id>`, папка change закоммичена, зависимости в архиве), порядок по критическому пути и жёсткие конфликты по требованиям и файлам `Impact`, кроме общих путей; выдаёт, кого запустить, кто ждёт и какие пары идут вместе при общем пути; печатает, какие из `openspec/`, `AGENTS.md`, `CLAUDE.md` игнорируются git) | `~/.local/bin/sdd-dispatch-plan.py` |
 | `global/sdd_pr.py` (PR для `spec-dispatch`: `open` пушит ветку worktree и открывает PR (или берёт уже открытый), `wait` ждёт CI и отвечает `green`, `red` или `infra` с хвостом журнала, `merge` сливает PR запросом REST API по хешу проверенного коммита после сверки проверок) | `~/.local/bin/sdd-pr.py` |
+| `global/sdd_dispatch.py` (Механика `spec-dispatch`: `accept` разбирает блок статуса, выполняет команды `VALIDATE` и `LIVE` в worktree и сверяет коды и вывод, `TESTS` не запускает; `land-local` в режиме `local` проверяет чистоту основной папки, делает merge `--no-ff`, перенос, проверки, откат с повтором упавшей на основной и уборку) | `~/.local/bin/sdd-dispatch.py` |
 | `schema/openspec-after-update.py` (сборка схемы `solo`, правила в скиллах OpenSpec, вызов `sync.py`) | `~/.local/bin/openspec-after-update.py` |
 | `schema/test_openspec_after_update.py` (его тест) | `~/.local/bin/test_openspec_after_update.py` |
 
 Вручную запускается `global/work_hooks_settings.py`: он подключает хуки в `~/.claude/settings.json` и ставит глубину субагентов 2 (`env.CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH`; заданное вами значение не меняет), а в `autoMode.allow` держит одно правило о merge своих PR (`sdd-pr.py merge`, `land`, `gh pr merge` из `/ship`) и обновлении ветки change: повторный запуск заменяет его по постоянному префиксу. `sync.py` настройки не трогает.
 
-Не раскладываются, лежат в репозитории: `templates/` (`openspec/config.yaml`, `openspec/analyze.md`, `docs/waiting.md`, `DESIGN.md` для нового проекта; копируются вручную или скиллом `project-init`), `tests/` (`tests/stands/` — стенды живых сценариев), `scripts/publish-first.sh` (первая публикация, разовый), `.github/workflows/test.yml` (CI). `AGENTS.md` и `CLAUDE.md` в корне — внутренняя работа над самим solo-sdd; `openspec/` и `docs/waiting.md` лежат только в рабочей папке автора и в репозиторий не входят.
+Шаблоны нового проекта раскладываются в `~/.local/share/solo-sdd/templates/`; `solo-sdd init` берёт их из пакета. Не раскладываются, лежат в репозитории: `tests/` (`tests/stands/` — стенды живых сценариев), `scripts/publish-first.sh` (первая публикация, разовый), `.github/workflows/test.yml` (CI). `AGENTS.md` и `CLAUDE.md` в корне — внутренняя работа над самим solo-sdd; `openspec/` и `docs/waiting.md` лежат только в рабочей папке автора и в репозиторий не входят.
 
-## Первый шаг в проекте
+## Первый проект
 
-В папке своего проекта запустите `/project-init`, затем `/spec-plan` (план в очередь маленьких change) и `/spec-next` (реализация change от выбора до архива).
+1. В git-репозитории проекта выполните `solo-sdd init`.
+2. В Claude Code или Codex запустите `/project-init`: правила проекта, `AGENTS.md`, `.env.example`.
+3. `/spec-plan` — план в очередь маленьких change.
+4. `/spec-next` — реализация change от выбора до архива.
 
 Алгоритм целиком — [ALGORITHM.md](ALGORITHM.md). Уроки, из которых выросли правила, — [LESSONS.md](LESSONS.md). Что взято у OpenSpec, Spec Kit, Kiro и GSD 2 и что нет — [SOURCES.md](SOURCES.md).
 
@@ -110,7 +126,9 @@ python3 tests/test_work_hooks.py
 python3 tests/test_sdd_worktree.py
 python3 tests/test_sdd_dispatch_plan.py
 python3 tests/test_sdd_pr.py
+python3 tests/test_sdd_dispatch.py
 python3 tests/test_public_tree.py
+python3 tests/test_init.py
 ```
 
 ## Хуки рабочего процесса Claude Code
@@ -120,7 +138,7 @@ python3 tests/test_public_tree.py
 | Подкоманда | Событие | Что делает |
 |---|---|---|
 | `context` | SessionStart | Кладёт в контекст AGENTS.md, `openspec/config.yaml`, `docs/status.md`, ветку, `git status`, change с прогрессом и метками CLAIM/WAITING |
-| `guard` | PreToolUse | Блокирует вывод `.env` и секретных переменных, перезапись `.env`, второй `.env`, `git add` секретов; модели субагентов по тегу роли в начале `description` (`model-policy.json`: `Review:`/`Ревью:` — ревью, `Orchestrator` — оркестратор, `Implement:`/`Исполнитель:` — исполнитель; слова без тега роль не задают): приёмка и ревью — только дешёвые, оркестратор — только из главной сессии, исполнитель из субагента — с явной недорогой моделью; дорогие модели в тестах Bash; обход разрешает владелец через `SOLO_SDD_EXPENSIVE_OK=1` в окружении, а запись этой переменной в настройки и профиль оболочки агенту запрещена; правку чужого change по CLAIM и change с WAITING; worktree вне временной папки, в том числе встроенные: `claude --worktree`, `codex --worktree`, `EnterWorktree` с новым именем, `isolation: worktree` у субагента; первую запись вне проекта; те же правила тела heredoc и шаблона поиска, что у `process-guard`, в проверках секретов и моделей в Bash; сдачу статуса оркестратора (`SubagentHandback` с блоком `STATUS:`; код выхода в `VALIDATE` и `TESTS` допускает пояснение: `-> exit 0 (250 tests)`), если поля, коммит `HEAD`, архив change или снятый CLAIM не сходятся с git и файлами |
+| `guard` | PreToolUse | Блокирует вывод `.env` и секретных переменных, перезапись `.env`, второй `.env`, `git add` секретов; модели субагентов по тегу роли в начале `description` (`model-policy.json`: `Review:`/`Ревью:` — ревью, `Orchestrator` — оркестратор, `Implement:`/`Исполнитель:` — исполнитель; слова без тега роль не задают): приёмка и ревью — только дешёвые, оркестратор — только из главной сессии, исполнитель из субагента — с явной недорогой моделью; дорогие модели в тестах Bash; обход разрешает владелец через `SOLO_SDD_EXPENSIVE_OK=1` в окружении, а запись этой переменной в настройки и профиль оболочки агенту запрещена; правку чужого change по CLAIM и change с WAITING; worktree вне временной папки, кроме встроенных worktree Claude Code (`claude --worktree`, `EnterWorktree`, `isolation: worktree` у субагента — они проходят); `codex --worktree` и `git worktree add` вне временной папки отклоняются; первую запись вне проекта; те же правила тела heredoc и шаблона поиска, что у `process-guard`, в проверках секретов и моделей в Bash; сдачу статуса оркестратора (`SubagentHandback` с блоком `STATUS:`; код выхода в `VALIDATE` и `TESTS` допускает пояснение: `-> exit 0 (250 tests)`), если поля, коммит `HEAD`, архив change или снятый CLAIM не сходятся с git и файлами |
 | `subagent-context` | SubagentStart | Даёт субагенту путь к `AGENTS.md` основной папки и открытые change с метками CLAIM/WAITING, не длиннее 4000 знаков |
 | `stop` | Stop | Пока у сессии есть фоновые задачи `running`, молчит. Иначе один раз возвращает агента, если остались незакоммиченные правки этой сессии, готовый change не в архиве, открыт несмёрдженный PR, интерфейс не проверен в браузере (засчитывается проверка любого субагента сессии по его транскрипту в `<id>/subagents/`) или ответ не на русском |
 | `beat`, `status` | все события, строка статуса | Текущее действие, время, число субагентов |
