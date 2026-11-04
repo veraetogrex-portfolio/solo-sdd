@@ -131,16 +131,16 @@ assert not bash("grep -rn SOLO_SDD_EXPENSIVE_OK global") and not bash("SOLO_SDD_
 # worktree и границы папки
 assert bash("git worktree add ../copy") and not bash("git worktree add /tmp/wt-1"), "worktree"
 # встроенные worktree агентов
-assert bash("claude --worktree feat") and bash("claude -w") and bash("cd x && claude -p 'go' -w feat"), "claude -w"
+assert not bash("claude --worktree feat") and not bash("claude -w") and not bash("claude --worktree=a") and not bash("cd x && claude -p 'go' -w feat"), "claude -w пропускается"
 assert bash("codex --worktree") and bash("codex exec --worktree 'implement x'") and bash("FOO=1 codex fork --worktree=a"), "codex --worktree"
-assert not bash("git commit -m 'codex --worktree и claude -w запрещены'"), "quoted text is not a command"
+assert not bash("git commit -m 'codex --worktree запрещён, claude -w нет'"), "quoted text is not a command"
 assert not bash("grep -rn -- --worktree skills") and not bash("claude -p 'go'"), "no worktree flag"
 assert not bash("codex exec -C /tmp/wt-1 'implement x'"), "codex in temp worktree"
-assert denied({"tool_name": "EnterWorktree", "tool_input": {"name": "feat"}}), "EnterWorktree new"
-assert denied({"tool_name": "EnterWorktree", "tool_input": {}}), "EnterWorktree random name"
+assert not denied({"tool_name": "EnterWorktree", "tool_input": {"name": "feat"}}), "EnterWorktree new"
+assert not denied({"tool_name": "EnterWorktree", "tool_input": {}}), "EnterWorktree random name"
 assert not denied({"tool_name": "EnterWorktree", "tool_input": {"path": "/tmp/wh-wt-1"}}), "EnterWorktree temp path"
-assert denied({"tool_name": "EnterWorktree", "tool_input": {"path": os.path.join(REPO, ".claude/worktrees/a")}}), "EnterWorktree inside project"
-assert denied({"tool_name": "Agent", "tool_input": {"description": "Implement parser", "prompt": "x", "isolation": "worktree"}}), "agent isolation"
+assert not denied({"tool_name": "EnterWorktree", "tool_input": {"path": os.path.join(REPO, ".claude/worktrees/a")}}), "EnterWorktree inside project"
+assert not denied({"tool_name": "Agent", "tool_input": {"description": "Implement parser", "prompt": "x", "isolation": "worktree"}}), "agent isolation"
 assert not denied({"tool_name": "Agent", "tool_input": {"description": "Implement parser", "prompt": "x", "isolation": "remote"}}), "remote isolation"
 outside = "/opt/wh-test-outside/file.txt"
 w = {"tool_name": "Write", "tool_input": {"file_path": outside, "content": "x"}}
