@@ -25,7 +25,7 @@
 | Что | Команда |
 |---|---|
 | Установка | Python 3 из системы; для тестов — `python3 -m pip install --user hypothesis` |
-| Тесты | `python3 tests/test_sync.py && python3 schema/test_openspec_after_update.py && python3 tests/test_process_guard.py && python3 tests/test_work_hooks.py && python3 tests/test_public_tree.py && python3 tests/test_sdd_worktree.py && python3 tests/test_sdd_dispatch_plan.py && python3 tests/test_sdd_pr.py && python3 tests/test_sdd_dispatch.py && python3 tests/test_publish_first.py && python3 tests/test_cli.py && python3 tests/test_init.py && python3 tests/test_npm_package.py` |
+| Тесты | `python3 tests/test_sync.py && python3 schema/test_openspec_after_update.py && python3 tests/test_process_guard.py && python3 tests/test_work_hooks.py && python3 tests/test_public_tree.py && python3 tests/test_sdd_worktree.py && python3 tests/test_sdd_dispatch_plan.py && python3 tests/test_sdd_pr.py && python3 tests/test_sdd_dispatch.py && python3 tests/test_publish_first.py && python3 tests/test_cli.py && python3 tests/test_init.py && python3 tests/test_npm_package.py && python3 tests/test_sdd_eval.py` |
 | CLI | `python3 -m solo_sdd --version` |
 | Что разложено и где расходится | `python3 sync.py status` |
 | Раскладка | `python3 sync.py push` |
@@ -44,6 +44,8 @@
 | `global/work_hooks_settings.py` | Разовое подключение хуков в `~/.claude/settings.json` |
 | `global/process-guard.py` | Хук запрета прямой остановки процессов |
 | `global/sdd_dispatch.py` | Приёмка статуса и merge режима `local` для `spec-dispatch` |
+| `global/sdd_eval.py` | Повтор change и сравнение конфигураций диспетчера |
+| `tests/eval/` | Наборы, конфигурации, цены, фикстуры |
 | `schema/openspec-after-update.py` | Сборка схемы `solo`, правила владельца в скиллах OpenSpec, вызов `sync.py push` |
 | `templates/` | Шаблоны для новых проектов |
 | `openspec/` | Спеки и change этого репозитория |

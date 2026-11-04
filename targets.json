@@ -32,6 +32,7 @@
     "global/sdd_dispatch_plan.py": ["~/.local/bin/sdd-dispatch-plan.py"],
     "global/sdd_pr.py": ["~/.local/bin/sdd-pr.py"],
     "global/sdd_dispatch.py": ["~/.local/bin/sdd-dispatch.py"],
+    "global/sdd_eval.py": ["~/.local/bin/sdd-eval.py"],
     "global/model-policy.json": ["~/.claude/hooks/model-policy.json"],
     "global/AGENTS.md": {"mode": "block", "copies": ["~/AGENTS.md", "~/.codex/AGENTS.md", "~/.claude/CLAUDE.md"]},
     "schema/openspec-after-update.py": ["~/.local/bin/openspec-after-update.py"],

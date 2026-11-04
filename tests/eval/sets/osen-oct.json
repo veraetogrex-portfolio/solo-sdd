@@ -1,0 +1,16 @@
+{
+ "project": "~/Code/products/osen",
+ "prepare": "npm ci",
+ "changes": [
+  {"id": "214-scanned-pdf-ocr-materials", "oracle": "732c109bf9263fb75b685c5246e4e9fafff2511b"},
+  {"id": "215-zip-archive-materials", "oracle": "c1f8841cc35a073076fcbc75a077899458b08163"},
+  {"id": "236-fix-linear-brace-scan", "oracle": "fc1077227631fa64837b651fb1fc2e706a6543b2"},
+  {"id": "242-fix-connections-async-exec", "oracle": "2f35e4c22c781758860b6a4fa7ea08bab502d097"},
+  {"id": "248-fix-unreadable-sessions-surfaced", "oracle": "2ae1ae41c8aed98dcaad54c2afd6e6d20a2cf60a"},
+  {"id": "249-fix-session-start-edges", "oracle": "559ee98ff5453862694ec6363c85dfba5cbbda62"},
+  {"id": "250-fix-materials-duplicates-and-names", "oracle": "3e6c6e4e3059f2353866345bf7d79cf2266a91de"},
+  {"id": "252-fix-epub-self-closing-tags", "oracle": "c2d4610b0b0da3dde2e1bd968cebd75b8049b3b9"},
+  {"id": "257-fix-installer-skill-consistency", "oracle": "dfaf15d79441a0642f324096da7daf970f857e4f"},
+  {"id": "261-fix-setup-last-roster", "oracle": "c60231f6378cea369431bcd8dc46b8fc0fd41be4"}
+ ]
+}
