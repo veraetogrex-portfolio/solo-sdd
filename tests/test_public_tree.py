@@ -14,6 +14,9 @@ REPO = pathlib.Path(__file__).resolve().parents[1]
 # заполнители <user>, <имя> под класс символов не попадают; you исключён явно
 HOME_RE = re.compile(r"/(?:Users|home)/(?!you/)[A-Za-z0-9_.-]+/")
 SESSION_RE = re.compile(r"(?:session=|session |сесси[а-я]* )[0-9a-f]{8,}", re.I)
+CLONE_RE = re.compile(r"(?:Desktop|Code/tools/sdd)/solo-sdd")
+CLONE_SCOPE = ("skills/", "global/", "schema/", "templates/", "scripts/")
+CLONE_FILES = ("ALGORITHM.md", "README.md")
 SKIP_PREFIXES = ("openspec/",)
 SKIP_FILES = ("docs/waiting.md", "tests/test_public_tree.py")
 
@@ -22,9 +25,10 @@ def git(root, *args):
     return subprocess.run(["git", *args], cwd=root, capture_output=True, text=True, check=True, stdin=subprocess.DEVNULL).stdout
 
 
-def find_in_line(line, deny_regexes):
+def find_in_line(line, deny_regexes, clone=False):
     """Найденные фрагменты одной строки (не вся строка: строки бывают по 100 КБ)."""
-    return [m.group() for rx in [HOME_RE, SESSION_RE, *deny_regexes] for m in rx.finditer(line)]
+    rxs = [HOME_RE, SESSION_RE, *deny_regexes] + ([CLONE_RE] if clone else [])
+    return [m.group() for rx in rxs for m in rx.finditer(line)]
 
 
 def load_denylist(root):
@@ -49,8 +53,9 @@ def scan(root):
             continue
         with open(full, "rb") as f:
             text = f.read().decode("utf-8", errors="ignore")
+        clone = rel.startswith(CLONE_SCOPE) or rel in CLONE_FILES
         for n, line in enumerate(text.splitlines(), 1):
-            for frag in find_in_line(line, deny):
+            for frag in find_in_line(line, deny, clone):
                 found.append(f"{rel}:{n}: {frag}")
     return found
 
@@ -124,6 +129,21 @@ class TestScan(TempRepo):
     def test_empty_denylist_line_no_findings(self):
         self.deny("", "  ")
         self.put("a.md", "любой текст\n")
+        self.assertEqual(scan(self.root), [])
+
+    def test_clone_path_in_skill_found(self):
+        self.put("skills/project-init/SKILL.md", "см. ~/Code/tools/sdd/solo-sdd/templates/\n")
+        res = scan(self.root)
+        self.assertEqual(len(res), 1, res)
+        self.assertIn("skills/project-init/SKILL.md:1", res[0])
+
+    def test_clone_path_desktop_in_global_found(self):
+        self.put("global/x", "~/Desktop/solo-sdd\n")
+        self.assertEqual(len(scan(self.root)), 1)
+
+    def test_clone_path_outside_scope_ok(self):
+        self.put("openspec/changes/x/verification.md", "~/Code/tools/sdd/solo-sdd\n")
+        self.put("tests/x.py", "~/Desktop/solo-sdd\n")
         self.assertEqual(scan(self.root), [])
 
     def test_missing_file_skipped(self):

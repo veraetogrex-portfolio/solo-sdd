@@ -85,6 +85,15 @@ def pairs():
         for root in where:
             yield name, source, os.path.join(roots[root], name, "SKILL.md"), False
     for rel, copies in targets["files"].items():
+        if rel.endswith("/**"):  # вся папка репозитория: по файлу на каждый, без скрытых
+            base = rel[:-3]
+            for dirpath, dirs, files in os.walk(os.path.join(REPO, base)):
+                dirs[:] = sorted(d for d in dirs if not d.startswith(".") and d != "__pycache__")
+                for f in sorted(files):
+                    if not f.startswith("."):
+                        sub = os.path.relpath(os.path.join(dirpath, f), os.path.join(REPO, base))
+                        yield f"{base}/{sub}", os.path.join(REPO, base, sub), os.path.join(expand(copies[0]), sub), False
+            continue
         block = isinstance(copies, dict) and copies.get("mode") == "block"
         for place in copies["copies"] if isinstance(copies, dict) else copies:
             yield rel, os.path.join(REPO, rel), expand(place), block
