@@ -387,8 +387,8 @@ def questions(sid):
             for b in blocks(o):
                 if b.get("type") == "tool_use" and b.get("name") == "AskUserQuestion":
                     qs = (b.get("input") or {}).get("questions")
-                    found += [str(q["question"]) for q in qs if isinstance(q, dict) and q.get("question")] \
-                        if isinstance(qs, list) else []
+                    found += ([str(q["question"]) for q in qs if isinstance(q, dict) and q.get("question")]
+                              if isinstance(qs, list) else []) or ["без текста"]
                 elif i == 0 and o.get("type") == "assistant" and b.get("type") == "text":
                     lines = str(b.get("text", "")).splitlines()
                     for j, ln in enumerate(lines):
@@ -396,7 +396,7 @@ def questions(sid):
                         rest = m.group(1).lstrip(":—-* ").strip() if m else ""
                         if m and not rest:  # текст на следующей непустой строке блока
                             rest = next((x.lstrip("-* ").strip() for x in lines[j + 1:] if x.strip()), "")
-                        if rest and not rest.lower().startswith(("ничего", "нет", "none")):
+                        if rest and not re.match(r"(?:ничего|нет|none)\b", rest, re.I):
                             found.append(rest)
     return "; ".join(found)[:300] or None
 
@@ -561,6 +561,8 @@ def merges(objs):
                     key = sha.group(1) if sha else b["tool_use_id"]
                 elif re.search(r"PR #\d+\b[^\n]*merged \(", t):
                     key = "PR " + re.search(r"PR #(\d+)", t).group(1)
+                elif "land-local" in cmd and re.search(r"(?m)^смёрджен [0-9a-f]+", t):
+                    key = re.search(r"(?m)^смёрджен ([0-9a-f]+)", t).group(1)
                 elif MERGE_CMD.search(cmd) and "exit 0" in t:
                     key = MERGE_CMD.search(cmd).group(1)
                 if key and o.get("timestamp"):

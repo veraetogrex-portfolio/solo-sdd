@@ -651,6 +651,14 @@ class RunTests(unittest.TestCase):
             self.assertNotIn("question", rec, t)
             self.assertIn("c%d смёрджен" % i, out.splitlines())
 
+    def test_question_starting_like_no(self):
+        rec, _ = self.ask([self.text_line("Нужно от вас: нетривиальный выбор режима")])
+        self.assertEqual(rec["question"], "вопрос: нетривиальный выбор режима")
+
+    def test_question_ask_tool_without_text(self):
+        rec, _ = self.ask([L(DAY + "09:00:00.000Z", "m1", OP, blocks=[tu("q1", "AskUserQuestion", {})])])
+        self.assertEqual(rec["question"], "вопрос: без текста")
+
     def test_no_session_log_no_question(self):
         make_copy(self.folder, "c1", "merge")
         self.assertEqual(self.run_cmd("--label", "L1").returncode, 0)
@@ -863,6 +871,21 @@ class MetricsSession(unittest.TestCase):
 
 FIX_LINES = [ln for p in [FIX / "fixture-session.jsonl"] + sorted((FIX / "fixture-session/subagents").glob("*.jsonl"))
              for ln in p.read_text(encoding="utf-8").splitlines()]
+
+
+class LandLocalMerges(unittest.TestCase):
+    def merges(self, text):
+        return ev.merges([
+            {"message": {"content": [{"type": "tool_use", "id": "b", "name": "Bash",
+                                      "input": {"command": "python3 sdd-dispatch.py land-local M W x --check t"}}]}},
+            {"timestamp": "T", "message": {"content": [{"type": "tool_result", "tool_use_id": "b", "content": text}]}}])
+
+    def test_land_local_counted(self):
+        self.assertEqual(self.merges("смёрджен abc123"), {"abc123": "T"})
+        self.assertEqual(self.merges("смёрджен abc123, не убрано: remove: x"), {"abc123": "T"})
+
+    def test_land_local_refused_not_counted(self):
+        self.assertEqual(self.merges("не смёрджен: конфликт merge: f"), {})
 
 
 class MetricsProperties(unittest.TestCase):
