@@ -1,6 +1,6 @@
 # ui-gate-stand
 
-Стенд для живого сценария `ui-check-gate` (`openspec/changes/ui-check-gate/verification.md`): лендинг с намеренно заложенными нарушениями. Заложены: `#pricing` без раздела, `#999999` на `#FFFFFF`, «10K+ users», кликабельный div, форма без `<label>`, кнопка «Get Started», заглушка отзывов, «Fast — and simple» и «Осень — приложение для заметок». Всё остальное чисто. Ожидаемый вердикт — `EXPECTED.md`.
+Стенд для живого сценария `ui-check-gate` (`openspec/changes/ui-check-gate/verification.md`): лендинг с намеренно заложенными нарушениями. Заложены: `#pricing` без раздела, `#999999` на `#FFFFFF`, «10K+ users», кликабельный div, форма без `<label>`, кнопка «Get Started», заглушка отзывов, «Fast — and simple» и «Тетрадь — приложение для заметок». Всё остальное чисто. Ожидаемый вердикт — `EXPECTED.md`.
 
 ## Подготовка
 
