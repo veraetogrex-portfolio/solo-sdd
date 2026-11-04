@@ -224,6 +224,9 @@ def validate(spec, cfg, out):
     pats = spec.get("tests", DEFAULT_TESTS)
     seen = set()
     for i, c in enumerate(chs):
+        if not isinstance(c, dict) or not all(isinstance(c.get(k), (str, type(None))) for k in ("id", "oracle")):
+            bad.append("changes[%d]: нужен объект, id и oracle — строки" % i)
+            continue
         cid, oracle = c.get("id"), c.get("oracle")
         name = cid or "changes[%d]" % i
         for field, v in (("id", cid), ("oracle", oracle)):
@@ -414,7 +417,7 @@ def run_copy(copy, folder, label, model):
     except OSError:
         code = 127
     done = code == 0 and is_merged(copy, meta)
-    rec = {"session": sid, "start": start, "end": now(), "exit": code, "status": "смёрджен" if done else "не завершён"}
+    rec = {"session": sid, "config": meta["config"], "start": start, "end": now(), "exit": code, "status": "смёрджен" if done else "не завершён"}
     q = questions(sid)
     if q:
         rec["question"] = "вопрос: " + q
@@ -882,7 +885,7 @@ def cmd_compare(a):
                 continue
             try:
                 o = oracle_run(copy, meta, a.timeout)
-            except (RuntimeError, subprocess.CalledProcessError) as e:
+            except (RuntimeError, KeyError, subprocess.CalledProcessError) as e:
                 print("сбой оракула: %s: %s" % (cid, e), file=sys.stderr)
                 return 3
             res[lb, cid] = {"done": o["green"], "failed": o["failed"],

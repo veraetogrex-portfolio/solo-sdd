@@ -152,6 +152,15 @@ class RejectTests(unittest.TestCase):
         self.assertIn("%s: повтор в наборе" % IDS[0], r.stderr.splitlines())
         self.assertFalse((e.root / "out").exists())
 
+    def test_bad_change_types(self):
+        for bad in ("строка", {"id": 5, "oracle": "x"}):
+            e = make_env(self)
+            e.write_set(changes=[bad] + [{"id": c, "oracle": o} for c, o in list(e.oracles.items())[:7]])
+            r = e.setup()
+            self.assertEqual(r.returncode, 2, r.stderr)
+            self.assertIn("changes[0]: нужен объект", r.stderr)
+            self.assertFalse((e.root / "out").exists())
+
     def test_not_in_archive(self):
         e = make_env(self)
         shutil.rmtree(e.arch(IDS[2]))
@@ -501,6 +510,7 @@ class RunTests(unittest.TestCase):
         for v in j["copies"].values():
             self.assertTrue(v["start"].endswith("Z") and v["end"].endswith("Z") and v["start"] <= v["end"])
             self.assertEqual(len(v["session"]), 36)
+            self.assertEqual(v["config"], "cfg1")
         self.assertEqual(r.stdout.splitlines(), ["c-fail не завершён", "c-none не завершён", "c-ok смёрджен",
                                                  "завершено 1 из 3"])
         self.assertTrue((self.folder / "runs/L1.c-ok.log").exists())
@@ -1218,6 +1228,16 @@ class CompareTests(unittest.TestCase):
         r = e.compare(e.E, ["p1", "p2"], ["q1", "q2"])
         self.assertEqual((r.returncode, r.stdout), (3, ""))
         self.assertIn("команда тестов — цепочка: c1 (%s)" % (e.E / "p1/c1"), r.stderr)
+
+    def test_copy_without_meta_is_code_3(self):
+        e = cmp_env(self)
+        for lb in ("a1", "a2", "b1", "b2"):
+            e.label(e.E, lb, {"c1": "good"})
+        os.remove(e.E / "a1/c1/.sdd-eval")
+        r = e.compare(e.E, ["a1", "a2"], ["b1", "b2"])
+        self.assertEqual(r.returncode, 3, r.stderr)
+        self.assertIn("сбой оракула: c1", r.stderr)
+        self.assertNotIn("Traceback", r.stderr)
 
     def test_oracle_failure_no_traceback(self):
         e = cmp_env(self)
