@@ -42,17 +42,23 @@ class Versions(unittest.TestCase):
         self.assertEqual(len(set(v.values())), 1, v)
 
     def test_mismatch_named(self):
+        """Сценарий «Разошлась версия»: этот же файл на копии с 0.1.1 в package.json — код 1 и обе версии."""
         tmp = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, tmp, True)
-        os.makedirs(os.path.join(tmp, "solo_sdd"))
-        for f in ("pyproject.toml", "solo_sdd/__init__.py"):
+        for d in ("solo_sdd", "tests"):
+            os.makedirs(os.path.join(tmp, d))
+        for f in ("pyproject.toml", "solo_sdd/__init__.py", "tests/test_npm_package.py"):
             shutil.copy(os.path.join(REPO, f), os.path.join(tmp, f))
-        pkg = json.load(open(os.path.join(REPO, "package.json")))
+        with open(os.path.join(REPO, "package.json")) as f:
+            pkg = json.load(f)
         pkg["version"] = "0.1.1"
-        json.dump(pkg, open(os.path.join(tmp, "package.json"), "w"))
-        v = versions(tmp)
-        self.assertEqual(v["package.json"], "0.1.1")
-        self.assertNotEqual(v["package.json"], v["solo_sdd/__init__.py"])
+        with open(os.path.join(tmp, "package.json"), "w") as f:
+            json.dump(pkg, f)
+        p = subprocess.run([sys.executable, os.path.join(tmp, "tests", "test_npm_package.py"), "Versions.test_same_version"],
+                           capture_output=True, text=True, stdin=subprocess.DEVNULL)
+        self.assertEqual(p.returncode, 1, p.stderr)
+        self.assertIn("'package.json': '0.1.1'", p.stderr)
+        self.assertIn(f"'solo_sdd/__init__.py': '{versions(REPO)['solo_sdd/__init__.py']}'", p.stderr)
 
 
 @unittest.skipIf(NODE is None, "node нет в PATH: обёртка не проверена")
