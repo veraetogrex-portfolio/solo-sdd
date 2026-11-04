@@ -32,4 +32,5 @@ if (r.error) {
   console.error(`solo-sdd: ${r.error.message}`);
   process.exit(1);
 }
+if (r.signal) process.kill(process.pid, r.signal);
 process.exit(r.status === null ? 1 : r.status);

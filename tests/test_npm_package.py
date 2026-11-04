@@ -108,6 +108,17 @@ class Wrapper(unittest.TestCase):
         code, out, _ = run([NODE, WRAPPER, "init", "x y"], self.home, path=fake + ":/usr/bin:/bin",
                            extra={"SOLO_SDD_PYTHON": "", "PYTHONPATH": "/extra"})
         self.assertEqual((code, out), (5, f"PYTHONPATH={REPO}{os.pathsep}/extra\nARGS=init x y\n"))
+        code, out, _ = run([NODE, WRAPPER, "status"], self.home, path="/usr/bin:/bin",
+                           extra={"SOLO_SDD_PYTHON": os.path.join(fake, "python")})
+        self.assertEqual((code, out.splitlines()[-1]), (5, "ARGS=status"), "SOLO_SDD_PYTHON важнее python3 из PATH")
+
+    def test_signal_passed(self):
+        fake = os.path.join(self.home, "py")
+        with open(fake, "w") as f:
+            f.write('#!/bin/sh\ncase "$2" in *version_info*) echo 3.12; exit 0;; esac\nkill -TERM $$\n')
+        os.chmod(fake, 0o755)
+        code, _, _ = run([NODE, WRAPPER, "status"], self.home, extra={"SOLO_SDD_PYTHON": fake})
+        self.assertEqual(code, -15)
 
     def test_no_python(self):
         code, out, err = run([NODE, WRAPPER, "status"], self.home, path="/nonexistent", extra={"SOLO_SDD_PYTHON": ""})
