@@ -143,6 +143,15 @@ class RejectTests(unittest.TestCase):
         self.assertIn("оракул без тестов: " + IDS[0], r.stderr)
         self.assertFalse((e.root / "out").exists())
 
+    def test_duplicate_id(self):
+        e = make_env(self)
+        e.write_set(changes=[{"id": c, "oracle": o} for c, o in e.oracles.items()] +
+                            [{"id": IDS[0], "oracle": e.oracles[IDS[1]]}])
+        r = e.setup()
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("%s: повтор в наборе" % IDS[0], r.stderr.splitlines())
+        self.assertFalse((e.root / "out").exists())
+
     def test_not_in_archive(self):
         e = make_env(self)
         shutil.rmtree(e.arch(IDS[2]))
@@ -742,6 +751,11 @@ class CmpEnv:
         git(self.proj, "rm", "-q", "old.test.sh")
         git(self.proj, "commit", "-qm", "c3")
         self.oracle["c3"] = git(self.proj, "rev-parse", "HEAD")
+        self.base["c4"] = self.oracle["c3"]
+        put(self.proj, "c4.test.sh", "test -f built/data.txt\n")
+        git(self.proj, "add", "-A")
+        git(self.proj, "commit", "-qm", "c4")
+        self.oracle["c4"] = git(self.proj, "rev-parse", "HEAD")
         self.count = self.root / "count"
         self.agents = CMP_AGENTS
 
@@ -756,6 +770,9 @@ class CmpEnv:
             git(c, "add", "-A")
             git(c, "commit", "-qm", "merge")
         put(c, "AGENTS.md", self.agents)
+        if kind == "built":  # результат prepare: игнорируемая папка есть только в копии
+            put(c, "built/data.txt", "x\n")
+            put(c, ".git/info/exclude", (c / ".git/info/exclude").read_text() + "built/\n")
         meta = {"config": "cfg", "id": cid, "oracle": self.oracle[cid], "base": self.base[cid], "main": "main",
                 "project": str(self.proj), "spec_notes": list(notes), "tests": ["*.test.sh"]}
         put(c, ".sdd-eval", json.dumps(meta))
@@ -924,6 +941,45 @@ class CompareTests(unittest.TestCase):
         self.assertEqual(ev.oracle_tests(meta["project"], meta["oracle"], meta["tests"]), [])
         o = ev.oracle_run(str(f / "c3"), meta, 60)
         self.assertEqual((o["green"], o["failed"]), (False, ["нет файлов оракула"]))
+
+    def test_ignored_prepare_results_visible(self):
+        e = cmp_env(self)
+        for lb in ("p1", "p2", "q1", "q2"):
+            e.label(e.E, lb, {"c4": "built"})
+        r = e.compare(e.E, ["p1", "p2"], ["q1", "q2"])
+        self.assertEqual(r.returncode, 0, r.stderr)
+        row = [ln for ln in r.stdout.splitlines() if ln.startswith("| c4 ")][0]
+        self.assertEqual(row.count("выполнен"), 4, row)
+        for lb in ("p1", "q2"):
+            self.assertEqual((e.E / lb / "c4/built/data.txt").read_text(), "x\n")
+            self.assertEqual(len(git(e.E / lb / "c4", "worktree", "list").splitlines()), 1)
+
+    def test_unique_labels_counted(self):
+        e = cmp_env(self)
+        r = e.compare(e.E, ["x", "y"], ["z", "z"])
+        self.assertEqual((r.returncode, r.stdout), (2, ""))
+        self.assertIn("нужно ≥ 2 прогонов: b", r.stderr.splitlines())
+
+    def test_chained_command(self):
+        e = cmp_env(self)
+        e.agents = CMP_AGENTS.replace("`sh run-tests.sh`", "`sh run-tests.sh && true`")
+        for lb in ("p1", "p2", "q1", "q2"):
+            e.label(e.E, lb, G)
+        r = e.compare(e.E, ["p1", "p2"], ["q1", "q2"])
+        self.assertEqual((r.returncode, r.stdout), (3, ""))
+        self.assertIn("команда тестов — цепочка: c1 (%s)" % (e.E / "p1/c1"), r.stderr)
+        self.assertEqual(e.runs(), 0)
+
+    def test_oracle_failure_no_traceback(self):
+        e = cmp_env(self)
+        for lb in ("p1", "p2", "q1", "q2"):
+            e.label(e.E, lb, G)
+        mp = e.E / "p1/c1/.sdd-eval"
+        mp.write_text(json.dumps(dict(json.loads(mp.read_text()), main="nope")))
+        r = e.compare(e.E, ["p1", "p2"], ["q1", "q2"])
+        self.assertEqual((r.returncode, r.stdout), (3, ""))
+        self.assertIn("сбой оракула: c1: ", r.stderr)
+        self.assertNotIn("Traceback", r.stderr)
 
     def test_no_spec_block_without_notes(self):
         e, out = self.mk({"p1": G, "p2": G}, {"q1": G, "q2": G})

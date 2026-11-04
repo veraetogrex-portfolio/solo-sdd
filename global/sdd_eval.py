@@ -216,6 +216,7 @@ def validate(spec, cfg, out):
         bad.append("нет AGENTS.md в " + project)
     main = main_branch(project)
     pats = spec.get("tests", DEFAULT_TESTS)
+    seen = set()
     for i, c in enumerate(chs):
         cid, oracle = c.get("id"), c.get("oracle")
         name = cid or "changes[%d]" % i
@@ -224,6 +225,10 @@ def validate(spec, cfg, out):
                 bad.append("%s: нет поля %s" % (name, field))
         if not cid or not oracle:
             continue
+        if cid in seen:
+            bad.append("%s: повтор в наборе" % cid)
+            continue
+        seen.add(cid)
         if not archived(project, cid):
             bad.append("%s: нет папки в openspec/changes/archive" % cid)
         if os.path.exists(os.path.join(out, cid)):
@@ -722,6 +727,12 @@ def oracle_run(copy, meta, timeout):
         r = sh([sys.executable, script, "setup", copy, wt])
         if r.returncode:
             raise RuntimeError("setup: " + (r.stderr.strip().splitlines() or r.stdout.strip().splitlines() or ["?"])[-1])
+        # ссылки на игнорируемые результаты prepare копии; remove и rmtree ссылки не разворачивают
+        for ent in git(copy, "ls-files", "-z", "-o", "-i", "--exclude-standard", "--directory").split("\0"):
+            rel = ent.rstrip("/")
+            if rel and rel != ".sdd-eval" and not os.path.lexists(os.path.join(wt, rel)):
+                os.makedirs(os.path.dirname(os.path.join(wt, rel)), exist_ok=True)
+                os.symlink(os.path.join(copy, rel), os.path.join(wt, rel))
         for f in files:
             data = subprocess.run(["git", "-C", project, "show", "%s:%s" % (oracle, f)], capture_output=True,
                                   stdin=subprocess.DEVNULL, check=True).stdout
@@ -757,7 +768,7 @@ def hours_s(h):
 
 def cmd_compare(a):
     for name, labels in (("a", a.a), ("b", a.b)):
-        if len(labels) < 2:
+        if len(set(labels)) < 2:
             print("нужно ≥ 2 прогонов: " + name, file=sys.stderr)
             return 2
     folder = os.path.abspath(a.folder)
@@ -774,8 +785,14 @@ def cmd_compare(a):
     for lb in uniq:
         for cid, rec in sorted(runs[lb]["copies"].items()):
             copy = os.path.join(home[lb], cid)
-            if rec["status"] == "смёрджен" and not test_command(copy):
+            if rec["status"] != "смёрджен":
+                continue
+            cmd = test_command(copy)
+            if not cmd:
                 print("нет команды тестов: %s (%s)" % (cid, copy), file=sys.stderr)
+                bad = True
+            elif re.search(r"&&|\|\||[;|\n]", cmd):
+                print("команда тестов — цепочка: %s (%s)" % (cid, copy), file=sys.stderr)
                 bad = True
     if bad:
         return 3
@@ -798,7 +815,11 @@ def cmd_compare(a):
             if rec["status"] != "смёрджен":
                 res[lb, cid] = {"done": False, "text": "не смёрджен", "failed": None}
                 continue
-            o = oracle_run(copy, meta, a.timeout)
+            try:
+                o = oracle_run(copy, meta, a.timeout)
+            except (RuntimeError, subprocess.CalledProcessError) as e:
+                print("сбой оракула: %s: %s" % (cid, e), file=sys.stderr)
+                return 3
             res[lb, cid] = {"done": o["green"], "failed": o["failed"],
                             "text": "выполнен" if o["green"] else "смёрджен, оракул красный: " + ", ".join(o["failed"])}
 
