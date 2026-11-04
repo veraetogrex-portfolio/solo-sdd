@@ -10,7 +10,7 @@ description: Use when starting a new project or folder, or preparing an existing
 ## Порядок
 
 1. **Режим.** Определи по задаче: `demo` (показ, защита, прототип) или `prod`. Режим не указан и задача не про показ — выбери `prod` и запиши решение.
-2. **Git.** `git init`, если нет. Дан адрес — добавь remote. `.gitignore`: `.env`, ключи, сертификаты, рабочие данные. `openspec/`, `AGENTS.md` и `CLAUDE.md` в `.gitignore` не вноси. Существующий `.gitignore` не меняй; если он не скрывает `.env`, скажи об этом в отчёте.
+2. **Git.** `git init`, если нет. Дан адрес — добавь remote. `.gitignore`: `.env`, ключи, сертификаты, рабочие данные. `openspec/`, `AGENTS.md` и `CLAUDE.md` в `.gitignore` не вноси. Затем `git check-ignore -q .claude/worktrees/x || { [ -n "$(tail -c1 .gitignore 2>/dev/null)" ] && echo >> .gitignore; echo '.claude/worktrees/' >> .gitignore; }` (папка встроенных worktree Claude Code не должна попасть в коммиты). Существующий `.gitignore` не меняй, кроме этой строки; если он не скрывает `.env`, скажи об этом в отчёте.
 3. **OpenSpec.** Есть `solo-sdd` (`command -v solo-sdd`) — выполни `solo-sdd init` и не повторяй его шаги: `openspec init`, конфиг из шаблона, `openspec/analyze.md`, `docs/waiting.md`; дальше правь только контекст конфига. Иначе: `openspec init --tools claude,codex`. Если проект уже инициализирован — `openspec update`. В существующем `openspec/config.yaml` сохраняй прежний контекст и настройки, добавляй только недостающее. Для нового конфига:
    ```yaml
    schema: solo
@@ -32,8 +32,8 @@ description: Use when starting a new project or folder, or preparing an existing
 7. **Проверка.** `openspec validate --all --strict --no-interactive`, команды из таблицы AGENTS.md действительно запускаются.
 7a. **Коммит артефактов.** `git check-ignore -v -- openspec/ AGENTS.md CLAUDE.md`, затем по случаю:
    - `.gitignore` создан этим запуском: `git add -- .gitignore AGENTS.md CLAUDE.md openspec && git commit -m "project-init: правила и спеки" -- .gitignore AGENTS.md CLAUDE.md openspec`;
-   - `.gitignore` уже был, вывод пуст: те же две команды без `.gitignore` в путях (все три уже в коммите без изменений — шаг пропускается);
-   - `.gitignore` уже был, вывод не пуст: `.gitignore` не меняй и артефакты не коммить. В отчёт: путь, строка `.gitignore`, которая его скрывает, и цена — такие артефакты переносятся в worktree только через `sdd-worktree.py`; в публичном репозитории спеки с цитатами владельца стали бы видны всем, поэтому решение за ним.
+   - `.gitignore` уже был, вывод пуст: те же две команды, `.gitignore` в путях — только если этот запуск дописал в него `.claude/worktrees/`; иначе без него (все три уже в коммите без изменений — шаг пропускается);
+   - `.gitignore` уже был, вывод не пуст: `.gitignore` не меняй, кроме строки `.claude/worktrees/` (если этот запуск её дописал — отдельный коммит из одного `.gitignore`), и артефакты не коммить. В отчёт: путь, строка `.gitignore`, которая его скрывает, и цена — такие артефакты переносятся в worktree только через `sdd-worktree.py`; в публичном репозитории спеки с цитатами владельца стали бы видны всем, поэтому решение за ним.
    В коммит идут только названные пути: чужие правки остаются незакоммиченными.
 8. **README.** Проект запускается с нуля по README, без знаний из чата: установка, `.env` из `.env.example`, команда запуска, как понять, что заработало. Пройди эти шаги сам в чистой оболочке. Не запустилось — чини README или проект, это часть задачи.
 
