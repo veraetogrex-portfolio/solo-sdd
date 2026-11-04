@@ -27,6 +27,14 @@ uv tool install git+https://github.com/veraetogrex-portfolio/solo-sdd
 pipx install git+https://github.com/veraetogrex-portfolio/solo-sdd
 ```
 
+Через npm — одной командой вместе с OpenSpec:
+
+```bash
+npm i -g @fission-ai/openspec github:veraetogrex-portfolio/solo-sdd
+```
+
+npm-пакет — обёртка над тем же `python3 -m solo_sdd`: нужен Python 3.9+ в `PATH` (или путь к нему в `SOLO_SDD_PYTHON`) и Node 20+. Без подходящего Python команда пишет `solo-sdd: нужен Python 3.9+ (найден: …)` и выходит с кодом 1.
+
 Из клона работает то же без установки: `python3 -m solo_sdd <команда>`. Клон остаётся способом разработки, `sync.py` работает как раньше.
 
 | Команда | Что делает |
