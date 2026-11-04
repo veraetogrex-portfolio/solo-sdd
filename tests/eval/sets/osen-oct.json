@@ -1,6 +1,12 @@
 {
  "project": "~/Code/products/osen",
  "prepare": "npm ci",
+ "answers": {
+  "Брошенные метки CLAIM: снять?": "Снять и запустить",
+  "Неизвестная зависимость (это спека, не change)": "Не учитывать",
+  "Неизвестная зависимость (прочие имена)": "Оставить",
+  "Режим поставки: pr, squash / pr, merge / pr, rebase / local": "local"
+ },
  "changes": [
   {"id": "214-scanned-pdf-ocr-materials", "oracle": "732c109bf9263fb75b685c5246e4e9fafff2511b"},
   {"id": "215-zip-archive-materials", "oracle": "c1f8841cc35a073076fcbc75a077899458b08163"},

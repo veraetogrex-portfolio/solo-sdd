@@ -12,12 +12,14 @@ compare прогоняет тесты оракула на результате �
 
 setup проверяет набор (код 2, ничего не создаётся), делает по копии проекта на базе каждого change
 (первый родитель коммита-оракула), переносит правила, спеки и архив change, выполняет prepare и печатает
-«<id> <HEAD> <хеш openspec>». Код 3 — сбой подготовки хотя бы одной копии. run, metrics, compare — позже.
+«<id> <HEAD> <хеш openspec>». Код 3 — сбой подготовки хотя бы одной копии. Поле набора answers (вопрос -> ответ)
+пишется в .sdd-eval копии, run отдаёт его диспетчеру.
 """
 import argparse
 import fnmatch
 import glob
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -106,17 +108,16 @@ def sections(src, title):
     return out
 
 
-def parse_deps(lines):
-    """Имена из «Depends On»: значения в обратных кавычках, иначе первое слово пункта."""
-    deps = []
-    for ln in lines:
-        s = ln.strip().lstrip("-* ")
-        vals = s.split("`")[1::2] or [v.split()[0] for v in s.split(",") if v.split()]
-        for v in vals:
-            v = v.strip()
-            if re.fullmatch(r"[\w.-]+", v) and v != "none":
-                deps.append(v)
-    return deps
+def plan_deps():
+    """parse_deps из sdd_dispatch_plan.py рядом со скриптом (после раскладки имя с дефисом)."""
+    for n in ("sdd_dispatch_plan.py", "sdd-dispatch-plan.py"):
+        p = os.path.join(HERE, n)
+        if os.path.isfile(p):
+            sp = importlib.util.spec_from_file_location("sdd_dispatch_plan", p)
+            m = importlib.util.module_from_spec(sp)
+            sp.loader.exec_module(m)
+            return m.parse_deps
+    raise RuntimeError("нет sdd_dispatch_plan.py рядом с sdd_eval.py")
 
 
 def reset_tasks(text):
@@ -210,6 +211,9 @@ def validate(spec, cfg, out):
         bad.append("changes: %d, нужно не меньше 8" % len(chs))
     if not cfg.get("name"):
         bad.append("конфигурация: нет поля name")
+    ans = spec.get("answers", {})
+    if not isinstance(ans, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in ans.items()):
+        bad.append("answers: нужен объект «вопрос → ответ», строки")
     if not os.path.isdir(project):
         return bad + ["project: нет папки " + project], project
     if not os.path.isfile(os.path.join(project, "AGENTS.md")):
@@ -282,7 +286,7 @@ def build_copy(project, main, spec, cfg, out, c):
     fix_file(os.path.join(dst, "tasks.md"), reset_tasks)
     fix_file(os.path.join(dst, "verification.md"), reset_verification)
     prop = os.path.join(arch, "proposal.md")
-    for dep in parse_deps(sections(read(prop), "Depends On")) if os.path.isfile(prop) else []:
+    for dep in plan_deps()(sections(read(prop), "Depends On")) if os.path.isfile(prop) else []:
         da = archived(project, dep)
         if da:
             shutil.copytree(da, os.path.join(copy, "openspec", "changes", "archive", os.path.basename(da)),
@@ -306,7 +310,7 @@ def build_copy(project, main, spec, cfg, out, c):
             notes += ["спека после изменения: %s %s" % (cid, n) for n in delta[kind]]
     lines += notes
     meta = {"config": cfg["name"], "id": cid, "oracle": oracle, "base": base, "main": main, "project": project,
-            "spec_notes": notes, "tests": spec.get("tests", DEFAULT_TESTS)}
+            "spec_notes": notes, "tests": spec.get("tests", DEFAULT_TESTS), "answers": spec.get("answers", {})}
     write(os.path.join(copy, ".sdd-eval"), json.dumps(meta, ensure_ascii=False, indent=1, sort_keys=True) + "\n")
     with open(os.path.join(copy, ".git", "info", "exclude"), "a", encoding="utf-8") as f:
         f.write(".sdd-eval\n")
@@ -356,20 +360,59 @@ def is_merged(copy, meta):
     return ahead and archived(copy, meta["id"]) is not None
 
 
+NO_ASK = ("Окна вопроса владельцу нет, ответа не будет: не спрашивай владельца (ни AskUserQuestion, ни «Нужно от вас» "
+          "с вопросом), решай сам по ответам ниже.")
+
+
+def answers_prompt(answers):
+    return "\n".join([NO_ASK] + ["- %s → %s" % kv for kv in answers.items()])
+
+
+def questions(sid):
+    """Первые вопросы диспетчера и оркестраторов из журнала сессии: AskUserQuestion и «Нужно от вас» с вопросом."""
+    path = find_session(sid)
+    if not path:
+        return None
+    files = [path] + sorted(glob.glob(os.path.join(path[:-len(".jsonl")], "subagents", "agent-*.jsonl")))
+    found = []
+    for i, p in enumerate(files):
+        try:
+            objs = parsed(jlines(p))
+        except OSError:
+            continue
+        for o in objs:
+            for b in blocks(o):
+                if b.get("type") == "tool_use" and b.get("name") == "AskUserQuestion":
+                    qs = (b.get("input") or {}).get("questions")
+                    found += [str(q["question"]) for q in qs if isinstance(q, dict) and q.get("question")] \
+                        if isinstance(qs, list) else []
+                elif i == 0 and o.get("type") == "assistant" and b.get("type") == "text":
+                    for ln in str(b.get("text", "")).splitlines():
+                        m = re.search(r"Нужно от вас(.*)", ln)
+                        rest = m.group(1).lstrip(":—-* ").strip() if m else ""
+                        if rest and not rest.lower().startswith(("ничего", "нет")):
+                            found.append(rest)
+    return "; ".join(found)[:300] or None
+
+
 def run_copy(copy, folder, label, model):
     meta = read_json(os.path.join(copy, ".sdd-eval"))
     sid, start = str(uuid.uuid4()), now()
     log = os.path.join(folder, "runs", "%s.%s.log" % (label, meta["id"]))
     try:
         with open(log, "wb") as f:
-            code = subprocess.run(["claude", "-p", "/spec-dispatch", "--model", model, "--session-id", sid],
+            code = subprocess.run(["claude", "-p", "/spec-dispatch", "--model", model, "--session-id", sid,
+                                   "--append-system-prompt", answers_prompt(meta.get("answers", {}))],
                                   cwd=copy, stdin=subprocess.DEVNULL, stdout=f,
                                   stderr=subprocess.STDOUT).returncode
     except OSError:
         code = 127
     done = code == 0 and is_merged(copy, meta)
-    return meta, {"session": sid, "start": start, "end": now(), "exit": code,
-                  "status": "смёрджен" if done else "не завершён"}
+    rec = {"session": sid, "start": start, "end": now(), "exit": code, "status": "смёрджен" if done else "не завершён"}
+    q = questions(sid)
+    if q:
+        rec["question"] = "вопрос: " + q
+    return meta, rec
 
 
 def write_atomic(path, obj):
@@ -404,7 +447,8 @@ def cmd_run(a):
     with ThreadPoolExecutor(max_workers=max(1, a.parallel)) as ex:
         list(ex.map(one, cps))
     for cid in sorted(data["copies"]):
-        print("%s %s" % (cid, data["copies"][cid]["status"]))
+        c = data["copies"][cid]
+        print("%s %s%s" % (cid, c["status"], " " + c["question"] if c.get("question") else ""))
     ok = sum(c["status"] == "смёрджен" for c in data["copies"].values())
     print("завершено %d из %d" % (ok, len(cps)))
     return 0
@@ -837,10 +881,11 @@ def cmd_compare(a):
             if not r:
                 cells.append("нет в прогоне")
             elif r["text"] == "не смёрджен":
-                cells.append("не смёрджен")
+                cells.append("не смёрджен" + (" (вопрос)" if runs[lb]["copies"][cid].get("question") else ""))
             else:
                 h, c = met(lb, cid)
-                cells.append("%s %s ч %s" % (r["text"], hours_s(h), money(c)))
+                q = " (вопрос)" if runs[lb]["copies"][cid].get("question") else ""
+                cells.append("%s%s %s ч %s" % (r["text"], q, hours_s(h), money(c)))
         out.append("| %s | %s |" % (cid, " | ".join(cells)))
     out += ["", "| Конфигурация | Выполнено по прогонам | Время, ч | Стоимость |", "|---|---|---|---|"]
     for name, labels in (("a", a.a), ("b", a.b)):
@@ -851,10 +896,13 @@ def cmd_compare(a):
         hs, cs = [m[0] for m in mm if m[0] is not None], [m[1] for m in mm if m[1] is not None]
         out.append("| %s | %s из %d | %s | %s |" % (name, ", ".join(map(str, counts)), total,
                                                     hours_s(sum(hs) if hs else None), money(sum(cs) if cs else None)))
+    asked = {cid: ["%s: %s" % (lb, runs[lb]["copies"][cid]["question"]) for lb in uniq
+                   if runs[lb]["copies"].get(cid, {}).get("question")] for cid in ids}
+    asked = {cid: v for cid, v in asked.items() if v}
     flips = []
     for (xn, xs), (yn, ys) in ((("a", a.a), ("b", a.b)), (("b", a.b), ("a", a.a))):
         for cid in ids:
-            if all(res.get((lb, cid), {}).get("done") for lb in xs):
+            if cid not in asked and all(res.get((lb, cid), {}).get("done") for lb in xs):
                 why = []
                 for lb in dict.fromkeys(ys):
                     r = res.get((lb, cid))
@@ -864,6 +912,8 @@ def cmd_compare(a):
                 if why:
                     flips.append("- %s: выполнен во всех прогонах %s, не выполнен в %s" % (cid, xn, "; ".join(why)))
     out += [""] + (["Перевернувшиеся:"] + flips if flips else ["Перевернувшиеся: нет"])
+    if asked:
+        out += ["", "С вопросом:"] + ["- %s: %s" % (cid, "; ".join(v)) for cid, v in sorted(asked.items())]
     if notes:
         out += ["", "Спека после изменения:"] + ["- " + n for n in sorted(notes)]
     print("\n".join(out))

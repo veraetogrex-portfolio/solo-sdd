@@ -283,6 +283,37 @@ class CopyTests(unittest.TestCase):
                               stdin=subprocess.DEVNULL)
         self.assertIn("запустить: " + IDS[0], plan.stdout.splitlines())
 
+    def test_depends_none_variants(self):
+        e = make_env(self)
+        for cid, dep in zip(IDS[2:7], ["none.", "нет", "—", "нет (пояснение)", "none, `999-ghost`"]):
+            put(e.arch(cid), "proposal.md", "## Why\nw\n\n## Depends On\n\n- %s\n" % dep)
+        r = e.setup()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual([ln for ln in r.stdout.splitlines() if "не в архиве" in ln],
+                         ["зависимость не в архиве: %s 999-ghost" % IDS[1]])
+        for cid in IDS[2:7]:
+            arch = e.root / "out" / cid / "openspec/changes/archive"
+            self.assertEqual(list(arch.iterdir()) if arch.exists() else [], [])
+
+    def test_answers_validated(self):
+        e = make_env(self)
+        for bad in (["x"], {"q": 1}, "строка", {"q": None}):
+            e.write_set(answers=bad)
+            r = e.setup()
+            self.assertEqual(r.returncode, 2, bad)
+            self.assertIn("answers:", r.stderr)
+            self.assertFalse((e.root / "out").exists())
+
+    def test_answers_in_meta(self):
+        e = make_env(self)
+        r = e.setup("o0")
+        self.assertEqual(json.loads((e.root / "o0" / IDS[0] / ".sdd-eval").read_text())["answers"], {})
+        e.write_set(answers={"Режим?": "local"})
+        r = e.setup()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(json.loads((e.root / "out" / IDS[0] / ".sdd-eval").read_text())["answers"],
+                         {"Режим?": "local"})
+
     def test_repeat_is_identical(self):
         e = make_env(self)
         a, b = e.setup("o1"), e.setup("o2")
@@ -370,7 +401,12 @@ class ReplayCopyProperties(unittest.TestCase):
 # ---- run ----
 
 FAKE_CLAUDE = """#!/bin/sh
-echo "$@" >> "$FAKE_COUNT"
+echo "$1 $2 $3 $4 $5 $6" >> "$FAKE_COUNT"
+printf '%s\\0' "$@" > "$FAKE_COUNT.argv"
+if [ -n "$FAKE_LOG" ]; then
+  mkdir -p "$HOME/.claude/projects/x"
+  cp "$FAKE_LOG" "$HOME/.claude/projects/x/$6.jsonl"
+fi
 if [ -n "$FAKE_PAR" ]; then
   mkdir "$FAKE_PAR/run.$$"
   n=$(ls "$FAKE_PAR" | grep -c '^run\\.')
@@ -420,8 +456,11 @@ class RunTests(unittest.TestCase):
         self.folder = self.root / "copies"
         self.folder.mkdir()
 
-    def run_cmd(self, *args, path=None, par=None):
-        env = dict(os.environ, FAKE_COUNT=str(self.count), PATH=path or "%s:/usr/bin:/bin" % self.bin)
+    def run_cmd(self, *args, path=None, par=None, log=None):
+        env = dict(os.environ, FAKE_COUNT=str(self.count), PATH=path or "%s:/usr/bin:/bin" % self.bin,
+                   HOME=str(self.root / "home"))
+        if log:
+            env["FAKE_LOG"] = str(log)
         if par:
             env["FAKE_PAR"] = str(par)
         return subprocess.run(["/usr/bin/python3", str(SCRIPT), "run", str(self.folder)] + list(args),
@@ -508,6 +547,79 @@ class RunTests(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         for v in self.journal()["copies"].values():
             self.assertEqual((v["exit"], v["status"]), (127, "не завершён"))
+
+
+    def argv(self):
+        return self.count.with_name("count.argv").read_text(encoding="utf-8").split("\0")[:-1]
+
+    def test_answers_prompt(self):
+        c = make_copy(self.folder, "c1", "merge")
+        meta = json.loads((c / ".sdd-eval").read_text())
+        meta["answers"] = {"Снять метки?": "Снять и запустить", "Режим?": "local"}
+        (c / ".sdd-eval").write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
+        self.assertEqual(self.run_cmd("--label", "L1").returncode, 0)
+        a = self.argv()
+        self.assertEqual(a[:2], ["-p", "/spec-dispatch"])
+        txt = a[a.index("--append-system-prompt") + 1]
+        self.assertIn("не спрашивай владельца", txt)
+        self.assertIn("- Снять метки? → Снять и запустить", txt.splitlines())
+        self.assertIn("- Режим? → local", txt.splitlines())
+
+    def test_prompt_flag_without_answers(self):
+        make_copy(self.folder, "c1", "merge")
+        self.assertEqual(self.run_cmd("--label", "L1").returncode, 0)
+        a = self.argv()
+        self.assertIn("не спрашивай владельца", a[a.index("--append-system-prompt") + 1])
+
+    def ask(self, lines, cid="c1"):
+        log = self.root / "fake.jsonl"
+        log.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        make_copy(self.folder, cid, "merge")
+        r = self.run_cmd("--label", "L-" + cid, log=log)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return self.journal("L-" + cid)["copies"][cid], r.stdout
+
+    def text_line(self, text):
+        return L(DAY + "09:00:00.000Z", "m1", OP, blocks=[{"type": "text", "text": text}])
+
+    def test_question_ask_tool(self):
+        q = {"questions": [{"question": "Режим?"}, {"question": "Снять метки?"}]}
+        rec, out = self.ask([L(DAY + "09:00:00.000Z", "m1", OP, blocks=[tu("q1", "AskUserQuestion", q)])])
+        self.assertEqual(rec["question"], "вопрос: Режим?; Снять метки?")
+        self.assertEqual(rec["status"], "смёрджен")
+        self.assertIn("c1 смёрджен вопрос: Режим?; Снять метки?", out.splitlines())
+
+    def test_question_in_subagent(self):
+        home = self.root / "home"
+        d = home / ".claude/projects/x"
+        (d / "s-1/subagents").mkdir(parents=True)
+        (d / "s-1.jsonl").write_text(self.text_line("готово") + "\n")
+        (d / "s-1/subagents/agent-1.jsonl").write_text(L(
+            DAY + "09:00:00.000Z", "m2", SN, blocks=[tu("q", "AskUserQuestion", {"questions": [{"question": "Что?"}]})]))
+        old = os.environ["HOME"]
+        os.environ["HOME"] = str(home)
+        self.addCleanup(os.environ.__setitem__, "HOME", old)
+        self.assertEqual(ev.questions("s-1"), "Что?")
+        self.assertIsNone(ev.questions("нет-такой"))
+
+    def test_question_need_from_you(self):
+        rec, out = self.ask([self.text_line("Итог\n**Нужно от вас:** выбрать режим\nхвост")])
+        self.assertEqual(rec["question"], "вопрос: выбрать режим")
+
+    def test_question_limit(self):
+        rec, out = self.ask([self.text_line("Нужно от вас: " + "я" * 400)])
+        self.assertEqual(len(rec["question"]), len("вопрос: ") + 300)
+
+    def test_no_question_for_report_field(self):
+        for i, t in enumerate(("Нужно от вас: ничего", "Нужно от вас: — Нет", "Нужно от вас:", "Нужно от вас: нет действий")):
+            rec, out = self.ask([self.text_line(t)], cid="c%d" % i)
+            self.assertNotIn("question", rec, t)
+            self.assertIn("c%d смёрджен" % i, out.splitlines())
+
+    def test_no_session_log_no_question(self):
+        make_copy(self.folder, "c1", "merge")
+        self.assertEqual(self.run_cmd("--label", "L1").returncode, 0)
+        self.assertNotIn("question", self.journal()["copies"]["c1"])
 
 
 # ---- metrics ----
@@ -984,6 +1096,34 @@ class CompareTests(unittest.TestCase):
     def test_no_spec_block_without_notes(self):
         e, out = self.mk({"p1": G, "p2": G}, {"q1": G, "q2": G})
         self.assertNotIn("Спека после изменения", out)
+
+
+class QuestionCompare(unittest.TestCase):
+    def test_question_not_flip(self):
+        e = cmp_env(self)
+        for lb, k in (("p1", G), ("p2", G), ("q1", R), ("q2", G)):
+            e.label(e.E, lb, k)
+        jp = e.E / "q1/runs/q1.json"
+        j = json.loads(jp.read_text())
+        j["copies"]["c1"]["question"] = "вопрос: выбрать режим"
+        jp.write_text(json.dumps(j))
+        r = e.compare(e.E, ["p1", "p2"], ["q1", "q2"])
+        self.assertEqual(r.returncode, 0, r.stderr)
+        row = next(ln for ln in r.stdout.splitlines() if ln.startswith("| c1 |"))
+        cells = [c.strip() for c in row.strip("|").split(" | ")]
+        self.assertEqual(["(вопрос)" in c for c in cells[1:]], [False, False, True, False])
+        self.assertIn("| a | 2, 2 из 2 |", r.stdout)
+        self.assertIn("| b | 1, 2 из 2 |", r.stdout)
+        self.assertIn("\nС вопросом:\n- c1: q1: вопрос: выбрать режим\n", r.stdout + "\n")
+        self.assertNotIn("- c1: выполнен", r.stdout)
+
+    def test_no_section_without_question(self):
+        e = cmp_env(self)
+        for lb in ("p1", "p2", "q1", "q2"):
+            e.label(e.E, lb, G)
+        r = e.compare(e.E, ["p1", "p2"], ["q1", "q2"])
+        self.assertNotIn("С вопросом", r.stdout)
+        self.assertNotIn("(вопрос)", r.stdout)
 
 
 class ParseFailed(unittest.TestCase):
