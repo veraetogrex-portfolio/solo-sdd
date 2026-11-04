@@ -448,6 +448,17 @@ for bad in ("npm test -> exit 1 (затем exit 0 при повторе)", "npm
             "npm test -> exit 0; npm run typecheck -> exit 2", "npm test: exit 0", "npm test -> 0 errors"):
     r = handback(status_msg(TESTS=bad))
     assert r and "TESTS: после первого" in r, (bad, r)
+# LIVE: одна команда из корня WORKTREE; сокращение вывода и многошаговость — дело стенда
+for cmd, sign in (("npm run build && node scenarios/docs/check.ts -> 48 checks passed", "&&"), ("a || b -> ok", "||"),
+                  ("a; b -> ok", ";"), ("node packages/core/scenarios/ocr/check.ts | tail -1 -> 25 из 25", "|"),
+                  ("cd packages/core -> ok", "cd ")):
+    r = handback(status_msg(LIVE=cmd))
+    assert r and "LIVE" in r and "«%s»" % sign in r and "стенд" in r, (cmd, r)
+for good in ("COUNCIL_DEV=1 node packages/core/scenarios/ocr/check.ts -> 25 из 25", "node check.ts --title \"a; b | c\" -> ok",
+             "node check.ts --title 'a && b || c' -> ok", "find . -exec x {} \\; -> ok", "node c.ts -> a; b", "node c.ts -> a && b | c",
+             "ok", "cdx run -> ok", "node c.ts --title \"a \\\" && b\" -> ok"):
+    assert handback(status_msg(LIVE=good)) is None, good
+assert handback(status_msg(STATUS="not_ready", LIVE="a && b | c; cd x", NOTES="нет доступа")) is None, "not_ready skips LIVE"
 r = handback(status_msg(ARCHIVE="openspec/changes"))
 assert r and "ARCHIVE openspec/changes не существующая папка" in r, r
 assert handback(status_msg() + "\nCOMMIT: deadbeef") is None, "first COMMIT wins"
@@ -541,6 +552,26 @@ def test_status_block_format_property():
     missing()
 
 
+def test_repeatable_live_property():
+    word = st.sampled_from(["a", "node", "x.ts", "--flag", "FOO=1", "{}"])
+    plain = st.text(alphabet="ab ;|&\\", max_size=6)
+    tok = st.one_of(word.map(lambda w: (w, False)),
+                    plain.map(lambda t: ("'" + t + "'", False)),
+                    plain.filter(lambda t: "\\" not in t).map(lambda t: ('"' + t + '"', False)),
+                    st.sampled_from(["\\;", "\\|", "\\&", "\\ "]).map(lambda e: (e, False)),
+                    st.sampled_from(["&&", "||", ";", "|"]).map(lambda o: (o, True)))
+
+    @settings(max_examples=500, deadline=None)
+    @given(st.lists(tok, min_size=1, max_size=8), st.sampled_from([" ", ""]), st.sampled_from(["", " -> ok; a && b"]))
+    def prop(toks, sep, tail):
+        cmd = sep.join(t for t, _ in toks if t not in ("cd",))
+        if cmd.lstrip().startswith("cd "):
+            return
+        refused = bool(wh.live_problems(cmd + tail))
+        assert refused == any(op for _, op in toks), cmd
+    prop()
+
+
 class Denied(Exception):
     pass
 
@@ -602,6 +633,7 @@ def test_owner_only_expensive_override_property():
 
 test_subagent_project_context_property()
 test_status_block_format_property()
+test_repeatable_live_property()
 test_claim_on_first_done_task_property()
 test_owner_only_expensive_override_property()
 

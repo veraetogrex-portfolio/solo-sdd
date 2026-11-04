@@ -101,7 +101,7 @@ COMMIT: <hash последнего коммита ветки>
 ARCHIVE: <папка change в openspec/changes/archive, относительно WORKTREE>
 VALIDATE: openspec validate --all --strict --no-interactive -> exit <код>
 TESTS: <команда тестов из AGENTS.md> -> exit <код> [пояснение через пробел, например (250 tests)]
-LIVE: <одна команда из Live Scenario> -> <что вывела>
+LIVE: <одна команда из корня WORKTREE без &&, ||, ;, | и cd; для сложного сценария — вызов стенда> -> <что вывела>
 REVIEW: выполнено <n> из <m> | <находки одной строкой>
 AGENTS: <кого запускал: роль, модель, число>
 HOOKS: <что блокировали хуки и что ты сделал> | нет
