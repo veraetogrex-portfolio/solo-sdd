@@ -28,6 +28,7 @@ def versions(root):
 def run(args, home, path=None, extra=None):
     env = dict(os.environ, HOME=home)
     env.pop("PYTHONPATH", None)
+    env.pop("SOLO_SDD_PYTHON", None)
     if path is not None:
         env["PATH"] = path
     env.update(extra or {})
@@ -82,9 +83,25 @@ class Wrapper(unittest.TestCase):
         for name in ("__init__.py", "__main__.py"):
             with open(os.path.join(other, "solo_sdd", name), "w") as f:
                 f.write("print('чужой'); raise SystemExit(7)\n")
-        p = subprocess.run([NODE, WRAPPER, "--version"], cwd=other, capture_output=True, text=True,
+        p = subprocess.run([NODE, WRAPPER, "status"], cwd=other, capture_output=True, text=True,
                            env=dict(os.environ, HOME=self.home, SOLO_SDD_PYTHON=sys.executable))
-        self.assertEqual((p.returncode, p.stdout.strip()), (0, versions(REPO)["solo_sdd/__init__.py"]))
+        self.assertEqual(p.returncode, 0, p.stdout)
+        self.assertTrue(p.stdout.startswith(f"источник: {REPO} "), p.stdout.splitlines()[0])
+
+    def test_order_and_pythonpath(self):
+        """python3 старый — берётся python; ему передаются корень пакета в PYTHONPATH и аргументы."""
+        fake = os.path.join(self.home, "bin")
+        os.makedirs(fake)
+        scripts = {"python3": "echo 3.8\n",
+                   "python": 'case "$1" in -c) case "$2" in *version_info*) echo 3.12; exit 0;; esac;; esac\n'
+                             'echo "PYTHONPATH=$PYTHONPATH"; shift 3; echo "ARGS=$*"; exit 5\n'}
+        for name, body in scripts.items():
+            with open(os.path.join(fake, name), "w") as f:
+                f.write("#!/bin/sh\n" + body)
+            os.chmod(os.path.join(fake, name), 0o755)
+        code, out, _ = run([NODE, WRAPPER, "init", "x y"], self.home, path=fake + ":/usr/bin:/bin",
+                           extra={"SOLO_SDD_PYTHON": "", "PYTHONPATH": "/extra"})
+        self.assertEqual((code, out), (5, f"PYTHONPATH={REPO}{os.pathsep}/extra\nARGS=init x y\n"))
 
     def test_no_python(self):
         code, out, err = run([NODE, WRAPPER, "status"], self.home, path="/nonexistent", extra={"SOLO_SDD_PYTHON": ""})
