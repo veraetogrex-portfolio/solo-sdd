@@ -860,6 +860,28 @@ def exit_zero(value):
     return bool(re.match(EXIT_0, head)) and not any(re.match(bad, a) or re.search(bad + r"\W*[1-9]", a) for a in arrows[1:])
 
 
+def live_problems(value):
+    """LIVE — одна команда: вне кавычек и без `\\` нет `&&`, `||`, `;`, `|` и нет `cd ` в начале (проверяется текст до первой стрелки).
+    Незакрытая кавычка: остаток считается в кавычках, отказа нет."""
+    cmd, sign, q, i = re.split(r"\s*->\s*", value)[0], None, None, 0
+    if cmd.lstrip().startswith("cd "):
+        sign = "cd "
+    while sign is None and i < len(cmd):
+        c = cmd[i]
+        if q:
+            q = None if c == q else q
+            i += 1 if c == "\\" and q == '"' else 0
+        elif c == "\\":
+            i += 1
+        elif c in "'\"":
+            q = c
+        else:
+            sign = next((s for s in ("&&", "||", ";", "|") if cmd.startswith(s, i)), None)
+        i += 1
+    return [] if sign is None else ["LIVE: в команде «%s» вне кавычек — нужна одна команда из корня WORKTREE; многошаговый сценарий оформи "
+                                    "стендом (скрипт в репозитории) и дай в LIVE его вызов, вывод сокращает диспетчер" % sign]
+
+
 def archived_problems(f, cwd):
     problems = ["нет поля или оно пусто: %s" % n for n in STATUS_FIELDS if not f.get(n)]
     wt = os.path.join(cwd, os.path.expanduser(f["WORKTREE"])) if f.get("WORKTREE") else git_root(cwd)
@@ -883,7 +905,7 @@ def archived_problems(f, cwd):
         problems.append("в основной папке %s остался CLAIM change %s: сними его" % (main, name))
     problems += ["%s: после первого « -> » должно быть «exit 0», и ни одна « -> exit » не с другим кодом; сейчас: %s" % (n, f[n])
                  for n in ("VALIDATE", "TESTS") if f.get(n) and not exit_zero(f[n])]
-    return problems
+    return problems + live_problems(f.get("LIVE", ""))
 
 
 def status_problems(message, cwd):
