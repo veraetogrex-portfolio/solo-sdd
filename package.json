@@ -1,0 +1,32 @@
+{
+  "name": "solo-sdd",
+  "version": "0.1.0",
+  "description": "Процесс разработки через спецификации: скиллы, правила агентов, схема OpenSpec solo",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/veraetogrex-portfolio/solo-sdd.git"
+  },
+  "homepage": "https://github.com/veraetogrex-portfolio/solo-sdd",
+  "bin": {
+    "solo-sdd": "bin/solo-sdd.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "bin/",
+    "solo_sdd/",
+    "skills/",
+    "global/",
+    "schema/",
+    "templates/",
+    "targets.json",
+    "ALGORITHM.md",
+    "LICENSE",
+    "README.md",
+    "!**/__pycache__/",
+    "!skills/model-council/",
+    "!global/claude-*"
+  ]
+}
