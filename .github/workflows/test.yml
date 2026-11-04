@@ -29,3 +29,8 @@ jobs:
           /usr/bin/python3 -m venv "$RUNNER_TEMP/wheelenv"
           "$RUNNER_TEMP/wheelenv/bin/pip" install dist/solo_sdd-*.whl
           "$RUNNER_TEMP/wheelenv/bin/solo-sdd" --version
+      - name: npm tarball smoke
+        run: |
+          npm pack --pack-destination "$RUNNER_TEMP"
+          npm i -g --prefix "$RUNNER_TEMP/npm" "$RUNNER_TEMP"/solo-sdd-*.tgz
+          "$RUNNER_TEMP/npm/bin/solo-sdd" --version

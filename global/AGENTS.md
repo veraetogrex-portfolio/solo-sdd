@@ -79,7 +79,7 @@
 
 ## 9. Два агента в одном проекте
 
-- Рабочая папка проекта одна. Свои копии и worktree создавай только во временной папке (`git worktree add "${TMPDIR:-/tmp}/wt-<имя>"`) и удаляй после себя. Встроенные worktree агентов не используй: `codex --worktree`, `/worktree` и инструмент `create_worktree` Codex кладут копию в `~/.codex/worktrees`, а `claude --worktree`, `EnterWorktree` с новым именем и `isolation: "worktree"` у субагента — в `.claude/worktrees` внутри проекта.
+- Рабочая папка проекта одна. Свои копии и worktree создавай во встроенном worktree Claude Code (`claude --worktree <имя>`, `EnterWorktree`, `isolation: "worktree"` у субагента: копия ложится в `.claude/worktrees` проекта; эта папка должна быть в `.gitignore`) или во временной папке (`git worktree add "${TMPDIR:-/tmp}/wt-<имя>"`) и удаляй после себя. Codex — только временная папка: `codex --worktree`, `/worktree` и инструмент `create_worktree` кладут копию в `~/.codex/worktrees`.
 - Перед правкой проверь `git status`: рядом может работать другой агент. Чужие изменения не откатывай.
 - Перед тем как взять change, проверь файлы `CLAIM` (занят другим агентом) и `WAITING` (ждёт внешнего условия) в его папке. Есть любой из них — бери другой.
 - Независимое ревью делает тот агент, который не писал код.
