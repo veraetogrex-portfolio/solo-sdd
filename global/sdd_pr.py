@@ -5,14 +5,16 @@ import re
 import subprocess
 import sys
 import time
+from urllib.parse import quote
 
 USAGE = """использование:
   sdd-pr.py open <WORKTREE> <основная ветка> <заголовок>
-  sdd-pr.py wait <url> [--timeout <сек>] [--interval <сек>]
+  sdd-pr.py wait <url> [--timeout <сек>] [--interval <сек>] [--stuck <сек>]
   sdd-pr.py merge <url> <squash|merge|rebase> <hash> [--title <заголовок>]
   коды merge: 0 слит, 1 ошибка, 5 основная ушла вперёд (PR отстаёт)"""
 SIGNS = ("FAIL:", "ERROR:", "FAILED", "AssertionError", "failed")
 NO_CHECKS_SEC = 180
+STUCK_SEC = 300
 LOG_LINES = 20
 LOG_RETRY_SEC = 5
 
@@ -81,24 +83,79 @@ def failed_log(rows):
     return bool(hits), [clean[i] for i in (keep or range(len(clean)))][-LOG_LINES:]  # итог тестов — в конце журнала
 
 
-def cmd_wait(url, timeout, interval):
-    n, start = number(url), time.monotonic()
+def gh_json(*cmd):
+    p = sh("gh", *cmd)
+    if p.returncode:
+        raise ValueError(p.stderr)
+    return json.loads(p.stdout)
+
+
+def required_checks(url):
+    """Обязательные проверки основной ветки PR или None, если правила не прочитались."""
+    try:
+        repo = re.search(r"github\.com/([^/]+/[^/]+)/pull/", url).group(1)
+        branch = quote(gh_json("pr", "view", url, "--json", "baseRefName")["baseRefName"], safe="/")
+        # ponytail: одна страница, больше 100 активных правил на ветку не бывает на практике
+        rules = gh_json("api", f"repos/{repo}/rules/branches/{branch}?per_page=100")
+        names = [c["context"] for r in rules if r["type"] == "required_status_checks"
+                 for c in r["parameters"]["required_status_checks"]]
+        protection = gh_json("api", f"repos/{repo}/branches/{branch}").get("protection") or {}
+        classic = protection.get("required_status_checks") or {}  # /protection требует прав администратора
+        names += [c["context"] for c in classic.get("checks") or []] + (classic.get("contexts") or [])
+        if not all(isinstance(x, str) for x in names):
+            raise ValueError
+        return set(names)
+    except (ValueError, TypeError, KeyError, AttributeError):
+        return None
+
+
+def stuck_checks(rows, required):
+    """Обязательные, которых нет или которые не начались, когда остальным ждать нечего."""
+    # ponytail: внешний CI на статусах коммита (state PENDING) неотличим от не начавшейся проверки
+    pending = {r.get("name") for r in rows if r.get("bucket") == "pending"}
+    running = any(r.get("bucket") == "pending" and r.get("state") == "IN_PROGRESS" for r in rows)
+    if running or pending - required:
+        return []
+    return sorted(required - ({r.get("name") for r in rows} - pending))
+
+
+def ci_verdict(rows, required, stuck_sec, limit):
+    """Итог проверок: "bad", "green", "stuck" или None, если ждать дальше."""
+    if any(r.get("bucket") in ("fail", "cancel") for r in rows):
+        return "bad"
+    if stuck_checks(rows, required):
+        return "stuck" if stuck_sec >= limit else None
+    return "green" if rows and not any(r.get("bucket") == "pending" for r in rows) else None
+
+
+def cmd_wait(url, timeout, interval, limit=STUCK_SEC):
+    n = number(url)
     head = f"PR #{n} {url} CI: "
+    required = required_checks(url)
+    if required is None:
+        print("предупреждение: правила ветки не прочитались, обязательные проверки не сверены", file=sys.stderr)
+        required = set()
+    start = time.monotonic()  # срок — на CI, чтение правил в него не входит
+    since = None  # с какого опроса ждать больше нечего, кроме застрявших
     while True:
         rows = checks(url)
-        elapsed = time.monotonic() - start
-        bad = [r for r in rows if r.get("bucket") in ("fail", "cancel")]
-        if bad or (rows and not any(r.get("bucket") == "pending" for r in rows)):  # упавшая — итог сразу
-            if not bad:
-                print(head + "green")
-                return 0
-            test, lines = failed_log(bad)
+        now = time.monotonic()
+        elapsed = now - start
+        stuck = stuck_checks(rows, required)
+        since = (since or now) if stuck else None
+        verdict = ci_verdict(rows, required, now - since if stuck else 0, limit)
+        if verdict == "green":
+            print(head + "green")
+            return 0
+        if verdict == "bad":  # упавшая — итог сразу
+            test, lines = failed_log([r for r in rows if r.get("bucket") in ("fail", "cancel")])
             print(head + ("red" if test else "infra"))
             print("\n".join(lines))
             return 3 if test else 4
-        if elapsed >= timeout or (not rows and elapsed >= min(NO_CHECKS_SEC, timeout)):
+        if verdict == "stuck" or elapsed >= timeout or (not rows and not required and elapsed >= min(NO_CHECKS_SEC, timeout)):
             print(head + "infra")
-            print("нет проверок" if not rows else "timeout: проверки не завершились")
+            print("\n".join(f"не стартовала обязательная проверка {x}" for x in stuck)
+                  or ("нет проверок" if not rows else "timeout: проверки не завершились"))
             return 4
         time.sleep(interval)
 
@@ -164,7 +221,7 @@ def main(a):
             and (len(a) == 4 or a[4] == "--title"):
         return cmd_merge(*a[1:4], *a[5:])
     if a[:1] == ["wait"] and len(a) >= 2:
-        opt, rest = {"--timeout": 1200.0, "--interval": 15.0}, a[2:]
+        opt, rest = {"--timeout": 1200.0, "--interval": 15.0, "--stuck": float(STUCK_SEC)}, a[2:]
         try:  # ValueError ловится только при разборе аргументов: сбой gh внутри команды — код 1, не 2
             while rest:
                 if rest[0] not in opt or len(rest) < 2:
@@ -172,7 +229,7 @@ def main(a):
                 opt[rest[0]], rest = float(rest[1]), rest[2:]
         except ValueError:
             die(USAGE, 2)
-        return cmd_wait(a[1], opt["--timeout"], opt["--interval"])
+        return cmd_wait(a[1], opt["--timeout"], opt["--interval"], opt["--stuck"])
     die(USAGE, 2)
 
 
