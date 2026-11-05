@@ -1,4 +1,4 @@
-"""Проверка sdd_pr.py: open, wait, merge на подмене gh и git (первыми в PATH)."""
+"""Проверка sdd_pr.py: open, wait, merge, ship, land на подмене gh и git (первыми в PATH); ship и land ещё и на настоящем git."""
 import importlib.util
 import io
 import json
@@ -15,6 +15,7 @@ from unittest import mock
 from hypothesis import given, settings, strategies as st
 
 SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "global/sdd_pr.py"
+WT_SCRIPT = SCRIPT.parent / "sdd_worktree.py"
 URL = "https://github.com/o/r/pull/7"
 _spec = importlib.util.spec_from_file_location("sdd_pr", SCRIPT)
 sp = importlib.util.module_from_spec(_spec)
@@ -30,9 +31,15 @@ def sc(f, default=None):
         return json.load(open(d + "/" + f))
     except OSError:
         return default
+fj = sc("fail.json")
+if fj and fj["token"] in " ".join(a):
+    sys.stderr.write("boom " + fj["token"] + "\\n")
+    sys.exit(fj["code"])
 if name == "git":
     if "rev-parse" in a:
         print("change/x")
+    elif "log" in a:
+        print("own title")
 elif a[:2] == ["pr", "list"]:
     print(json.dumps(sc("list.json", [])))
 elif a[:2] == ["pr", "create"]:
@@ -488,6 +495,299 @@ class Merge(Base):
         self.assertIn("behind 2", r.stdout)
         self.assertEqual(e.calls("gh", "api")[0][2], "repos/o/r/compare/main...abc123")
         self.no_merge(e)
+
+
+GITENV = dict(GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
+GENV = dict(os.environ, **GITENV)
+
+
+def g(cwd, *args, check=True):
+    p = subprocess.run(["git", "-C", str(cwd), *args], capture_output=True, text=True, env=GENV,
+                       stdin=subprocess.DEVNULL)
+    if check and p.returncode:
+        raise AssertionError(f"git {args}: {p.stderr}")
+    return p.stdout.strip()
+
+
+def worktree(cmd, main, wt):
+    return subprocess.run([sys.executable, str(WT_SCRIPT), cmd, str(main), str(wt)], capture_output=True,
+                          text=True, env=GENV, stdin=subprocess.DEVNULL, timeout=30)
+
+
+class ShipLand(Base):
+    """ship и land на настоящем git и настоящем sdd_worktree.py; подменён только gh."""
+
+    def setUp(self):
+        self.root = pathlib.Path(tempfile.mkdtemp()).resolve()
+        self.addCleanup(shutil.rmtree, self.root, True)
+        self.origin, self.main, self.wt = (self.root / n for n in ("origin.git", "main", "wt"))
+        subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(self.origin)], check=True, env=GENV)
+        subprocess.run(["git", "init", "-q", "-b", "main", str(self.main)], check=True, env=GENV)
+        self.put(self.main, ".gitignore", "openspec/\n")
+        self.put(self.main, "docs/cli.md", "one\ntwo\nthree\n")
+        self.put(self.main, "README.md", "r\n")
+        g(self.main, "add", "-A")
+        g(self.main, "commit", "-qm", "init")
+        g(self.main, "remote", "add", "origin", str(self.origin))
+        g(self.main, "push", "-q", "-u", "origin", "main")
+        self.put(self.main, "openspec/a.md", "a\nb\nc\n")
+        g(self.main, "worktree", "add", "-q", "-b", "change/x", str(self.wt), "origin/main")
+        self.assertEqual(worktree("setup", self.main, self.wt).returncode, 0)
+        self.put(self.wt, "feature.txt", "f\n")
+        g(self.wt, "add", "-A")
+        g(self.wt, "commit", "-qm", "own title")
+
+    @staticmethod
+    def put(base, rel, text):
+        p = pathlib.Path(base) / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(text)
+
+    def head(self):
+        return g(self.wt, "rev-parse", "HEAD")
+
+    def mk(self, **files):
+        if "view_json" not in files:
+            files["view_json"] = [dict(OPEN, headRefOid=self.head(), title="T")]
+        files.setdefault("checks_json", GREEN)
+        e = self.env(**files)
+        (e.d / "bin/git").unlink()  # git настоящий, gh подменён
+        e.env.update(GITENV)
+        return e
+
+    def advance_origin(self, rel="srv.txt", text="x\n", msg="squash (#7)"):
+        helper = self.root / "helper"
+        if not helper.exists():
+            subprocess.run(["git", "clone", "-q", str(self.origin), str(helper)], check=True, env=GENV)
+        self.put(helper, rel, text)
+        g(helper, "add", "-A")
+        g(helper, "commit", "-qm", msg)
+        g(helper, "push", "-q", "origin", "main")
+
+    def ship(self, e):
+        return e.run("ship", str(self.main), str(self.wt), "main", "T")
+
+    def land(self, e, how="squash"):
+        return e.run("land", str(self.main), str(self.wt), URL, how)
+
+    def no_branch_on_origin(self):
+        self.assertEqual(g(self.origin, "branch", "--list", "change/x"), "")
+
+    def worktrees(self):
+        return g(self.main, "worktree", "list").splitlines()
+
+    def test_ship_push_failed(self):
+        g(self.wt, "remote", "set-url", "--push", "origin", "/no/such/path")
+        e = self.mk()
+        r = self.ship(e)
+        self.assertEqual(r.returncode, 1, r.stderr)
+        self.assertIn("push", r.stderr)
+        self.assertEqual(e.calls("gh", "pr", "checks"), [])
+
+    def test_ship_update_conflict(self):
+        self.put(self.wt, "docs/cli.md", "one\nWT\nthree\n")
+        g(self.wt, "commit", "-qam", "wt edit")
+        self.put(self.main, "docs/cli.md", "one\nMAIN\nthree\n")
+        g(self.main, "commit", "-qam", "main edit")
+        g(self.main, "push", "-q", "origin", "main")
+        r = self.ship(self.mk())
+        self.assertEqual(r.returncode, 6, r.stderr)
+        self.assertIn("docs/cli.md", r.stderr)
+        self.assertEqual(g(self.wt, "status", "--porcelain"), "")
+        self.assertNotEqual(subprocess.run(["git", "-C", str(self.wt), "rev-parse", "-q", "--verify", "MERGE_HEAD"],
+                                           capture_output=True).returncode, 0)
+        self.no_branch_on_origin()
+
+    def test_ship_refresh_conflict(self):
+        self.put(self.main, "openspec/a.md", "a\nMAIN\nc\n")
+        self.put(self.wt, "openspec/a.md", "a\nWT\nc\n")
+        r = self.ship(self.mk())
+        self.assertEqual(r.returncode, 6, r.stderr)
+        self.assertIn("openspec/a.md", r.stderr)
+        self.assertIn("<<<<<<<", (self.wt / "openspec/a.md").read_text())  # маркеры остались в WORKTREE
+        self.no_branch_on_origin()
+
+    def test_ship_no_worktree_script(self):
+        e = self.mk()
+        lone = self.root / "lone"
+        lone.mkdir()
+        shutil.copy(SCRIPT, lone / "sdd_pr.py")
+        args = ["ship", str(self.main), str(self.wt), "main", "T"]
+        run = lambda d: subprocess.run([sys.executable, str(d / "sdd_pr.py"), *args], capture_output=True,
+                                       text=True, env=e.env, stdin=subprocess.DEVNULL, timeout=30)
+        r = run(lone)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("refresh", r.stderr)
+        for name in ("sdd-worktree.py", "sdd_worktree.py"):  # оба имени находятся
+            d = self.root / name
+            d.mkdir()
+            shutil.copy(SCRIPT, d / "sdd_pr.py")
+            (d / name).write_text("import sys\nsys.exit(0)\n")
+            r = run(d)
+            self.assertEqual((r.returncode, r.stdout.strip()), (0, f"PR #7 {URL} CI: green"), (name, r.stderr))
+
+    def test_ship_codes(self):
+        r = self.ship(self.mk())
+        self.assertEqual((r.returncode, r.stdout), (0, f"PR #7 {URL} CI: green\n"), r.stderr)
+        log = "job\tstep\t2026-01-01T10:00:00Z FAIL: test_x (x.T)\n"
+        r = self.ship(self.mk(checks_json=[[chk("fail", LINK)]], log_txt=log))
+        self.assertEqual(r.returncode, 3, r.stderr)
+        r = self.ship(self.mk(checks_json=[[chk("cancel", LINK)]], log_txt="job\tstep\tError: runner shutdown\n"))
+        self.assertEqual(r.returncode, 4, r.stderr)
+
+    def test_land_merge_refused(self):
+        self.advance_origin()
+        before = (g(self.main, "rev-parse", "main"), g(self.main, "rev-parse", "origin/main"))
+        e = self.mk(merge_json={"code": 1, "err": "gh: nope (HTTP 405)\n"})
+        r = self.land(e)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("не смёрджен: merge", r.stderr)
+        self.assertIn("nope", r.stderr)
+        self.assertEqual((g(self.main, "rev-parse", "main"), g(self.main, "rev-parse", "origin/main")), before)
+        self.assertTrue(self.wt.is_dir() and not pathlib.Path(str(self.wt) + ".undo").exists())
+
+    def test_land_behind(self):
+        e = self.mk(behind_json=2)
+        r = self.land(e)
+        self.assertEqual(r.returncode, 5, r.stderr)
+        self.assertEqual(e.calls("gh", "api", "-X", "PUT"), [])
+        self.assertTrue(self.wt.is_dir())
+        self.assertIn("change/x", g(self.main, "branch", "--list", "change/x"))
+
+    def test_land_success(self):
+        self.advance_origin()
+        e = self.mk()
+        r = self.land(e)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stdout.splitlines()[-1], f"PR #7 {URL} land: завершено")
+        self.assertEqual(g(self.main, "rev-parse", "main"), g(self.main, "rev-parse", "origin/main"))
+        self.assertEqual(len(self.worktrees()), 1)
+        self.assertEqual(g(self.main, "branch", "--list", "change/x"), "")
+
+    def test_land_passes_not_carried_line(self):
+        self.put(self.main, ".git/info/exclude", "notes.md\n")  # отдельно игнорируемый документ, разный в MAIN и WORKTREE
+        self.put(self.main, "notes.md", "main\n")
+        self.put(self.wt, "notes.md", "wt\n")
+        e = self.mk()
+        r = self.land(e)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("не перенесены: notes.md", r.stdout)  # строку читает диспетчер
+        self.assertEqual(r.stdout.splitlines()[-1], f"PR #7 {URL} land: завершено")
+
+    def test_land_failure_after_merge_then_resume(self):
+        self.put(self.main, "openspec/a.md", "a\nMAIN\nc\n")
+        self.put(self.wt, "openspec/a.md", "a\nWT\nc\n")
+        e = self.mk()
+        r = self.land(e)
+        self.assertEqual(r.returncode, 7, r.stderr)
+        self.assertIn("смёрджен, не завершено: transport", r.stderr)
+        self.assertTrue(self.wt.is_dir())
+        self.put(self.main, "openspec/a.md", "a\nb\nc\n")
+        (e.d / "view.json").write_text(json.dumps([dict(OPEN, headRefOid=self.head(), state="MERGED")]))
+        r = self.land(e)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(len(e.calls("gh", "api", "-X", "PUT")), 1)
+        self.assertEqual(len(self.worktrees()), 1)
+
+    def test_land_again_when_all_gone(self):
+        head = self.head()
+        self.assertEqual(worktree("remove", self.main, self.wt).returncode, 0)
+        g(self.main, "branch", "-D", "change/x")
+        e = self.mk(view_json=[dict(OPEN, headRefOid=head, state="MERGED")])
+        r = self.land(e)
+        self.assertEqual((r.returncode, r.stdout.splitlines()[-1]), (0, f"PR #7 {URL} land: завершено"), r.stderr)
+        self.assertEqual(e.calls("gh", "api", "-X", "PUT"), [])
+
+    def test_land_title_from_own_commit(self):
+        self.advance_origin()
+        g(self.wt, "fetch", "-q", "origin")
+        g(self.wt, "merge", "-q", "--no-edit", "origin/main")
+        g(self.wt, "commit", "-q", "--allow-empty", "-m", "ci rerun")
+        head = self.head()
+        e = self.mk()
+        r = self.land(e)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        put = e.calls("gh", "api", "-X", "PUT")[0]
+        self.assertIn("commit_title=own title (#7)", put)
+        self.assertIn(f"sha={head}", put)
+
+    def test_land_no_own_commit(self):
+        g(self.wt, "checkout", "-q", "--orphan", "z")
+        g(self.wt, "rm", "-rfq", ".")
+        g(self.wt, "commit", "-q", "--allow-empty", "-m", "root")
+        e = self.mk()
+        r = self.land(e)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("заголов", r.stderr)
+        self.assertEqual(e.calls("gh", "api", "-X", "PUT"), [])
+
+    def test_land_keeps_foreign_branch(self):
+        g(self.main, "branch", "main2")
+        e = self.mk(view_json=[dict(OPEN, headRefOid=self.head(), headRefName="main2", title="T")])
+        r = self.land(e)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("main2", g(self.main, "branch", "--list", "main2"))
+
+
+WT_STUB = f"""#!{sys.executable}
+import json, os, sys
+d = os.environ["FAKE_DIR"]
+a = sys.argv[1:]
+open(d + "/journal", "a").write(json.dumps(["sdd-worktree", a[0]]) + "\\n")
+try:
+    fj = json.load(open(d + "/fail.json"))
+except OSError:
+    fj = None
+if fj and fj["token"] in " ".join(a):
+    sys.stderr.write("boom " + fj["token"] + "\\n")
+    sys.exit(fj["code"])
+"""
+
+SHIP_STEPS = [("git", " fetch "), ("git", " merge -q --no-edit "), ("sdd-worktree", "refresh"),
+              ("git", " push "), ("gh", "pr list"), ("gh", "pr create")]
+LAND_STEPS = [("gh", "-X PUT"), ("git", " fetch -q origin"), ("git", "--ff-only"),
+              ("sdd-worktree", "transport"), ("sdd-worktree", "remove"), ("git", "branch -D")]
+TOKENS = {"ship": ["fetch", "merge", "refresh", "push", "pr list", "pr create"],
+          "land": ["-X PUT", "fetch", "--ff-only", "transport", "remove", "branch -D"]}
+
+
+class StopProperty(unittest.TestCase):
+    def run_one(self, cmd, fail_at):
+        e = Env(view_json=[dict(OPEN, headRefOid="change/x", title="T")], checks_json=GREEN)
+        try:
+            copy = e.d / "sdd_pr.py"
+            shutil.copy(SCRIPT, copy)
+            (e.d / "sdd-worktree.py").write_text(WT_STUB)
+            if fail_at is not None:
+                step = TOKENS[cmd][fail_at]
+                # ponytail: refresh с кодом 3 — это конфликт (код 6), поэтому падающим шагам даны коды 1 и 2
+                (e.d / "fail.json").write_text(json.dumps({"token": step, "code": 1 + fail_at % 2}))
+            args = ["ship", str(e.d), str(e.d), "main", "T"] if cmd == "ship" else ["land", str(e.d), str(e.d), URL, "squash"]
+            p = subprocess.run([sys.executable, str(copy), *args], capture_output=True, text=True, timeout=60,
+                               stdin=subprocess.DEVNULL, env=e.env)
+            steps = SHIP_STEPS if cmd == "ship" else LAND_STEPS
+            seen = []
+            for c in e.journal():
+                joined = " ".join(c[1:]) + " "
+                if c[0] == "sdd-worktree":
+                    joined = c[1]
+                for i, (n, tok) in enumerate(steps):
+                    if c[0] == n and tok in (" " + joined if n == "git" else joined):
+                        seen.append(i)
+            return p, seen
+        finally:
+            e.close()
+
+    @settings(max_examples=25, deadline=None)
+    @given(cmd=st.sampled_from(["ship", "land"]), fail_at=st.one_of(st.none(), st.integers(0, 5)))
+    def test_ship_and_land_stop_property(self, cmd, fail_at):
+        p, seen = self.run_one(cmd, fail_at)
+        if fail_at is None:
+            self.assertEqual((p.returncode, seen), (0, list(range(6))), p.stderr)
+            return
+        self.assertEqual(seen, list(range(fail_at + 1)), p.stderr)  # раньше упавшего вызваны, позже нет
+        want = 7 if cmd == "land" and fail_at > 0 else 1
+        self.assertEqual(p.returncode, want, p.stderr)
 
 
 class Args(Base):
