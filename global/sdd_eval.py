@@ -399,7 +399,7 @@ def questions(sid):
                         rest = m.group(1).lstrip(":—-* ").strip() if m else ""
                         if m and not rest:  # текст на следующей непустой строке блока
                             rest = next((x.lstrip("-* ").strip() for x in lines[j + 1:] if x.strip()), "")
-                        if rest and not re.match(r"(?:ничего|нет|none)\b", rest, re.I):
+                        if rest and not re.match(r"ничего\b|(?:нет|none)[\s.,:;!]*$", rest, re.I):
                             found.append(rest)
     return "; ".join(found)[:300] or None
 
@@ -917,7 +917,8 @@ def cmd_compare(a):
         counts = [sum(res.get((lb, c), {}).get("done", False) for c in runs[lb]["copies"]) for lb in labels]
         total = max(len(runs[lb]["copies"]) for lb in labels)
         mm = [met(lb, c) for lb in labels for c in runs[lb]["copies"]]
-        hs, cs = [m[0] for m in mm if m[0] is not None], [m[1] for m in mm if m[1] is not None]
+        hs, cs = [m[0] for m in mm if m[0] is not None], [m[1] for m in mm]
+        cs = [] if None in cs else cs  # копия без цены: сумма неизвестна, а не меньше
         out.append("| %s | %s из %d | %s | %s |" % (name, ", ".join(map(str, counts)), total,
                                                     hours_s(sum(hs) if hs else None), money(sum(cs) if cs else None)))
     asked = {cid: ["%s: %s" % (lb, runs[lb]["copies"][cid]["question"]) for lb in uniq

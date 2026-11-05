@@ -655,15 +655,16 @@ class RunTests(unittest.TestCase):
             self.assertEqual(rec["question"], "вопрос: выбрать режим", t)
 
     def test_no_question_for_report_field(self):
-        for i, t in enumerate(("Нужно от вас: ничего", "Нужно от вас: — Нет", "Нужно от вас:", "Нужно от вас: нет действий",
+        for i, t in enumerate(("Нужно от вас: ничего", "Нужно от вас: — Нет", "Нужно от вас:", "Нужно от вас: ничего не нужно",
                                "Нужно от вас: none", "Нужно от вас:\n\nничего", "Нужно от вас:\n- Нет", "Итог\nНужно от вас:")):
             rec, out = self.ask([self.text_line(t)], cid="c%d" % i)
             self.assertNotIn("question", rec, t)
             self.assertIn("c%d смёрджен" % i, out.splitlines())
 
     def test_question_starting_like_no(self):
-        rec, _ = self.ask([self.text_line("Нужно от вас: нетривиальный выбор режима")])
-        self.assertEqual(rec["question"], "вопрос: нетривиальный выбор режима")
+        for i, q in enumerate(("нетривиальный выбор режима", "нет ли доступа к API?", "Нет, но нужна ветка")):
+            rec, _ = self.ask([self.text_line("Нужно от вас: " + q)], cid="c%d" % i)
+            self.assertEqual(rec["question"], "вопрос: " + q)
 
     def test_question_ask_tool_without_text(self):
         rec, _ = self.ask([L(DAY + "09:00:00.000Z", "m1", OP, blocks=[tu("q1", "AskUserQuestion", {})])])
@@ -881,6 +882,17 @@ class MetricsSession(unittest.TestCase):
 
 FIX_LINES = [ln for p in [FIX / "fixture-session.jsonl"] + sorted((FIX / "fixture-session/subagents").glob("*.jsonl"))
              for ln in p.read_text(encoding="utf-8").splitlines()]
+
+
+class MainBranch(unittest.TestCase):
+    def test_origin_head_wins(self):
+        with tempfile.TemporaryDirectory() as d:
+            git(d, "init", "-q", "-b", "work")
+            git(d, "commit", "-q", "--allow-empty", "-m", "x")
+            self.assertEqual(ev.main_branch(d), "work")
+            git(d, "update-ref", "refs/remotes/origin/trunk", "HEAD")
+            git(d, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/trunk")
+            self.assertEqual(ev.main_branch(d), "trunk")
 
 
 class LandLocalMerges(unittest.TestCase):
@@ -1228,6 +1240,19 @@ class CompareTests(unittest.TestCase):
         r = e.compare(e.E, ["p1", "p2"], ["q1", "q2"])
         self.assertEqual((r.returncode, r.stdout), (3, ""))
         self.assertIn("команда тестов — цепочка: c1 (%s)" % (e.E / "p1/c1"), r.stderr)
+
+    def test_sum_unknown_when_copy_has_no_price(self):
+        e = cmp_env(self)
+        for lb in ("a1", "a2", "b1", "b2"):
+            f = e.label(e.E, lb, {"c1": "good", "c2": "good"})
+            cost = None if lb == "a1" else 2.0
+            put(f, "runs/%s.metrics.json" % lb, json.dumps({"copies": {"c1": {"hours": 1.0, "cost_usd": 2.0},
+                                                                     "c2": {"hours": 1.0, "cost_usd": cost}}}))
+        r = e.compare(e.E, ["a1", "a2"], ["b1", "b2"])
+        self.assertEqual(r.returncode, 0, r.stderr)
+        rows = {ln.split("|")[1].strip(): ln for ln in r.stdout.splitlines() if ln.startswith("| ")}
+        self.assertTrue(rows["a"].rstrip(" |").endswith("н/д"), rows["a"])
+        self.assertTrue(rows["b"].rstrip(" |").endswith("$8.00"), rows["b"])
 
     def test_copy_without_meta_is_code_3(self):
         e = cmp_env(self)
