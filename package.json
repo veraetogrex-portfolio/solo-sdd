@@ -21,6 +21,7 @@
     "global/",
     "schema/",
     "templates/",
+    "vendor/",
     "targets.json",
     "ALGORITHM.md",
     "LICENSE",

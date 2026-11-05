@@ -58,6 +58,16 @@
 
 **Возможно позже:** детектор зацикливания (повтор одного и того же в скользящем окне → одна попытка диагностики → стоп). Это кандидат в change для проекта-потребителя, а не для процесса.
 
+## anti-slop
+
+[anti-slop](https://github.com/miqdadbadjuber/anti-slop), релиз v3.2.24, коммит 3005235, 29.10.2026, лицензия MIT. Закреплённая копия лежит в `vendor/antislop/`.
+
+**Взято:** ядро правил R-01…R-40 и Delivery Gate, дайлы Part 3, скиллы `antislop-ui`, `antislop-human`, `antislop-layoutmobile`, `contrast-check.py`, режим After как аудит с находками по номерам.
+
+**Изменено:** без мастера установки, вопросов владельцу и режимов; R-02 только для английского текста; заглушка `[нужны данные]` приравнена к `[REAL DATA]`; гейт: Hard Gate целиком с доказательствами, остальные блоки только FAIL; R-35 — FAIL, если интерфейс не запускался; файл аудита `docs/ui-audit-NNN-YYYY-MM-DD.md`.
+
+**Не взято:** установщик и плагины, `contrast-mcp.py`, `antislop-code`, `antislop-copywriting` (отдельный change `copy-check`), файл настроек `~/.config/antislop/settings.json`.
+
 ## Свои наработки
 
 - Скиллы `spec-plan`, `spec-next`, `spec-audit`, `project-init`, `context-resume`, `work-status`, `ship`, `ui-check`, `debug-profile`, `evidence-research`, `agent-quality`, `model-council`, `codex-orchestration`. Глобальные правила `global/AGENTS.md`.
