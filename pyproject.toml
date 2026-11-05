@@ -30,6 +30,7 @@ packages = ["solo_sdd"]
 "global" = "solo_sdd/data/global"
 "schema" = "solo_sdd/data/schema"
 "templates" = "solo_sdd/data/templates"
+"vendor" = "solo_sdd/data/vendor"
 "targets.json" = "solo_sdd/data/targets.json"
 "ALGORITHM.md" = "solo_sdd/data/ALGORITHM.md"
 "sync.py" = "solo_sdd/data/sync.py"

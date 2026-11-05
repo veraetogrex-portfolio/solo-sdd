@@ -290,12 +290,13 @@ def uninstall(purge=False):
             if drop:
                 os.remove(target)
                 removed += 1
-                parent = os.path.dirname(target)
-                if os.path.dirname(parent) in roots:
+                parent = os.path.dirname(target)  # пустые папки скилла, включая вложенные (ui-check/antislop/references)
+                while parent not in roots and any(parent.startswith(r + os.sep) for r in roots):
                     try:
                         os.rmdir(parent)
                     except OSError:
-                        pass
+                        break
+                    parent = os.path.dirname(parent)
         except (OSError, UnicodeDecodeError) as e:
             print(f"нет доступа {name:37} {key}: {getattr(e, 'strerror', None) or 'не UTF-8'}")
             code = 1
