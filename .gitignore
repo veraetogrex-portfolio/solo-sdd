@@ -27,6 +27,7 @@ global/claude-gui.py
 global/claude-process-safety-settings.json
 global/claude-safe.py
 skills/model-council/
+tests/eval/sets/
 tests/probe_claude_development.py
 tests/probe_claude_process_safety.py
 tests/test_claude_gui.py
