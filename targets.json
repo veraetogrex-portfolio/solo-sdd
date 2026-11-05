@@ -38,6 +38,15 @@
     "schema/openspec-after-update.py": ["~/.local/bin/openspec-after-update.py"],
     "schema/test_openspec_after_update.py": ["~/.local/bin/test_openspec_after_update.py"],
     "ALGORITHM.md": ["~/.local/share/solo-sdd/ALGORITHM.md"],
+    "vendor/antislop/antislop.md": ["~/.agents/skills/ui-check/antislop/core.md", "~/.codex/skills/ui-check/antislop/core.md", "~/.claude/skills/ui-check/antislop/core.md"],
+    "vendor/antislop/skills/antislop-ui/SKILL.md": ["~/.agents/skills/ui-check/antislop/ui.md", "~/.codex/skills/ui-check/antislop/ui.md", "~/.claude/skills/ui-check/antislop/ui.md"],
+    "vendor/antislop/skills/antislop-human/SKILL.md": ["~/.agents/skills/ui-check/antislop/human.md", "~/.codex/skills/ui-check/antislop/human.md", "~/.claude/skills/ui-check/antislop/human.md"],
+    "vendor/antislop/skills/antislop-layoutmobile/SKILL.md": ["~/.agents/skills/ui-check/antislop/layoutmobile.md", "~/.codex/skills/ui-check/antislop/layoutmobile.md", "~/.claude/skills/ui-check/antislop/layoutmobile.md"],
+    "vendor/antislop/skills/antislop-human/contrast-check.py": ["~/.agents/skills/ui-check/antislop/contrast-check.py", "~/.codex/skills/ui-check/antislop/contrast-check.py", "~/.claude/skills/ui-check/antislop/contrast-check.py"],
+    "vendor/antislop/skills/antislop-ui/references/CORE-WEB-VITALS.md": ["~/.agents/skills/ui-check/antislop/references/CORE-WEB-VITALS.md", "~/.codex/skills/ui-check/antislop/references/CORE-WEB-VITALS.md", "~/.claude/skills/ui-check/antislop/references/CORE-WEB-VITALS.md"],
+    "vendor/antislop/skills/antislop-ui/references/WEB-BASELINE.md": ["~/.agents/skills/ui-check/antislop/references/WEB-BASELINE.md", "~/.codex/skills/ui-check/antislop/references/WEB-BASELINE.md", "~/.claude/skills/ui-check/antislop/references/WEB-BASELINE.md"],
+    "vendor/antislop/skills/antislop-human/references/A11Y-PATTERNS.md": ["~/.agents/skills/ui-check/antislop/references/A11Y-PATTERNS.md", "~/.codex/skills/ui-check/antislop/references/A11Y-PATTERNS.md", "~/.claude/skills/ui-check/antislop/references/A11Y-PATTERNS.md"],
+    "vendor/antislop/skills/antislop-human/references/WCAG.md": ["~/.agents/skills/ui-check/antislop/references/WCAG.md", "~/.codex/skills/ui-check/antislop/references/WCAG.md", "~/.claude/skills/ui-check/antislop/references/WCAG.md"],
     "templates/**": ["~/.local/share/solo-sdd/templates/"]
   }
 }

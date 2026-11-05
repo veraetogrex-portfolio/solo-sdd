@@ -25,7 +25,7 @@
 | Что | Команда |
 |---|---|
 | Установка | Python 3 из системы; для тестов — `python3 -m pip install --user hypothesis` |
-| Тесты | `python3 tests/test_sync.py && python3 schema/test_openspec_after_update.py && python3 tests/test_process_guard.py && python3 tests/test_work_hooks.py && python3 tests/test_public_tree.py && python3 tests/test_sdd_worktree.py && python3 tests/test_sdd_dispatch_plan.py && python3 tests/test_sdd_pr.py && python3 tests/test_sdd_dispatch.py && python3 tests/test_publish_first.py && python3 tests/test_cli.py && python3 tests/test_init.py && python3 tests/test_npm_package.py && python3 tests/test_spec_length.py && python3 tests/test_sdd_eval.py` |
+| Тесты | `python3 tests/test_sync.py && python3 schema/test_openspec_after_update.py && python3 tests/test_process_guard.py && python3 tests/test_work_hooks.py && python3 tests/test_public_tree.py && python3 tests/test_sdd_worktree.py && python3 tests/test_sdd_dispatch_plan.py && python3 tests/test_sdd_pr.py && python3 tests/test_sdd_dispatch.py && python3 tests/test_publish_first.py && python3 tests/test_cli.py && python3 tests/test_init.py && python3 tests/test_npm_package.py && python3 tests/test_spec_length.py && python3 tests/test_vendor_antislop.py && python3 tests/test_sdd_eval.py` |
 | CLI | `python3 -m solo_sdd --version` |
 | Что разложено и где расходится | `python3 sync.py status` |
 | Раскладка | `python3 sync.py push` |
@@ -48,6 +48,7 @@
 | `tests/eval/` | Наборы, конфигурации, цены, фикстуры |
 | `schema/openspec-after-update.py` | Сборка схемы `solo`, правила владельца в скиллах OpenSpec, вызов `sync.py push` |
 | `templates/` | Шаблоны для новых проектов |
+| `vendor/antislop/` | Закреплённая копия правил anti-slop для `ui-check`; раскладывается по `targets.json`, обновляется только заменой копии |
 | `openspec/` | Спеки и change этого репозитория |
 | `scripts/publish-first.sh` | Первая публикация: новая `main` без истории и без `openspec/`, разовый |
 | `.github/workflows/test.yml` | CI на всех тестах дерева |

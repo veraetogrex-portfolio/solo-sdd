@@ -6,7 +6,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WRAPPER = os.path.join(REPO, "bin", "solo-sdd.js")
 NODE = shutil.which("node")
 NPM = shutil.which("npm")
-MUST = ("bin/", "solo_sdd/", "skills/", "global/", "schema/", "templates/",
+MUST = ("bin/", "solo_sdd/", "skills/", "global/", "schema/", "templates/", "vendor/",
         "targets.json", "ALGORITHM.md", "LICENSE", "README.md")
 NEVER = ("tests/", "openspec/", ".github/", "docs/")
 
