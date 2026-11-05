@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""sdd-pr.py: PR для spec-dispatch: open, wait (CI), merge. Все вызовы gh идут по URL PR."""
+"""sdd-pr.py: PR для spec-dispatch: open, wait (CI), merge, ship, land. Все вызовы gh идут по URL PR."""
 import json
+import os
 import re
 import subprocess
 import sys
@@ -11,7 +12,11 @@ USAGE = """использование:
   sdd-pr.py open <WORKTREE> <основная ветка> <заголовок>
   sdd-pr.py wait <url> [--timeout <сек>] [--interval <сек>] [--stuck <сек>]
   sdd-pr.py merge <url> <squash|merge|rebase> <hash> [--title <заголовок>]
-  коды merge: 0 слит, 1 ошибка, 5 основная ушла вперёд (PR отстаёт)"""
+  sdd-pr.py ship <MAIN> <WORKTREE> <основная ветка> <заголовок>
+  sdd-pr.py land <MAIN> <WORKTREE> <url> <squash|merge|rebase>
+  коды merge: 0 слит, 1 ошибка, 5 основная ушла вперёд (PR отстаёт)
+  коды ship: 0 green, 1 сбой шага, 3 red, 4 infra, 6 конфликт
+  коды land: 0 всё выполнено, 1 merge не прошёл, 5 основная ушла вперёд, 7 смёрджен, шаг после merge не прошёл"""
 SIGNS = ("FAIL:", "ERROR:", "FAILED", "AssertionError", "failed")
 NO_CHECKS_SEC = 180
 STUCK_SEC = 300
@@ -33,7 +38,7 @@ def number(url):
     return m.group(1) if m else "?"
 
 
-def cmd_open(wt, base, title):
+def open_pr(wt, base, title):
     p = sh("git", "-C", wt, "push", "-u", "origin", "HEAD")
     if p.returncode:
         die("push: " + p.stderr.strip())
@@ -51,8 +56,17 @@ def cmd_open(wt, base, title):
             die("gh pr create: " + p.stderr.strip())
         url = p.stdout.strip().splitlines()[-1]
         n = number(url)
+    return n, url
+
+
+def cmd_open(wt, base, title):
+    n, url = open_pr(wt, base, title)
     print(f"PR #{n} {url}")
     return 0
+
+
+def brief(text):
+    return "\n".join(text.strip().splitlines()[-LOG_LINES:])
 
 
 def checks(url):
@@ -128,7 +142,7 @@ def ci_verdict(rows, required, stuck_sec, limit):
     return "green" if rows and not any(r.get("bucket") == "pending" for r in rows) else None
 
 
-def cmd_wait(url, timeout, interval, limit=STUCK_SEC):
+def cmd_wait(url, timeout=1200.0, interval=15.0, limit=STUCK_SEC):
     n = number(url)
     head = f"PR #{n} {url} CI: "
     required = required_checks(url)
@@ -214,7 +228,89 @@ def cmd_merge(url, how, sha, title=None):
     return 0
 
 
+def worktree_script():
+    here = os.path.dirname(os.path.abspath(__file__))
+    for name in ("sdd-worktree.py", "sdd_worktree.py"):
+        if os.path.exists(os.path.join(here, name)):
+            return os.path.join(here, name)
+    return None
+
+
+def cmd_ship(main, wt, base, title):
+    p = sh("git", "-C", wt, "fetch", "-q", "origin")
+    if p.returncode:
+        die("fetch: " + brief(p.stderr))
+    p = sh("git", "-C", wt, "merge", "-q", "--no-edit", "origin/" + base)
+    if p.returncode:
+        files = sh("git", "-C", wt, "diff", "--name-only", "--diff-filter=U").stdout.split("\n")
+        files = [f for f in files if f]
+        if not files:
+            die("merge: " + brief(p.stderr or p.stdout))
+        if sh("git", "-C", wt, "merge", "--abort").returncode:
+            die("merge --abort: конфликт не отменён: " + ", ".join(files))
+        die("конфликт при обновлении: " + ", ".join(files), 6)
+    script = worktree_script()
+    if not script:
+        die("refresh: нет sdd-worktree.py рядом со скриптом")
+    p = sh(sys.executable, script, "refresh", main, wt)
+    if p.returncode == 3:
+        die(brief(p.stdout), 6)
+    if p.returncode:
+        die("refresh: " + brief(p.stderr or p.stdout))
+    n, url = open_pr(wt, base, title)
+    return cmd_wait(url)
+
+
+def cmd_land(main, wt, url, how):
+    n, v = number(url), view(url)
+    if v["state"] != "MERGED":  # голова читается только здесь: после merge папки WORKTREE может уже не быть
+        sha = sh("git", "-C", wt, "rev-parse", "HEAD").stdout.strip()
+        title = sh("git", "-C", wt, "log", "-1", "--first-parent", "--no-merges", "--diff-filter=ACDMRTB",
+                   "--format=%s").stdout.strip()
+        if not sha or not title:
+            die("не смёрджен: merge: нет заголовка в последнем своём коммите ветки")
+        try:
+            code = cmd_merge(url, how, sha, title)
+        except SystemExit:
+            die("не смёрджен: merge")  # причину уже напечатал cmd_merge
+        if code:
+            return code
+
+    def fail(step, p):
+        out, err = p.stdout.strip(), p.stderr.strip()
+        why = (out or err) if step in ("transport", "remove") else (err or out)
+        die(f"PR #{n} смёрджен, не завершено: {step}: " + brief(why), 7)
+
+    for step, cmd in (("fetch", ("fetch", "-q", "origin")),
+                      ("merge --ff-only", ("merge", "--ff-only", "-q", "origin/" + v["baseRefName"]))):
+        p = sh("git", "-C", main, *cmd)
+        if p.returncode:
+            fail(step, p)
+    if os.path.isdir(wt):
+        script = worktree_script()
+        for sub in ("transport", "remove"):
+            if not script:
+                die(f"PR #{n} смёрджен, не завершено: {sub}: нет sdd-worktree.py рядом со скриптом", 7)
+            p = sh(sys.executable, script, sub, main, wt)
+            if p.returncode:
+                fail(sub, p)
+            if sub == "transport":
+                print(p.stdout, end="")  # строку «не перенесены: …» читает диспетчер
+    branch = v["headRefName"]
+    if branch.startswith("change/") and sh("git", "-C", main, "show-ref", "--verify", "--quiet",
+                                           "refs/heads/" + branch).returncode == 0:
+        p = sh("git", "-C", main, "branch", "-D", branch)
+        if p.returncode:
+            fail("branch -D", p)
+    print(f"PR #{n} {url} land: завершено")
+    return 0
+
+
 def main(a):
+    if a[:1] == ["ship"] and len(a) == 5:
+        return cmd_ship(*a[1:])
+    if a[:1] == ["land"] and len(a) == 5 and a[4] in ("squash", "merge", "rebase"):
+        return cmd_land(*a[1:])
     if a[:1] == ["open"] and len(a) == 4:
         return cmd_open(*a[1:])
     if a[:1] == ["merge"] and len(a) in (4, 6) and a[2] in ("squash", "merge", "rebase") \
