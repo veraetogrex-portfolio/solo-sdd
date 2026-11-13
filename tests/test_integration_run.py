@@ -323,6 +323,23 @@ class RecordReuse(Project):
         self.assertNotIn("reused", out)
         self.assertEqual((code, self.starts(), len(self.tree_records())), (0, 2, 2))
 
+    def test_record_reuse_an_edit_in_the_second_of_the_index_write(self):
+        """Scenario: An edit in the second of the index write. Git rereads a file no older than the index it loads."""
+        git(self.root, "config", "core.checkStat", "minimal")
+        git(self.root, "config", "core.trustctime", "false")
+        readme, index = os.path.join(self.root, "README.md"), os.path.join(self.root, ".git", "index")
+        t0 = (int(time.time()) - 100) * 10 ** 9
+        os.utime(readme, ns=(t0, t0))
+        git(self.root, "rm", "-q", "--cached", "README.md")
+        git(self.root, "add", "README.md")  # the entry records t0; the index is newer, so it is not racy yet
+        self.check()
+        write(readme, "edited\n")  # the same size as "readme\n"
+        os.utime(readme, ns=(t0, t0))
+        os.utime(index, ns=(t0, t0))  # the index written in the second of the edit
+        code, out = self.check()
+        self.assertNotIn("reused", out)
+        self.assertEqual((code, self.starts(), len(self.tree_records())), (0, 2, 2))
+
     def test_record_reuse_an_owner_description_edited(self):
         dup = "name: dup-scan\nabout: finds copied code\npoints: checks\ncommand: sh \"$SOLO_SDD_INTEGRATION_DIR/check.sh\""
         self.integration("\n", text=dup, owner=True)
