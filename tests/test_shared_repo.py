@@ -28,7 +28,7 @@ def git(repo, *args):
 def build(root):
     """A bare remote, a main repository with origin pointing at it and a linked worktree of branch feat."""
     root = pathlib.Path(root)
-    git(root, "init", "-q", "--bare", "remote.git")
+    git(root, "init", "-q", "-b", "main", "--bare", "remote.git")
     git(root, "init", "-q", "-b", "main", "main")
     (root / "main/README.md").write_text("r\n")
     git(root / "main", "add", "-A")

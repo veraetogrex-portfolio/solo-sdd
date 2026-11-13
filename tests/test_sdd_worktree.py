@@ -603,7 +603,7 @@ class RemoveTests(unittest.TestCase):
 def build_dev_remote(root):
     """A bare origin of the Repo in root whose dev branch is one commit ahead of main, fetched into main."""
     main, remote, other = root / "main", root / "remote.git", root / "other"
-    git(root, "init", "-q", "--bare", str(remote))
+    git(root, "init", "-q", "-b", "main", "--bare", str(remote))
     git(main, "remote", "add", "origin", str(remote))
     git(main, "branch", "dev")
     git(main, "push", "-q", "origin", "main", "dev")
