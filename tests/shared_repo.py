@@ -16,6 +16,11 @@ import tempfile
 _TEMPLATES = {}
 _SKIP = {"objects", "index"}  # zlib-compressed objects and the binary index: rewriting would corrupt them
 
+# Git 2.47+ detaches `maintenance run --auto` after a commit; it writes in a template while copy() lists it.
+_n = int(os.environ.get("GIT_CONFIG_COUNT", "0"))
+os.environ.update({"GIT_CONFIG_COUNT": str(_n + 1), "GIT_CONFIG_KEY_%d" % _n: "maintenance.auto",
+                   "GIT_CONFIG_VALUE_%d" % _n: "false"})
+
 
 def template(key, build):
     """(folder, value): the folder build(folder) filled once for this key in this process, and what build returned."""
