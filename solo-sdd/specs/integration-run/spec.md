@@ -86,6 +86,10 @@ A call whose tree, point, `--changed` flag, changed files and enabled descriptio
 - **WHEN** the record holds `SKIP marker-check: no-such-tool not found` and the tree is the same
 - **THEN** the next call runs `marker-check` again
 
+#### Scenario: An edit in the second of the index write
+- **WHEN** a committed file is rewritten with the same size and a stat that matches its index entry, in the second the index was written (`core.checkStat minimal`, `core.trustctime false`)
+- **THEN** the tree hash changes, and the next call runs the integrations and writes a record under a new hash
+
 ### Requirement: Project command shown first
 Before the first run of a project integration's command in a repository, and again after that command text changes, `check` SHALL print `command <name>: <command>` before its result line. Owner integrations SHALL NOT print it.
 
