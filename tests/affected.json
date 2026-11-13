@@ -1,0 +1,353 @@
+{
+ "_": "tests/run.py --affected: a repository path (or a folder key ending in / that holds it) to the test files that import, run, build or read it (also through a script they start or a copy they compare); always: files that read the whole tree. A test file named nowhere always runs; a path no key holds runs every file; tests/test_runner.py fails on a stale key or value.",
+ "always": [
+  "tests/test_npm_package.py",
+  "tests/test_public_tree.py",
+  "tests/test_readme.py",
+  "tests/test_release.py",
+  "tests/test_repo_language.py",
+  "tests/test_runner.py"
+ ],
+ "map": {
+  ".gitattributes": [],
+  ".github/": [],
+  ".gitignore": [
+   "tests/test_cli.py"
+  ],
+  "AGENTS.md": [],
+  "ALGORITHM.md": [
+   "tests/test_cli.py",
+   "tests/test_providers.py",
+   "tests/test_skill_commands.py",
+   "tests/test_sync.py"
+  ],
+  "CHANGELOG.md": [],
+  "CLAUDE.md": [],
+  "LESSONS.md": [],
+  "LICENSE": [
+   "tests/test_cli.py"
+  ],
+  "README.md": [
+   "tests/test_cli.py",
+   "tests/test_demo.py",
+   "tests/test_providers.py",
+   "tests/test_settings.py"
+  ],
+  "SOURCES.md": [],
+  "bin/": [],
+  "docs/": [],
+  "examples/": [
+   "tests/test_demo.py"
+  ],
+  "global/": [
+   "tests/test_cli.py",
+   "tests/test_providers.py",
+   "tests/test_sync.py",
+   "tests/test_sync_blocks.py"
+  ],
+  "global/AGENTS.md": [
+   "tests/test_init.py",
+   "tests/test_skill_commands.py"
+  ],
+  "global/model-policy.json": [
+   "tests/test_sdd_eval.py",
+   "tests/test_work_hooks.py"
+  ],
+  "global/process-guard.py": [
+   "tests/test_process_guard.py"
+  ],
+  "global/sdd_dispatch.py": [
+   "tests/test_process_format.py",
+   "tests/test_sdd_dispatch.py"
+  ],
+  "global/sdd_dispatch_plan.py": [
+   "tests/test_sdd_dispatch_plan.py",
+   "tests/test_sdd_eval.py",
+   "tests/test_settings.py",
+   "tests/test_shared_repo.py"
+  ],
+  "global/sdd_eval.py": [
+   "tests/test_sdd_eval.py"
+  ],
+  "global/sdd_pr.py": [
+   "tests/test_sdd_dispatch.py",
+   "tests/test_sdd_pr.py",
+   "tests/test_settings.py"
+  ],
+  "global/sdd_worktree.py": [
+   "tests/test_sdd_dispatch.py",
+   "tests/test_sdd_dispatch_plan.py",
+   "tests/test_sdd_eval.py",
+   "tests/test_sdd_pr.py",
+   "tests/test_sdd_worktree.py",
+   "tests/test_settings.py"
+  ],
+  "global/work_hooks.py": [
+   "tests/test_process_guard.py",
+   "tests/test_settings.py",
+   "tests/test_work_hooks.py"
+  ],
+  "global/work_hooks_settings.py": [
+   "tests/test_work_hooks.py"
+  ],
+  "integrations/": [
+   "tests/test_cli.py",
+   "tests/test_integrations.py",
+   "tests/test_providers.py",
+   "tests/test_sync.py",
+   "tests/test_vendor_antislop.py",
+   "tests/test_vendor_security_audit.py"
+  ],
+  "package.json": [],
+  "pyproject.toml": [
+   "tests/test_cli.py"
+  ],
+  "scripts/publish-first.sh": [
+   "tests/test_publish_first.py"
+  ],
+  "scripts/pre-push-guard.sh": [
+   "tests/test_pre_push_guard.py"
+  ],
+  "scripts/release_check.py": [],
+  "scripts/sync_blocks.py": [
+   "tests/test_cli.py",
+   "tests/test_process_format.py",
+   "tests/test_process_guard.py",
+   "tests/test_settings.py",
+   "tests/test_sync_blocks.py"
+  ],
+  "skills/": [
+   "tests/test_cli.py",
+   "tests/test_providers.py",
+   "tests/test_sdd_dispatch.py",
+   "tests/test_sdd_dispatch_plan.py",
+   "tests/test_skill_commands.py",
+   "tests/test_sync.py",
+   "tests/test_vendor_antislop.py",
+   "tests/test_vendor_security_audit.py"
+  ],
+  "solo-sdd/": [],
+  "solo_sdd/": [
+   "tests/test_cli.py",
+   "tests/test_demo.py",
+   "tests/test_import_openspec.py",
+   "tests/test_init.py",
+   "tests/test_integration_doctor.py",
+   "tests/test_integration_points.py",
+   "tests/test_integration_rules.py",
+   "tests/test_integration_run.py",
+   "tests/test_integration_skills.py",
+   "tests/test_integrations.py",
+   "tests/test_process_cli.py",
+   "tests/test_process_format.py",
+   "tests/test_providers.py",
+   "tests/test_sdd_dispatch.py",
+   "tests/test_settings.py",
+   "tests/test_setup_detect.py",
+   "tests/test_sync.py",
+   "tests/test_sync_blocks.py",
+   "tests/test_vendor_antislop.py",
+   "tests/test_vendor_security_audit.py",
+   "tests/test_work_hooks.py"
+  ],
+  "solo_sdd/integration_run.py": [
+   "tests/test_integration_points.py",
+   "tests/test_integration_rules.py",
+   "tests/test_integration_run.py",
+   "tests/test_work_hooks.py"
+  ],
+  "solo_sdd/integrations.py": [
+   "tests/test_integration_points.py",
+   "tests/test_integration_rules.py",
+   "tests/test_integration_run.py",
+   "tests/test_integration_skills.py",
+   "tests/test_integrations.py"
+  ],
+  "sync.py": [
+   "tests/test_cli.py",
+   "tests/test_providers.py",
+   "tests/test_sync.py"
+  ],
+  "targets.json": [
+   "tests/test_cli.py",
+   "tests/test_providers.py",
+   "tests/test_sync.py",
+   "tests/test_vendor_antislop.py",
+   "tests/test_vendor_security_audit.py"
+  ],
+  "templates/": [
+   "tests/test_cli.py",
+   "tests/test_init.py",
+   "tests/test_providers.py",
+   "tests/test_sync.py"
+  ],
+  "tests/affected.json": [
+   "tests/test_runner.py"
+  ],
+  "tests/eval/": [
+   "tests/test_sdd_eval.py"
+  ],
+  "tests/marks.py": [
+   "tests/test_cli.py",
+   "tests/test_demo.py",
+   "tests/test_import_openspec.py",
+   "tests/test_init.py",
+   "tests/test_integration_rules.py",
+   "tests/test_integration_run.py",
+   "tests/test_npm_package.py",
+   "tests/test_pre_push_guard.py",
+   "tests/test_process_format.py",
+   "tests/test_public_tree.py",
+   "tests/test_publish_first.py",
+   "tests/test_release.py",
+   "tests/test_runner.py",
+   "tests/test_sdd_dispatch.py",
+   "tests/test_sdd_dispatch_plan.py",
+   "tests/test_sdd_eval.py",
+   "tests/test_sdd_pr.py",
+   "tests/test_sdd_worktree.py",
+   "tests/test_setup_detect.py",
+   "tests/test_shared_repo.py",
+   "tests/test_sync.py",
+   "tests/test_work_hooks.py"
+  ],
+  "tests/run.py": [
+   "tests/test_runner.py"
+  ],
+  "tests/shared_repo.py": [
+   "tests/test_pre_push_guard.py",
+   "tests/test_publish_first.py",
+   "tests/test_sdd_dispatch.py",
+   "tests/test_sdd_dispatch_plan.py",
+   "tests/test_sdd_eval.py",
+   "tests/test_sdd_pr.py",
+   "tests/test_sdd_worktree.py",
+   "tests/test_shared_repo.py"
+  ],
+  "tests/stands/": [],
+  "tests/stands/map-stand/": [
+   "tests/test_map_check.py"
+  ],
+  "tests/stands/provider-probe.py": [
+   "tests/test_providers.py"
+  ],
+  "tests/stands/slow-tests-cost.py": [
+   "tests/test_shared_repo.py"
+  ],
+  "tests/targets-before.json": [
+   "tests/test_providers.py",
+   "tests/test_sync.py"
+  ],
+  "tests/test_cli.py": [
+   "tests/test_cli.py"
+  ],
+  "tests/test_demo.py": [
+   "tests/test_demo.py"
+  ],
+  "tests/test_import_openspec.py": [
+   "tests/test_import_openspec.py"
+  ],
+  "tests/test_init.py": [
+   "tests/test_init.py"
+  ],
+  "tests/test_integration_doctor.py": [
+   "tests/test_integration_doctor.py"
+  ],
+  "tests/test_integration_points.py": [
+   "tests/test_integration_points.py"
+  ],
+  "tests/test_integration_rules.py": [
+   "tests/test_integration_rules.py"
+  ],
+  "tests/test_integration_run.py": [
+   "tests/test_integration_points.py",
+   "tests/test_integration_run.py"
+  ],
+  "tests/test_integration_skills.py": [
+   "tests/test_integration_skills.py"
+  ],
+  "tests/test_integrations.py": [
+   "tests/test_integrations.py"
+  ],
+  "tests/test_map_check.py": [
+   "tests/test_map_check.py"
+  ],
+  "tests/test_npm_package.py": [
+   "tests/test_npm_package.py"
+  ],
+  "tests/test_process_cli.py": [
+   "tests/test_process_cli.py"
+  ],
+  "tests/test_process_format.py": [
+   "tests/test_process_format.py"
+  ],
+  "tests/test_process_guard.py": [
+   "tests/test_process_guard.py"
+  ],
+  "tests/test_providers.py": [
+   "tests/test_providers.py"
+  ],
+  "tests/test_public_tree.py": [
+   "tests/test_public_tree.py"
+  ],
+  "tests/test_publish_first.py": [
+   "tests/test_publish_first.py"
+  ],
+  "tests/test_readme.py": [
+   "tests/test_readme.py"
+  ],
+  "tests/test_release.py": [
+   "tests/test_release.py"
+  ],
+  "tests/test_repo_language.py": [
+   "tests/test_repo_language.py"
+  ],
+  "tests/test_runner.py": [
+   "tests/test_runner.py"
+  ],
+  "tests/test_sdd_dispatch.py": [
+   "tests/test_sdd_dispatch.py",
+   "tests/test_shared_repo.py"
+  ],
+  "tests/test_sdd_dispatch_plan.py": [
+   "tests/test_sdd_dispatch_plan.py",
+   "tests/test_shared_repo.py"
+  ],
+  "tests/test_sdd_eval.py": [
+   "tests/test_sdd_eval.py"
+  ],
+  "tests/test_sdd_pr.py": [
+   "tests/test_sdd_pr.py"
+  ],
+  "tests/test_sdd_worktree.py": [
+   "tests/test_sdd_worktree.py"
+  ],
+  "tests/test_settings.py": [
+   "tests/test_settings.py"
+  ],
+  "tests/test_setup_detect.py": [
+   "tests/test_setup_detect.py"
+  ],
+  "tests/test_shared_repo.py": [
+   "tests/test_shared_repo.py"
+  ],
+  "tests/test_skill_commands.py": [
+   "tests/test_skill_commands.py"
+  ],
+  "tests/test_sync.py": [
+   "tests/test_sync.py"
+  ],
+  "tests/test_sync_blocks.py": [
+   "tests/test_sync_blocks.py"
+  ],
+  "tests/test_vendor_antislop.py": [
+   "tests/test_vendor_antislop.py"
+  ],
+  "tests/test_vendor_security_audit.py": [
+   "tests/test_vendor_security_audit.py"
+  ],
+  "tests/test_work_hooks.py": [
+   "tests/test_work_hooks.py"
+  ]
+ }
+}

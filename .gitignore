@@ -1,0 +1,43 @@
+__pycache__/
+*.pyc
+.DS_Store
+.hypothesis/
+
+# local agent settings
+.claude/
+.codex/
+
+# secrets
+.env
+.env.*
+!.env.example
+
+# environment (no /: in a worktree these are links)
+.venv
+node_modules
+
+# release files built by scripts/release_check.py
+dist/
+
+# the failed files of the last tests/run.py
+tests/.last-failed
+
+# logs
+*.log
+
+# the change archive: kept only in the working folder, not published
+solo-sdd/changes/archive/
+
+# single owner, not part of solo-sdd development
+docs/debug-profile.md
+docs/process-safety-verification.md
+docs/rules-audit.md
+docs/waiting.md
+global/claude-gui.py
+global/claude-process-safety-settings.json
+global/claude-safe.py
+tests/eval/sets/
+tests/probe_claude_development.py
+tests/probe_claude_process_safety.py
+tests/test_claude_gui.py
+tests/test_claude_safe.py

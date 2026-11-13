@@ -1,0 +1,6 @@
+# The pinned anti-slop rules, bundled with solo-sdd: enabled unless integrations.off names it.
+name: antislop
+about: anti-slop rules for the interface and product texts
+points: review
+material: antislop.md
+tags: ui, copy

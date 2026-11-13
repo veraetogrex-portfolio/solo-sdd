@@ -1,0 +1,14 @@
+{
+  "_comment": "Model policy for the work_hooks.py guard and stop hooks. Source of the list: ~/.codex/models_cache.json (affordable/fast descriptions) on 2026-10-15. Subagent roles (review, orchestrator, implement, lookup) are taken from an explicit tag at the start of the description (case-insensitive; the orchestrator tag is the word followed by a space or a colon). A reviewer (review) runs without model or on a model from main: review and acceptance are judgement, they run on the main model. Only the owner allows bypassing the model rules: SOLO_SDD_EXPENSIVE_OK=1 in the Claude Code environment. test_markers keeps Russian test words as \\u escapes: prompts may be Russian, the repository holds no Cyrillic. The deployed copy ~/.claude/hooks/model-policy.json is yours: edit the model lists and the browser key there. browser.tools (tool name prefixes), browser.skills (skill names) and browser.bash (plain substrings of a Bash command) add to the hook's built-in browser signs of the stop interface check and cannot remove one; a part that is not a list of non-empty strings adds nothing and writes an errors.log line. install, update and sync.py push skip an edited copy (skipped ... edited in place) and sync.py status shows it as drift, so a newer shipped list is not taken while it is drift. To take it: from a clone, python3 sync.py push --force (the old copy is saved under ~/.local/share/solo-sdd/backup/); from the package, move the copy aside, run solo-sdd update (created) and carry your edits over.",
+  "cheap": ["luna", "terra", "reserve", "haiku"],
+  "expensive_always": ["astra"],
+  "expensive": ["astra", "sol", "opus", "fable"],
+  "main": ["opus", "fable"],
+  "roles": {"review": ["Review:"], "orchestrator": ["Orchestrator ", "Orchestrator:"], "implement": ["Implement:"], "lookup": ["Lookup:"]},
+  "browser": {
+    "tools": ["mcp__claude-in-chrome__", "mcp__agent-browser__", "mcp__peekaboo__"],
+    "skills": ["ui-check", "agent-browser", "claude-in-chrome", "webapp-testing", "run", "web-perf"],
+    "bash": ["agent-browser", "playwright", "puppeteer", "--headless", "chrome-devtools", "screencapture", "--remote-debugging-port", "json/version", "webSocketDebuggerUrl"]
+  },
+  "test_markers": "(?i)(\\btests?\\b|pytest|vitest|jest|node --test|acceptance|e2e|smoke|eval\\b|benchmark|probe|\u043f\u0440\u0438\u0451\u043c\u043a|\u043f\u0440\u0438\u0435\u043c\u043a|\u043f\u0440\u043e\u0433\u043e\u043d|\u0442\u0435\u0441\u0442)"
+}

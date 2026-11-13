@@ -1,0 +1,4 @@
+# solo-sdd settings; change with solo-sdd config set <key> <value> or solo-sdd init --reconfigure
+mode: solo
+# delivery.mode: local, no pull request; the demo has no remote, so AGENTS.md (Delivery) says nothing is pushed
+delivery.mode: local

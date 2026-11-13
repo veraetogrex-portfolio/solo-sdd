@@ -1,0 +1,6 @@
+# The pinned cloudflare/security-audit-skill method, bundled with solo-sdd: enabled unless integrations.off names it.
+name: security-audit
+about: security audit method for the audited code
+points: audit
+material: skills/security-audit/SKILL.md
+tags: security

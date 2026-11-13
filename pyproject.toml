@@ -1,0 +1,51 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "solo-sdd"
+dynamic = ["version"]
+description = "Spec-driven development process for AI coding agents: rules, skills, hooks and a process format with its own validator; a change is done only after a live check and an independent review"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.9"
+dependencies = []
+keywords = ["spec-driven-development", "ai-agents", "claude-code", "codex", "agents-md", "specifications", "cli"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Software Development",
+    "Topic :: Software Development :: Quality Assurance",
+]
+
+[project.urls]
+Homepage = "https://github.com/veraetogrex-portfolio/solo-sdd"
+Repository = "https://github.com/veraetogrex-portfolio/solo-sdd"
+Issues = "https://github.com/veraetogrex-portfolio/solo-sdd/issues"
+
+[project.scripts]
+solo-sdd = "solo_sdd.cli:main"
+
+[tool.hatch.version]
+path = "solo_sdd/__init__.py"
+
+[tool.hatch.build.targets.sdist]
+# The process tree holds the development log (local paths, session ids): kept in git, not published.
+exclude = ["/solo-sdd"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["solo_sdd"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"skills" = "solo_sdd/data/skills"
+"global" = "solo_sdd/data/global"
+"templates" = "solo_sdd/data/templates"
+"integrations" = "solo_sdd/data/integrations"
+"targets.json" = "solo_sdd/data/targets.json"
+"ALGORITHM.md" = "solo_sdd/data/ALGORITHM.md"
+"sync.py" = "solo_sdd/data/sync.py"

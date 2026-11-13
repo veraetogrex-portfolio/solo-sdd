@@ -1,0 +1,54 @@
+name: test
+
+# Ubuntu on a push to main and on a PR; macOS, whose minutes cost more, only on a v* tag; both on a manual run.
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJSON(github.event_name == 'workflow_dispatch' && '["ubuntu-latest", "macos-latest"]' || startsWith(github.ref, 'refs/tags/') && '["macos-latest"]' || '["ubuntu-latest"]') }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      # actions/checkout v4.4.0
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Install Hypothesis, build and pyflakes
+        run: /usr/bin/python3 -m pip install --user --break-system-packages hypothesis build pyflakes==3.4.0 || /usr/bin/python3 -m pip install --user hypothesis build pyflakes==3.4.0
+      - name: Lint
+        run: /usr/bin/python3 -m pyflakes solo_sdd global scripts sync.py
+      - name: Run tests
+        if: ${{ !startsWith(github.ref, 'refs/tags/') && github.event_name != 'workflow_dispatch' }}
+        run: |
+          /usr/bin/python3 tests/run.py --tier slow < /dev/null
+      - name: Run tests, release tier
+        if: ${{ startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' }}
+        run: |
+          /usr/bin/python3 tests/run.py --tier release < /dev/null
+      - name: Validate the process tree
+        run: |
+          if [ -d solo-sdd ]; then /usr/bin/python3 -m solo_sdd validate --all < /dev/null; else echo "no solo-sdd/: nothing to check"; fi
+      - name: Wheel install smoke
+        run: |
+          /usr/bin/python3 -m pip wheel . --no-deps -w dist
+          /usr/bin/python3 -m venv "$RUNNER_TEMP/wheelenv"
+          "$RUNNER_TEMP/wheelenv/bin/pip" install dist/solo_sdd-*.whl
+          "$RUNNER_TEMP/wheelenv/bin/solo-sdd" --version
+      - name: npm tarball smoke
+        run: |
+          npm pack --pack-destination "$RUNNER_TEMP"
+          npm i -g --prefix "$RUNNER_TEMP/npm" "$RUNNER_TEMP"/solo-sdd-*.tgz
+          "$RUNNER_TEMP/npm/bin/solo-sdd" --version

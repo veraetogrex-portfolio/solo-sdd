@@ -1,0 +1,6 @@
+schema: solo
+
+context: |
+  Language: en.
+  Mode: demo
+  Intent: two async request handlers of a small shop service; readiness is green tests.

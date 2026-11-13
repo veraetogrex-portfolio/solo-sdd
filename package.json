@@ -1,0 +1,43 @@
+{
+  "name": "solo-sdd",
+  "version": "0.2.0",
+  "description": "Spec-driven development process for AI coding agents: rules, skills, hooks and a process format with its own validator; a change is done only after a live check and an independent review",
+  "keywords": [
+    "spec-driven-development",
+    "ai-agents",
+    "claude-code",
+    "codex",
+    "agents-md",
+    "specifications",
+    "cli"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/veraetogrex-portfolio/solo-sdd.git"
+  },
+  "homepage": "https://github.com/veraetogrex-portfolio/solo-sdd",
+  "bugs": {
+    "url": "https://github.com/veraetogrex-portfolio/solo-sdd/issues"
+  },
+  "bin": {
+    "solo-sdd": "bin/solo-sdd.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "bin/",
+    "solo_sdd/",
+    "skills/",
+    "global/",
+    "templates/",
+    "integrations/",
+    "targets.json",
+    "ALGORITHM.md",
+    "LICENSE",
+    "README.md",
+    "!**/__pycache__/",
+    "!global/claude-*"
+  ]
+}

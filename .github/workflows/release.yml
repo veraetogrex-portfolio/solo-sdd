@@ -1,0 +1,162 @@
+name: release
+
+# A pushed tag v<version> on a main commit: the tests, the release check, then the same dist/ files to PyPI and npm
+# through trusted publishing, then a GitHub release whose text is the CHANGELOG.md section of the version.
+# The one-time registry setup: docs/release.md.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      # actions/checkout v4.4.0
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+      - name: Public repository
+        # npm provenance and the README links on the registry pages need a public repository.
+        run: |
+          if [ "${{ github.event.repository.private }}" = "true" ]; then
+            echo "fail repository $GITHUB_REPOSITORY is private: make it public before a release (docs/release.md)"
+            exit 1
+          fi
+      - name: Tag on main
+        run: |
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "fail tag $GITHUB_REF_NAME: commit $GITHUB_SHA is not on main"
+            exit 1
+          fi
+      # actions/setup-node v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "22"
+      - name: Install build tools
+        run: /usr/bin/python3 -m pip install --user --break-system-packages build twine hypothesis
+      - name: Run tests
+        run: |
+          /usr/bin/python3 tests/run.py --tier release < /dev/null
+      - name: Validate the process tree
+        run: |
+          if [ -d solo-sdd ]; then /usr/bin/python3 -m solo_sdd validate --all < /dev/null; else echo "no solo-sdd/: nothing to check"; fi
+      - name: Release check
+        run: /usr/bin/python3 scripts/release_check.py "$GITHUB_REF_NAME"
+      - name: Registry metadata
+        run: /usr/bin/python3 -m twine check --strict dist/*.tar.gz dist/*.whl
+      - name: Release text
+        run: |
+          mkdir -p "$RUNNER_TEMP/notes"
+          /usr/bin/python3 scripts/release_check.py --notes "$GITHUB_REF_NAME" > "$RUNNER_TEMP/notes/notes.md"
+      # actions/upload-artifact v4.6.2
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+          overwrite: true
+      # actions/upload-artifact v4.6.2
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: notes
+          path: ${{ runner.temp }}/notes/
+          if-no-files-found: error
+          overwrite: true
+
+  pypi:
+    needs: check
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/solo-sdd/
+    permissions:
+      id-token: write
+    steps:
+      # actions/download-artifact v4.3.0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: dist
+          path: dist
+      - name: Already published
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          code=$(curl -s -o /dev/null -w '%{http_code}' "https://pypi.org/pypi/solo-sdd/$v/json")
+          if [ "$code" = 200 ]; then
+            echo "solo-sdd $v is already published on PyPI: only missing files are uploaded"
+          else
+            echo "solo-sdd $v is not on PyPI yet (HTTP $code)"
+          fi
+          rm -f dist/*.tgz
+      # Runs even when the version is there: skip-existing uploads only the files PyPI lacks (a run that stopped halfway).
+      # pypa/gh-action-pypi-publish v1.14.3, the head of release/v1 on 2026-11-10
+      - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086
+        with:
+          packages-dir: dist/
+          skip-existing: true
+
+  npm:
+    needs: check
+    runs-on: ubuntu-latest
+    environment:
+      name: npm
+      url: https://www.npmjs.com/package/solo-sdd
+    permissions:
+      id-token: write
+    steps:
+      # actions/download-artifact v4.3.0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: dist
+          path: dist
+      # actions/setup-node v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "24"
+      - name: npm with trusted publishing
+        run: npm install -g npm@^11.5.1 && npm --version
+      - name: Publish
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          if npm view "solo-sdd@$v" version > /dev/null 2>&1; then
+            echo "solo-sdd $v is already published on npm"
+            exit 0
+          fi
+          # NPM_TOKEN only for the first publish, before the trusted publisher exists (docs/release.md).
+          if [ -n "$NPM_TOKEN" ]; then npm config set //registry.npmjs.org/:_authToken "$NPM_TOKEN"; fi
+          npm publish "dist/solo-sdd-$v.tgz" --provenance --access public
+
+  github-release:
+    needs: [pypi, npm]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      # actions/download-artifact v4.3.0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: dist
+          path: dist
+      # actions/download-artifact v4.3.0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: notes
+          path: notes
+      - name: Release with the three files and the CHANGELOG section
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/* --clobber -R "$GITHUB_REPOSITORY"
+          else
+            gh release create "$GITHUB_REF_NAME" dist/* --notes-file notes/notes.md --verify-tag -R "$GITHUB_REPOSITORY"
+          fi
