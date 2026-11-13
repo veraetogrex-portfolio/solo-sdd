@@ -35,7 +35,7 @@ def build(folder):
             (work / "f").write_text("%s %d\n" % (branch, i))
             git(work, "add", "f")
             git(work, "commit", "-q", "-m", "%s %d" % (branch, i))
-    git(folder, "init", "-q", "--bare", str(folder / "remote.git"))
+    git(folder, "init", "-q", "-b", "main", "--bare", str(folder / "remote.git"))
     git(work, "remote", "add", "origin", str(folder / "remote.git"))
     git(work, "push", "-q", "origin", "main", *["main:refs/heads/d%d" % i for i in range(DELETABLE)])
 
