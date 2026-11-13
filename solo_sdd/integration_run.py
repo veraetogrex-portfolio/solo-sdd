@@ -83,8 +83,11 @@ def tree_hash(root):
         env = dict(os.environ, GIT_INDEX_FILE=os.path.join(tmp, "index"))
         real = os.path.join(root, git(root, "rev-parse", "--git-path", "index").decode().strip())
         if os.path.exists(real):  # tracked files that match an ignore pattern stay in the tree
-            # copy2 keeps the index time: git rereads a file no older than the index, a fresh copy hides such an edit
-            shutil.copy2(real, env["GIT_INDEX_FILE"])
+            # the copy keeps the index time, taken before the bytes: git rereads a file no older than the index it
+            # loads, so a newer copy would hide such an edit
+            st = os.stat(real)
+            shutil.copyfile(real, env["GIT_INDEX_FILE"])
+            os.utime(env["GIT_INDEX_FILE"], ns=(st.st_atime_ns, st.st_mtime_ns))
         git(root, "add", "-A", env=env)
         return git(root, "write-tree", env=env).decode().strip()
     finally:
