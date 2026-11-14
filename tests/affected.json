@@ -147,6 +147,7 @@
    "tests/test_providers.py",
    "tests/test_sdd_dispatch.py",
    "tests/test_settings.py",
+   "tests/test_settings_ui.py",
    "tests/test_setup_detect.py",
    "tests/test_sync.py",
    "tests/test_sync_blocks.py",
@@ -327,7 +328,11 @@
    "tests/test_sdd_worktree.py"
   ],
   "tests/test_settings.py": [
-   "tests/test_settings.py"
+   "tests/test_settings.py",
+   "tests/test_settings_ui.py"
+  ],
+  "tests/test_settings_ui.py": [
+   "tests/test_settings_ui.py"
   ],
   "tests/test_setup_detect.py": [
    "tests/test_setup_detect.py"
