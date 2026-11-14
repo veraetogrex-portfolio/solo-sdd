@@ -123,16 +123,12 @@ jobs:
       - name: npm with trusted publishing
         run: npm install -g npm@^11.5.1 && npm --version
       - name: Publish
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           v="${GITHUB_REF_NAME#v}"
           if npm view "solo-sdd@$v" version > /dev/null 2>&1; then
             echo "solo-sdd $v is already published on npm"
             exit 0
           fi
-          # NPM_TOKEN only for the first publish, before the trusted publisher exists (docs/release.md).
-          if [ -n "$NPM_TOKEN" ]; then npm config set //registry.npmjs.org/:_authToken "$NPM_TOKEN"; fi
           npm publish "./dist/solo-sdd-$v.tgz" --provenance --access public
 
   github-release:
