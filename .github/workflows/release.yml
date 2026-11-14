@@ -133,7 +133,7 @@ jobs:
           fi
           # NPM_TOKEN only for the first publish, before the trusted publisher exists (docs/release.md).
           if [ -n "$NPM_TOKEN" ]; then npm config set //registry.npmjs.org/:_authToken "$NPM_TOKEN"; fi
-          npm publish "dist/solo-sdd-$v.tgz" --provenance --access public
+          npm publish "./dist/solo-sdd-$v.tgz" --provenance --access public
 
   github-release:
     needs: [pypi, npm]
