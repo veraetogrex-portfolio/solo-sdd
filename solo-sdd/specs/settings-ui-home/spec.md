@@ -1,8 +1,9 @@
-## Purpose
+# settings-ui-home Specification
 
+## Purpose
 The machine part of solo-sdd configuration on the settings screen: which agents get the skills, the hooks and the global rules, with the deployment state and the doctor warnings, changed through the same commands a person runs.
 
-## ADDED Requirements
+## Requirements
 
 ### Requirement: Machine section
 The settings screen SHALL have a Machine section, also when opened outside a project, showing the chosen agents among the registered providers with the detected ones marked, whether the hooks and the global rules are on, the deployment source and version, the number of copies in each `status` state and every `warn` and `fail` line of `doctor`.
