@@ -1,7 +1,7 @@
 """solo-sdd entry point: command parsing."""
 import difflib, os, sys
 
-from solo_sdd import __version__, doctor, hooks, import_openspec, integration_run, integrations, keywords, layout, process_cli, process_format, providers, settings
+from solo_sdd import __version__, doctor, hooks, import_openspec, integration_run, integrations, keywords, layout, process_cli, process_format, providers, settings, settings_ui
 from solo_sdd import init as project_init
 
 layout.PULL_HINT = "solo-sdd sync pull"
@@ -36,6 +36,8 @@ COMMANDS = """solo-sdd commands:
   config describe [<key>]|list --json
                                      what each key changes, its type, allowed values, defaults and value in effect; the
                                      list rows with these fields as JSON
+  settings [folder]                  full-screen terminal screen of the project settings: every key by group with its
+                                     value, source and description; edit by type, reset, save only the edited lines
   integrations list|enable <name>|disable <name>
                                      integrations of solo-sdd/integrations/, ~/.local/share/solo-sdd/integrations/ and
                                      the bundled ones with their source and state; enable or disable one by the integrations
@@ -169,6 +171,10 @@ def _main(argv=None):
         rest = [a for a in argv[1:] if a != "--write"]
         if len(rest) <= 1 and len(argv) - len(rest) <= 2:
             return migrate_agents(*rest, write="--write" in argv[1:])
+    if argv and argv[0] == "settings":
+        code = settings_ui.main(argv[1:])
+        if code is not None:
+            return code
     if argv and argv[0] == "validate":
         code = process_format.run(argv[1:])
         if code is not None:

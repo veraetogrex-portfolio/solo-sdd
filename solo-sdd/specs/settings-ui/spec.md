@@ -1,8 +1,9 @@
-## Purpose
+# settings-ui Specification
 
+## Purpose
 An interactive full-screen terminal screen where a person reads and changes every setting of a project's solo-sdd, with each key explained, without knowing the keys by heart.
 
-## ADDED Requirements
+## Requirements
 
 ### Requirement: Settings screen
 `solo-sdd settings [folder]` on a terminal SHALL open a full-screen screen on the standard library listing every registered key by group with its value in effect and source, and for the selected key its description, allowed values, default and team default. Without a terminal on stdin and stdout, or without a `solo-sdd/` tree, it SHALL print the command to use instead and exit 1, changing no file.

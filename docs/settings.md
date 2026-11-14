@@ -4,6 +4,8 @@ A project keeps its settings in `solo-sdd/config`: one `key: value` per line, li
 
 `solo-sdd config list` prints every key as `<key> <value> <source>` with the source `file`, `AGENTS.md`, `mode` or `default`; `get <key>` prints the value, and `source: <source>` on stderr; `set <key> <value>` and `unset <key>` change only that line and keep comments, order and line endings. `describe [<key>]` explains every key, or the one named: its group, what it changes, its type with the allowed values, the default, the team default and the value in effect with its source; then each checklist pattern and each checklist key set in the file. `list --json` prints the rows of `list` with the same fields as a list of objects. A wrong key or value is refused with exit code 1 and the allowed keys or values, the file unchanged.
 
+`solo-sdd settings` shows the same keys on a full-screen terminal screen and changes them the same way, one edited line per key: a key whose file value overrides a Delivery item of `AGENTS.md` is marked with that item, picking `delivery.mode: pr` without a CI workflow shows the warning `init` prints, a file changed on disk since the screen read it is not overwritten, and a broken file opens read-only with its line and reason.
+
 A line that is not `key: value`, an unknown key or a wrong value makes the command and the scripts fail with `solo-sdd/config:<line>` and the reason; the hooks take the defaults and write the reason to `~/.claude/hook-state/errors.log`. The file is read with the standard library only: the hooks run on `/usr/bin/python3` 3.9.
 
 | Key | Values | Default | Team default | Read by, and the older source used when the key is not in the file |
