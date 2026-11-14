@@ -28,7 +28,7 @@ A line that is not `key: value`, an unknown key or a wrong value makes the comma
 
 ## Checklists
 
-A checklist names files a person checks by a list before they merge. Two keys per checklist, `<name>` in lowercase letters, digits and `-`:
+A checklist names files a person checks by a list before they merge. Two keys per checklist, `<name>` in lowercase letters, digits and `-`; the Checklists section of `solo-sdd settings` (`c`) adds one by its name, paths and file, edits and removes one, and marks a checklist without one of its keys as incomplete and a file that does not exist as missing:
 
 | Key | Value |
 |---|---|

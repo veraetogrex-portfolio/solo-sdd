@@ -1,19 +1,24 @@
-## Purpose
+# settings-ui-lists Specification
 
+## Purpose
 Integrations and checklists on the project settings screen: the settings that are a set of found items or a pair of keys per name, shown and changed as such instead of as raw keys.
 
-## ADDED Requirements
+## Requirements
 
 ### Requirement: Integrations section
-The settings screen SHALL list every integration `solo-sdd integrations list` finds, with source, state, points and description; a broken or shadowed one SHALL show its reason and SHALL NOT toggle. A saved toggle SHALL go through the same function as `solo-sdd integrations enable` and `disable`, including the `AGENTS.md` rules block; when that function refuses, no file SHALL change and the reason SHALL be shown.
+The settings screen SHALL list every integration `solo-sdd integrations list` finds, with source, state, points and description; a shadowed one, or a broken one that is not enabled, SHALL show its reason and SHALL NOT toggle; a broken enabled one SHALL switch off, as `disable` allows. A saved toggle SHALL go through the same function as `solo-sdd integrations enable` and `disable`, with the `AGENTS.md` rules block; when it refuses, no file SHALL change and the reason SHALL be shown.
 
 #### Scenario: A bundled one off
 - **WHEN** the person toggles the enabled bundled integration `antislop` and saves
 - **THEN** `solo-sdd/config` has `integrations.off: antislop` and `solo-sdd integrations list` shows it disabled
 
 #### Scenario: A broken one
-- **WHEN** a project integration has a broken description
+- **WHEN** a project integration has a broken description and is not enabled
 - **THEN** the section shows it with the reason, and toggling it does nothing
+
+#### Scenario: A broken enabled one off
+- **WHEN** an owner integration listed in `integrations` has a broken description and the person switches it off and saves
+- **THEN** its name leaves `integrations`, as after `solo-sdd integrations disable` with that name
 
 #### Scenario: Rules block refused
 - **WHEN** `AGENTS.md` is not writable and the person saves a toggle

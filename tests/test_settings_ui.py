@@ -3,8 +3,11 @@
 The stand tests/stands/settings-tui.py proves the scenarios a person walks through on a real terminal; the rows here
 are the cases it does not reach.
 """
+import contextlib
+import io
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -13,7 +16,7 @@ from hypothesis import example, given, settings as hsettings, strategies as st
 
 REPO = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 sys.path.insert(0, REPO)
-from solo_sdd import settings, settings_ui  # noqa: E402
+from solo_sdd import init, settings, settings_ui  # noqa: E402
 from test_settings import VALUES, files  # noqa: E402
 
 
@@ -166,7 +169,8 @@ def check_save(save, text, edits):
 
 @st.composite
 def edit_sets(draw):
-    keys = draw(st.lists(st.sampled_from(sorted(settings.REGISTRY)), unique=True, max_size=5))
+    plain = sorted(k for k in settings.REGISTRY if k not in ("integrations", "integrations.off"))  # through their section
+    keys = draw(st.lists(st.sampled_from(plain), unique=True, max_size=5))
     return {k: draw(st.none() | VALUES[k]) for k in keys}
 
 
@@ -241,6 +245,220 @@ class BrokenAndSafeDisplay(Base):
             lines, marked = s.draw(w, h)
             self.assertEqual([lines[i].split()[1] for i in marked], ["delivery.mode"], (w, h))
             self.assertTrue(any(ln.endswith(" ...") or "checks" in ln for ln in lines), "the cut is marked")
+
+
+
+def integration(base, name, about="a check", rules=True, broken=False):
+    """An integration folder <base>/<name> with a description, a material file and a rules.md; broken: no points."""
+    d = os.path.join(base, name)
+    os.makedirs(d)
+    with open(os.path.join(d, "integration"), "w", encoding="utf-8") as f:
+        f.write("name: %s\nabout: %s\n%smaterial: m.md\n" % (name, about, "" if broken else "points: review\n"))
+    with open(os.path.join(d, "m.md"), "w", encoding="utf-8") as f:
+        f.write("# material\n")
+    if rules:
+        with open(os.path.join(d, "rules.md"), "w", encoding="utf-8") as f:
+            f.write("- Rule of %s.\n" % name)
+
+
+def with_block(d):
+    """The project AGENTS.md with the solo-sdd rules block, as init writes it."""
+    with contextlib.redirect_stdout(io.StringIO()):
+        assert init.project_rules(d, "project", (), create=True) == 0
+
+
+class Lists(unittest.TestCase):
+    """Requirements: Integrations section; Integration keys through the section; Checklists section: the cases the
+    stand does not walk."""
+
+    def setUp(self):
+        self.home = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.home, True)
+        self.owner = os.path.join(self.home, ".local", "share", "solo-sdd", "integrations")
+
+    def open(self, text=""):
+        d = project(text)
+        self.addCleanup(shutil.rmtree, d, True)
+        with_block(d)
+        return settings_ui.Screen.load(d, home=self.home)
+
+    def row(self, s, name):
+        s.ipos = [e["name"] for e in s.integration_rows()].index(name)
+
+    def test_broken_enabled_switches_off(self):
+        """Scenario A broken enabled one off."""
+        integration(self.owner, "bad", broken=True)
+        s = self.open("integrations: bad\n")
+        press(s, "i")
+        self.row(s, "bad")
+        press(s, "space")
+        self.assertEqual(s.toggles, {"bad": False})
+        press(s, "space")
+        self.assertEqual(s.toggles, {}, "a second press undoes it")
+        press(s, "space", "esc", "s", "y")
+        self.assertNotIn("integrations", settings.parse_settings(config(s.root)))
+        press(s, "i")
+        press(s, "space")
+        self.assertEqual(s.toggles, {}, "broken and off: it does not switch on")
+
+    def test_shadowed(self):
+        integration(self.owner, "twin")
+        s = self.open()
+        integration(os.path.join(s.root, "solo-sdd", "integrations"), "twin")
+        s = settings_ui.Screen.load(s.root, home=self.home)
+        press(s, "i")
+        s.ipos = next(i for i, e in enumerate(s.integration_rows()) if e["shadowed"])
+        press(s, "space")
+        self.assertEqual(s.toggles, {})
+        self.assertIn("shadowed by the project copy", s.message)
+
+    def test_raw_keys_open_the_section(self):
+        s = self.open("integrations.off: antislop\n")
+        for key in ("integrations", "integrations.off"):
+            select(s, key)
+            press(s, "enter")
+            self.assertEqual(s.mode, "integrations", key)
+            press(s, "esc", "r")
+            self.assertEqual(s.edits, {}, "r does not reset %s as text" % key)
+            self.assertIn("Integrations section", s.message)
+
+    def test_checklist_refusals(self):
+        s = self.open()
+        rows = [
+            (["a", *"docs", "enter", *"../up/**", "enter"], "relative paths"),
+            (["a", *"docs", "enter", "enter"], "takes a value"),
+            (["a", *"docs", "enter", *"docs/**", "enter", "esc"], ""),
+        ]
+        for keys, message in rows:
+            press(s, "c", *keys)
+            self.assertIn(message, s.message, keys)
+            self.assertEqual(s.mode, "checklists", keys)
+            press(s, "esc")
+        self.assertEqual(s.edits, {}, "Esc at the file step drops the checklist whole")
+        for file_keys in (["enter"], [*"../x.md", "enter"]):  # a refused file drops it whole too
+            press(s, "c", "a", *"money", "enter", *"billing/**", "enter", *file_keys)
+            self.assertEqual((s.edits, s.mode), ({}, "checklists"), file_keys)
+            self.assertIn("nothing changed", s.message, file_keys)
+            press(s, "esc")
+        press(s, "c", "a", *"docs", "enter", *"docs/**", "enter", *"docs/list.md", "enter")
+        press(s, "a", *"docs", "enter")
+        self.assertIn("checklist docs exists", s.message)
+        press(s, "enter", "backspace", "esc")
+        self.assertEqual(s.edits["checklist.docs.paths"], "docs/**", "Esc in an edit keeps what was there before")
+
+    def test_listed_name_without_a_folder(self):
+        s = self.open("integrations: ghost\n")
+        press(s, "i")
+        self.row(s, "ghost")
+        self.assertIn("no folder", "\n".join(s.draw(120, 40)[0]))
+        press(s, "space", "esc", "s", "y")
+        self.assertNotIn("integrations", settings.parse_settings(config(s.root)), s.message)
+
+    def test_marks_at_the_smallest_size(self):
+        integration(self.owner, "bad", broken=True)
+        s = self.open("checklist.docs.paths: docs/**\n")
+        press(s, "i")
+        self.row(s, "bad")
+        self.assertIn("points is required", " ".join(" ".join(s.draw(40, 12)[0]).split()), "the reason of the selected row")
+        press(s, "esc", "c")
+        self.assertIn("incomplete: no file", " ".join(" ".join(s.draw(40, 12)[0]).split()))
+
+
+def same_result(save, owner_names, project_names, broken, start, pick):
+    """The screen save and the command leave equal bytes of solo-sdd/config and AGENTS.md."""
+    home, base = tempfile.mkdtemp(), tempfile.mkdtemp()
+    try:
+        owner = os.path.join(home, ".local", "share", "solo-sdd", "integrations")
+        os.makedirs(owner)
+        for n in owner_names:
+            integration(owner, n, broken=n in broken)
+        copies = []
+        for side in ("screen", "command"):
+            d = os.path.join(base, side)
+            os.makedirs(os.path.join(d, "solo-sdd", "changes"))
+            for n in project_names:
+                integration(os.path.join(d, "solo-sdd", "integrations"), n, broken=n in broken)
+            with open(os.path.join(d, settings.SETTINGS_FILE), "w", encoding="utf-8") as f:
+                f.write(start)
+            with_block(d)
+            copies.append(d)
+        s = settings_ui.Screen.load(copies[0], home=home)
+        rows = [i for i, e in enumerate(s.integration_rows()) if not e["shadowed"]]  # a shadowed row names its twin
+        s.ipos = rows[pick % len(rows)]
+        name = s.integration_rows()[s.ipos]["name"]
+        action = "disable" if name in s.enabled else "enable"
+        press(s, "i", "space", "esc")
+        save(s)
+        subprocess.run([sys.executable, "-m", "solo_sdd", "integrations", action, name], cwd=copies[1],
+                       env=dict(os.environ, PYTHONPATH=REPO, HOME=home), capture_output=True,
+                       stdin=subprocess.DEVNULL, timeout=60)
+        for f in (settings.SETTINGS_FILE, "AGENTS.md"):
+            with open(os.path.join(copies[0], f), "rb") as a, open(os.path.join(copies[1], f), "rb") as b:
+                assert a.read() == b.read(), (f, name, action, start)
+    finally:
+        shutil.rmtree(home, True)
+        shutil.rmtree(base, True)
+
+
+def screen_save(s):
+    if s.unsaved:
+        press(s, "s", "y")
+
+
+def space_does_nothing(s):
+    """A mutant screen that never switches. The property must reject it."""
+    s.toggles.clear()
+    screen_save(s)
+
+
+def save_without_rules(s):
+    """A mutant save: switches the integration, then puts the old AGENTS.md back. The property must reject it."""
+    with open(os.path.join(s.root, "AGENTS.md"), "rb") as f:
+        old = f.read()
+    screen_save(s)
+    with open(os.path.join(s.root, "AGENTS.md"), "wb") as f:
+        f.write(old)
+
+
+NAMES = st.lists(st.sampled_from(["alpha", "beta", "gamma"]), unique=True, max_size=2)
+
+
+@st.composite
+def setups(draw):
+    owner, project = draw(NAMES), draw(NAMES)
+    broken = draw(st.lists(st.sampled_from(sorted(set(owner) | set(project)) or ["none"]), unique=True, max_size=1))
+    listed = draw(st.lists(st.sampled_from(sorted(set(owner) - set(project)) or ["alpha"]), unique=True, max_size=2))
+    off = draw(st.lists(st.sampled_from(["antislop", "security-audit"]), unique=True, max_size=2))
+    start = "".join("%s: %s\n" % (k, ", ".join(v)) for k, v in (("integrations", listed), ("integrations.off", off)) if v)
+    return owner, project, broken, start, draw(st.integers(0, 6))
+
+
+class SameResultProperty(unittest.TestCase):
+    """Requirement: Same result as the command (property)."""
+
+    @hsettings(max_examples=40, deadline=None)
+    @given(setups())
+    @example(([], [], [], "", 0))  # no integration besides the bundled ones
+    @example((["alpha"], ["beta"], ["beta"], "integrations: alpha\n", 2))  # every one enabled, a broken one
+    def test_same_result_as_the_command(self, setup):
+        same_result(screen_save, *setup)
+
+    def test_a_screen_that_never_switches_fails_the_property(self):
+        @hsettings(max_examples=40, deadline=None, database=None)
+        @given(setups())
+        def mutant(setup):
+            same_result(space_does_nothing, *setup)
+        with self.assertRaises(AssertionError):
+            mutant()
+
+    def test_save_without_rules_fails_the_property(self):
+        @hsettings(max_examples=40, deadline=None, database=None)
+        @given(setups())
+        @example((["alpha"], [], [], "", 0))
+        def mutant(setup):
+            same_result(save_without_rules, *setup)
+        with self.assertRaises(AssertionError):
+            mutant()
 
 
 if __name__ == "__main__":
