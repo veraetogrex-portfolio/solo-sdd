@@ -39,11 +39,11 @@ As a guard against accidental dumps, not a boundary, `guard` SHALL refuse a Bash
 - **THEN** the command is refused
 
 ### Requirement: Known bypasses of the Bash guard
-The README SHALL name as outside the Bash guard: brace expansion, `sh -c` with the file as a positional argument, process substitution with a quoted `)`, a heredoc marker line with an open quote, `${X:-env}` and BSD `sed r` without a space; the boundary SHALL be `Read(**/.env)` in `permissions.deny` and secrets kept only in `.env`.
+`docs/hooks.md` SHALL name as outside the Bash guard: brace expansion, `sh -c` with the file as a positional argument, process substitution with a quoted `)`, a heredoc marker line with an open quote, `${X:-env}` and BSD `sed r` without a space; the boundary SHALL be `Read(**/.env)` in `permissions.deny` and secrets kept only in `.env`.
 
 #### Scenario: A known bypass
 - **WHEN** the agent runs `cat .e{n,}v` or `sh -c 'cat "$1"' _ .env`
-- **THEN** the guard lets it through and the README lists the form as a known bypass
+- **THEN** the guard lets it through and `docs/hooks.md` lists the form as a known bypass
 
 ### Requirement: Secret variable names
 A variable SHALL count as secret when one part of its name, split at `_`, digits and a lower-to-upper case change and compared in any case, is `KEY`, `TOKEN`, `SECRET`, `PASSWORD`, `PASSWD`, `WEBHOOK` or `CREDENTIAL`, alone or with a trailing `S`. `guard` SHALL refuse `echo`, `printf` and `printenv` of a secret variable and SHALL pass them for any other variable.

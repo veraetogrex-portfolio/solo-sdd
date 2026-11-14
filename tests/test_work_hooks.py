@@ -1553,7 +1553,7 @@ class ArchiveRunners(HookCase):
 NOT_PLAIN_CASES = {"#": "echo hi # see .env", "$'": "echo $'hi' .env", "${": "echo ${HOME} .env", "$(": "echo $(date) .env",
                    "`": "echo `date` .env", "\\": "echo a\\ b .env"}
 # Requirement: Known bypasses of the Bash guard. The Bash checks guard against accidental reads, not a boundary: these
-# forms pass today. A change that closes one moves it to a refused list; until then this test says the README is true.
+# forms pass today. A change that closes one moves it to a refused list; until then this test says docs/hooks.md is true.
 KNOWN_BYPASSES = ("cat .e{n,}v", "sh -c 'cat \"$1\"' _ .env", "ls >(cat ')' .env)", "cat <<EOF 'x\n'; cat .env\nEOF",
                   "${X:-env} | wc -l", "sed '1r.env' a.txt")
 SECRET_WORDS = ["KEY", "TOKEN", "SECRET", "PASSWORD", "PASSWD", "WEBHOOK", "CREDENTIAL"]
@@ -1659,7 +1659,7 @@ class SecretFiles(HookCase):
 
     def test_known_bypasses_of_the_bash_guard_known_limits(self):
         for c in KNOWN_BYPASSES:
-            assert not bash(c), "a known bypass is refused now, move it to the refused tests and the README: " + c
+            assert not bash(c), "a known bypass is refused now, move it to the refused tests and docs/hooks.md: " + c
 
     # Requirement: Secret variable names
     def test_secret_variable_names_a_word_inside_a_name(self):
@@ -1698,7 +1698,7 @@ def merge_denied(c, cwd=None):
 
 
 # Requirement: Known bypasses of the merge guard. An accident guard, not a boundary: these direct merges pass today.
-# A change that closes one moves it to the refused tests and the README.
+# A change that closes one moves it to the refused tests and docs/hooks.md.
 KNOWN_MERGE_BYPASSES = ("echo 5 | xargs gh pr merge", "find . -maxdepth 0 -exec gh pr merge 5 \\;", "sudo -u me gh pr merge 5",
                         "env -u FOO gh pr merge 5", "f(){ gh pr merge 5; }; f",
                         "A=(1 2) bash -c 'gh pr merge 5'", "A=(1 2) eval gh pr merge 5", "A=(1 2) FOO='a b' gh pr merge 5", "cat =(bash -c 'gh pr merge 5')",
@@ -1771,7 +1771,7 @@ class DirectMerge(HookCase):
 
     def test_known_bypasses_of_the_merge_guard_a_known_bypass_closed(self):
         for c in KNOWN_MERGE_BYPASSES:
-            assert merge_denied(c) is None, "a known bypass is refused now, move it to the refused tests and the README: " + c
+            assert merge_denied(c) is None, "a known bypass is refused now, move it to the refused tests and docs/hooks.md: " + c
 
     def test_known_bypasses_of_the_merge_guard_a_known_false_refusal(self):
         for c in KNOWN_MERGE_FALSE_REFUSALS:

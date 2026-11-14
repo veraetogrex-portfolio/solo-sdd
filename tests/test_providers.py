@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""solo_sdd/providers.py: the registry, detection, doctor lines, the agents setting and the README table."""
+"""solo_sdd/providers.py: the registry, detection, doctor lines, the agents setting and the docs/agents.md table."""
 import json, os, re, shutil, subprocess, sys, tempfile, unittest
 from unittest import mock
 
@@ -320,11 +320,11 @@ class VendorFilesPerSkill(Temp):
 
 
 class Readme(unittest.TestCase):
-    """README.md, section Supported agents: the table generated from the registry."""
+    """docs/agents.md: the table generated from the registry."""
 
     def test_table_matches_the_registry(self):
-        with open(os.path.join(REPO, "README.md"), encoding="utf-8") as f:
-            body = f.read().split("\n## Supported agents\n", 1)[1].split("\n## ", 1)[0]
+        with open(os.path.join(REPO, "docs", "agents.md"), encoding="utf-8") as f:
+            body = f.read()
         self.assertIn("\n" + providers.table(), body)
 
 

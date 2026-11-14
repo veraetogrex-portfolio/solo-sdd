@@ -370,7 +370,8 @@ class TestRealTree(unittest.TestCase):
 
     def test_only_installable_code(self):
         targets = json.loads((REPO / "targets.json").read_text(encoding="utf-8"))
-        readme = (REPO / "README.md").read_text(encoding="utf-8")
+        docs = ["README.md"] + [p for p in git(REPO, "ls-files", "docs/*.md").split("\n") if p]
+        readme = "\n".join((REPO / p).read_text(encoding="utf-8") for p in docs)
         for rel in git(REPO, "ls-files", "global").split("\n"):
             if rel and not os.path.basename(rel).startswith("test_"):
                 self.assertTrue(rel in targets["files"] or rel in readme, f"not installed and not described: {rel}")

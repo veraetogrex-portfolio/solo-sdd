@@ -37,7 +37,7 @@ The repository's git-tracked files, except `solo-sdd/` and `docs/waiting.md`, SH
 - **THEN** the test does not check these files: its own content; `solo-sdd/changes/` is the development log; `docs/waiting.md` is not in the index
 
 ### Requirement: Only installable code
-Every git-tracked file in `global/` and `schema/`, except tests, SHALL be either named in `targets.json` or run by a command described in `README.md`. Every git-tracked skill in `skills/` SHALL be named in `targets.json` and must not require MCP servers or programs that solo-sdd does not install and `README.md` does not name in the requirements.
+Every git-tracked file in `global/` and `schema/`, except tests, SHALL be either named in `targets.json` or run by a command described in `README.md` or a `docs/*.md` file git tracks. Every git-tracked skill in `skills/` SHALL be named in `targets.json` and must not require MCP servers or programs that solo-sdd does not install and `README.md` does not name in the requirements.
 
 #### Scenario: A skill with an external server
 - **WHEN** a skill works only through an MCP server that is not in the README requirements
@@ -50,6 +50,10 @@ Every git-tracked file in `global/` and `schema/`, except tests, SHALL be either
 #### Scenario: Merging a removal from the index
 - **WHEN** a branch that removes such a file from the index is merged into the main folder and the dispatcher runs `sdd-worktree.py transport`
 - **THEN** the file lies on the main folder's disk again and is not tracked by git
+
+#### Scenario: A script described in a docs file
+- **WHEN** `global/work_hooks_settings.py` is named in no `targets.json` entry and only `docs/first-project.md` describes its command
+- **THEN** `tests/test_public_tree.py` passes
 
 ### Requirement: License and entry README
 The repository root SHALL hold `LICENSE` with the MIT text and the line `Copyright (c) 2026 Vyacheslav Larionov`. `README.md` SHALL start with one or two sentences about what solo-sdd is and for whom, then list the requirements, installation, what goes where, the first step in a project and a link to `ALGORITHM.md`.

@@ -161,7 +161,7 @@ These direct merge forms SHALL pass `guard` as outside it, each pinned by a test
 
 #### Scenario: A known bypass closed
 - **WHEN** a change makes `guard` refuse one of these forms
-- **THEN** the known-limit test fails until the form moves to the refused tests and the README
+- **THEN** the known-limit test fails until the form moves to the refused tests and `docs/hooks.md`
 
 #### Scenario: A known false refusal
 - **WHEN** a command with `$'`, `=(`, `${` or a `#` word has `(`, `;`, `|` or a newline before `gh pr merge` inside a message, as in `git commit -m "fix #42 (gh pr merge is refused)"` or `A=(x y); git commit -m "a; gh pr merge later"`
@@ -262,7 +262,7 @@ A `browser` key or part that is missing adds nothing; one that is not an object 
 - **THEN** that part adds nothing and `errors.log` names `browser.bash`
 
 ### Requirement: Policy file is the user's
-The comment of `global/model-policy.json` and `README.md` SHALL say that the model lists and the `browser` key are edited in the deployed copy `~/.claude/hooks/model-policy.json`, that `install`, `update` and `sync.py push` keep an edited copy as `drift` instead of overwriting it, so a newer shipped model list is not taken while it is `drift`, and how to take it, as probed.
+The comment of `global/model-policy.json` and `docs/hooks.md` SHALL say that the model lists and the `browser` key are edited in the deployed copy `~/.claude/hooks/model-policy.json`, that `install`, `update` and `sync.py push` keep an edited copy as `drift` instead of overwriting it, so a newer shipped model list is not taken while it is `drift`, and how to take it, as probed.
 
 #### Scenario: An edited copy
 - **WHEN** a user added a model to `cheap` in the deployed copy and runs `python3 sync.py push`

@@ -1,6 +1,6 @@
 # What goes where
 
-How `solo-sdd install` and `sync.py push` lay the repository out in the agent folders. The commands are in [README.md](../README.md).
+How `solo-sdd install` and `sync.py push` lay the repository out in the agent folders. The commands are in [cli.md](cli.md).
 
 The deployment map is `targets.json`. There are 20 skills: 15 of the algorithm and 5 manual commands (`relay`, `blockers`, `report`, `health`, `changes`).
 

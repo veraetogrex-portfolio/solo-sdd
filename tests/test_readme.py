@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""README.md and SOURCES.md: requirements Own features first, Sources are shipped third-party files and Line length."""
-import os, re, subprocess, tempfile, unittest
+"""README.md and SOURCES.md: requirements Own features first, Short README, Skills listed, Sources are shipped third-party files
+and Line length."""
+import json, os, re, subprocess, tempfile, unittest
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 QUICK = "## Quick start"
-MOVE = "## Moving from OpenSpec"
-QUICK_MUST = ("pip install", "solo-sdd install", "solo-sdd init", "/project-init", "/spec-plan", "/spec-next")
+QUICK_MUST = ("pip install", "solo-sdd install --hooks", "solo-sdd init", "/project-init", "/spec-plan", "/spec-next")
 OTHERS = re.compile(r"gsd|spec kit|spec-kit|kiro", re.I)
+BLOB = "https://github.com/veraetogrex-portfolio/solo-sdd/blob/main/"
 
 
 def read(rel):
@@ -29,14 +30,49 @@ def readme_errors(text):
     else:
         body = "\n".join(lines[quick:]).split("\n## ", 1)[0]
         errors += ["quick start: no `%s`" % m for m in QUICK_MUST if m not in body]
-    section = ""
     for n, line in enumerate(lines, 1):
-        if line.startswith("## "):
-            section = line
         if OTHERS.search(line):
             errors.append("line %d names another tool: %s" % (n, line.strip()[:80]))
-        if "OpenSpec" in line and section != MOVE:
-            errors.append("line %d names OpenSpec outside %s" % (n, MOVE))
+        if "OpenSpec" in line:
+            errors.append("line %d names OpenSpec, which docs/migrate.md holds" % n)
+    return errors
+
+
+LIMIT_BYTES = 12000
+SECTIONS = ("## Update and uninstall", "## Docs", "## Contributing", "## License")
+
+
+def tracked(pattern, root=REPO):
+    run = subprocess.run(["git", "ls-files", "-z", "--", pattern], cwd=root, capture_output=True, check=True,
+                         stdin=subprocess.DEVNULL)
+    return [f for f in run.stdout.decode("utf-8").split("\0") if f]
+
+
+def section(text, heading):
+    """The body of a `## ` section up to the next one, empty when there is none."""
+    parts = ("\n" + text).split("\n%s\n" % heading, 1)
+    return parts[1].split("\n## ", 1)[0] if len(parts) == 2 else ""
+
+
+def short_errors(text, docs):
+    """Errors of README text by Short README: the size, the sections and a Docs link to every tracked docs file."""
+    errors = []
+    size = len(text.encode("utf-8"))
+    if size > LIMIT_BYTES:
+        errors.append("README.md is %d bytes, over %d" % (size, LIMIT_BYTES))
+    lines = text.splitlines()
+    errors += ["no section %s" % h for h in SECTIONS if h not in lines]
+    links = section(text, "## Docs")
+    errors += ["Docs does not link %s" % d for d in docs if "(%s%s)" % (BLOB, d) not in links]
+    return errors
+
+
+def skills_errors(text, skills):
+    """Errors of README text by Skills listed: every shipped skill once in the Skills section, no other."""
+    named = re.findall(r"`/?([a-z][a-z0-9-]*)`", section(text, "## Skills"))
+    errors = ["Skills does not name %s" % s for s in sorted(skills) if s not in named]
+    errors += ["Skills names %s, which targets.json does not ship" % s for s in sorted(set(named) - set(skills))]
+    errors += ["Skills names %s %d times" % (s, named.count(s)) for s in sorted(set(named)) if named.count(s) > 1]
     return errors
 
 
@@ -89,18 +125,61 @@ class OwnFeaturesFirst(unittest.TestCase):
         gsd = "# solo-sdd\n\nOne.\n\n" + QUICK + "\n" + " ".join(QUICK_MUST) + "\nUnlike GSD Core.\n"
         self.assertEqual(readme_errors(gsd), ["line 7 names another tool: Unlike GSD Core."])
 
-    def test_openspec_only_in_move_section(self):
-        """Scenario: OpenSpec only in the move section. The failure names the line."""
+    def test_openspec_only_in_move_document(self):
+        """Scenario: OpenSpec only in the move document. Any README line naming it fails with its number."""
         head = "# solo-sdd\n\nOne.\n\n" + QUICK + "\n" + " ".join(QUICK_MUST) + "\n"
-        self.assertEqual(readme_errors(head + MOVE + "\nFrom OpenSpec: `solo-sdd import openspec`.\n"), [])
-        self.assertEqual(readme_errors(head + "## Commands\nLike OpenSpec.\n"),
-                         ["line 8 names OpenSpec outside " + MOVE])
+        self.assertEqual(readme_errors(head + "## Docs\nMoving from an `openspec/` tree: `solo-sdd import openspec`.\n"), [])
+        self.assertEqual(readme_errors(head + "## Moving from OpenSpec\nx\n"),
+                         ["line 7 names OpenSpec, which docs/migrate.md holds"])
+
+    def test_quick_start_without_hooks(self):
+        quick = "# solo-sdd\n\nOne.\n\n" + QUICK + "\n" + " ".join(QUICK_MUST).replace(" --hooks", "") + "\n"
+        self.assertEqual(readme_errors(quick), ["quick start: no `solo-sdd install --hooks`"])
+
+
+GOOD_SHORT = "## Update and uninstall\n## Docs\n[a](%sdocs/a.md)\n## Contributing\n## License\n" % BLOB
+
+
+class ShortReadme(unittest.TestCase):
+    """Requirement: Short README."""
+
+    def test_readme(self):
+        errors = short_errors(read("README.md"), tracked("docs/*.md"))
+        self.assertEqual(errors, [], "\n".join(errors))
+
+    def test_a_grown_readme(self):
+        good = GOOD_SHORT
+        self.assertEqual(short_errors(good, ["docs/a.md"]), [])
+        grown = good + "x" * LIMIT_BYTES
+        self.assertEqual(short_errors(grown, ["docs/a.md"]), ["README.md is %d bytes, over %d" % (len(grown), LIMIT_BYTES)])
+
+    def test_an_unlinked_document(self):
+        text = GOOD_SHORT
+        self.assertEqual(short_errors(text, ["docs/a.md", "docs/x.md"]), ["Docs does not link docs/x.md"])
+        self.assertEqual(short_errors(text.replace("## License", "## Licence"), ["docs/a.md"]), ["no section ## License"])
+
+
+class SkillsListed(unittest.TestCase):
+    """Requirement: Skills listed."""
+
+    def test_readme(self):
+        with open(os.path.join(REPO, "targets.json"), encoding="utf-8") as f:
+            skills = json.load(f)["skills"]
+        errors = skills_errors(read("README.md"), skills)
+        self.assertEqual(errors, [], "\n".join(errors))
+
+    def test_rows(self):
+        text = "# x\n\n## Skills\n\n| Plan | `/spec-plan`, `spec-next` |\n\n## Docs\n`old-skill`\n"
+        for skills, want in ((["spec-plan", "spec-next"], []),
+                             (["spec-plan", "spec-next", "new-skill"], ["Skills does not name new-skill"]),
+                             (["spec-plan"], ["Skills names spec-next, which targets.json does not ship"])):
+            self.assertEqual(skills_errors(text, skills), want, skills)
+        twice = text.replace("`spec-next` |", "`spec-next`, `spec-next` |")
+        self.assertEqual(skills_errors(twice, ["spec-plan", "spec-next"]), ["Skills names spec-next 2 times"])
 
     def test_three_sentences_fail(self):
         self.assertTrue(readme_errors("# solo-sdd\n\nA. B. C.\n\n" + QUICK + "\n" + " ".join(QUICK_MUST) + "\n"))
 
-
-BLOB = "https://github.com/veraetogrex-portfolio/solo-sdd/blob/main/"
 
 
 def relative_file_links(text):
@@ -129,17 +208,16 @@ def broken_links(rel, text=None):
 
 
 class StopConditions(unittest.TestCase):
-    """Requirement: Stop conditions in the README: every enforcing file exists; README links resolve."""
+    """Requirement: Stop conditions in the README: every enforcing file exists; README and docs links resolve."""
 
     def test_enforcing_files_exist(self):
-        section = read("README.md").split("\n## How solo-sdd stops\n", 1)[1].split("\n## ", 1)[0]
-        rows = [r for r in section.splitlines() if r.startswith("| ") and r.count("|") == 4]
+        rows = [r for r in read("docs/stop-conditions.md").splitlines() if r.startswith("| ") and r.count("|") == 4]
         paths = {p for r in rows for p in re.findall(r"`([\w./-]+\.(?:md|py))`", r.split("|")[3])}
         self.assertGreater(len(paths), 5)
         self.assertEqual(sorted(p for p in paths if not os.path.isfile(os.path.join(REPO, p))), [])
 
     def test_links_resolve(self):
-        for rel in ("README.md", "SOURCES.md", "docs/layout.md"):
+        for rel in ["README.md", "SOURCES.md", "CONTRIBUTING.md"] + tracked("docs/*.md"):
             self.assertEqual(broken_links(rel), [], rel)
 
 
