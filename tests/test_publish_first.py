@@ -89,7 +89,7 @@ class Stand:
         self.root = os.path.join(self.tmp, "repo")
         self.bare = os.path.join(self.tmp, "bare.git")
         self.log = os.path.join(self.tmp, "gh.log")
-        self.env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+        self.env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_") or k.startswith("GIT_CONFIG_")}
         self.env.update(
             PATH=os.path.join(self.tmp, "bin") + os.pathsep + os.environ["PATH"],
             HOME=self.tmp, GIT_CONFIG_GLOBAL="/dev/null", GIT_CONFIG_NOSYSTEM="1",
