@@ -328,8 +328,8 @@ class Workflow(unittest.TestCase):
         self.assertIn("npm install -g npm@^11.5.1", block)
         self.assertIn('npm view "solo-sdd@$v" version', block)
         self.assertIn("already published on npm", block)
-        self.assertIn("NPM_TOKEN: ${{ secrets.NPM_TOKEN }}", block)
-        self.assertIn('if [ -n "$NPM_TOKEN" ]', block)
+        self.assertNotIn("NPM_TOKEN", block)
+        self.assertNotIn("_authToken", block)
         self.assertIn("--provenance", block)
 
     def test_release_job(self):

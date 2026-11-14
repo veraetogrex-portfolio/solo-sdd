@@ -62,11 +62,15 @@ The release check SHALL install the wheel into a new venv and the npm tarball in
 - **THEN** the check job fails with a line naming the tag and the commit
 
 ### Requirement: Registry publishing
-The PyPI job SHALL use trusted publishing in the environment `pypi`. The npm job SHALL use trusted publishing with provenance in the environment `npm`, with npm 11.5.1 or newer, and SHALL use the secret `NPM_TOKEN` only when it is set, for the first publish. Each job SHALL skip what its registry already has: npm the version, PyPI each file already uploaded.
+The PyPI job SHALL use trusted publishing in the environment `pypi`. The npm job SHALL use trusted publishing with provenance in the environment `npm`, with npm 11.5.1 or newer, and SHALL read no npm token: the first version is published once by hand by `docs/release.md`. Each job SHALL skip what its registry already has: npm the version, PyPI each file already uploaded.
 
 #### Scenario: A repeated run
 - **WHEN** the workflow runs again for a tag both registries already have
 - **THEN** both publishing jobs end with code 0 and say the version is already published
+
+#### Scenario: No token in the npm job
+- **WHEN** the Publish step of the npm job runs with a secret `NPM_TOKEN` set in its environment
+- **THEN** it writes no `_authToken` to the npm config and runs only `npm view` and `npm publish ... --provenance`
 
 ### Requirement: Registry install documented
 `README.md` SHALL install by the registry name in the quick start (`pip install solo-sdd`) and list `pip`, `uv tool`, `pipx` and `npm i -g solo-sdd` in the installation section, with the git address for the unreleased `main`. Every link to a repository file SHALL be an absolute `https://github.com/veraetogrex-portfolio/solo-sdd/blob/main/` address. `docs/release.md` SHALL hold the registry setup and the release steps.
