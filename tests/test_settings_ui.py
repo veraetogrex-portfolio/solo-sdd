@@ -3,6 +3,7 @@
 The stand tests/stands/settings-tui.py proves the scenarios a person walks through on a real terminal; the rows here
 are the cases it does not reach.
 """
+import atexit
 import contextlib
 import io
 import os
@@ -459,6 +460,190 @@ class SameResultProperty(unittest.TestCase):
             same_result(save_without_rules, *setup)
         with self.assertRaises(AssertionError):
             mutant()
+
+
+
+AGENTS_BIN = tempfile.mkdtemp()  # fake `claude` and `codex` on PATH: both are detected whatever the machine has
+atexit.register(shutil.rmtree, AGENTS_BIN, True)
+for _name in ("claude", "codex"):
+    with open(os.path.join(AGENTS_BIN, _name), "w") as _f:
+        _f.write("#!/bin/sh\nexit 0\n")
+    os.chmod(os.path.join(AGENTS_BIN, _name), 0o755)
+
+
+@contextlib.contextmanager
+def machine_home(home):
+    """layout and the environment pointed at a temporary home, as tests/test_cli.py `inproc` does."""
+    from unittest import mock
+    from solo_sdd import layout
+    data = os.path.join(home, ".local", "share", "solo-sdd")
+    with mock.patch.multiple(layout, HOME=home, DATA=data, STATE=os.path.join(data, "state.json")), \
+            mock.patch.dict(os.environ, {"HOME": home, "PATH": AGENTS_BIN + ":/usr/bin:/bin"}):
+        yield
+
+
+class Machine(unittest.TestCase):
+    """Requirements: Machine section; Apply machine edits: the cases the stand does not walk."""
+
+    def setUp(self):
+        self.home = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.home, True)
+        self.ctx = machine_home(self.home)
+        self.ctx.__enter__()
+        self.addCleanup(self.ctx.__exit__, None, None, None)
+        from solo_sdd import cli
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(cli.main(["install", "--agents", "claude,codex", "--global-rules"]), 0)
+
+    def screen(self):
+        s = settings_ui.Screen(None, None, home=self.home)
+        s.open_machine()
+        return s
+
+    def item(self, s, kind, name=None):
+        s.mpos = s.machine_items().index((kind, name))
+
+    def text(self, s):
+        return " ".join(" ".join(s.draw(120, 40)[0]).split())
+
+    def test_drift_counted(self):
+        with open(os.path.join(self.home, ".claude", "skills", "spec-next", "SKILL.md"), "a") as f:
+            f.write("an edit in place\n")
+        self.assertRegex(self.text(self.screen()), r"\b1 drift\b")
+
+    def test_other_stays_chosen(self):
+        s = self.screen()
+        self.item(s, "agent", "other")
+        press(s, "space")
+        self.assertIn("other is always chosen", s.message)
+        self.assertFalse(s.machine_pending())
+
+    def test_quit_twice_with_pending_edits(self):
+        s = self.screen()
+        self.item(s, "agent", "codex")
+        press(s, "space")
+        self.assertIsNone(press(s, "q"))
+        self.assertIn("not applied", s.message)
+        self.assertEqual(press(s, "q"), "exit")
+        self.assertTrue(os.path.isdir(os.path.join(self.home, ".codex", "skills", "spec-next")), "nothing ran")
+
+    def test_global_rules_off(self):
+        s = self.screen()
+        self.assertTrue(s.machine["rules"])
+        self.item(s, "rules")
+        press(s, "space", "a")
+        self.assertIn("solo-sdd uninstall --global-rules", self.text(s))
+        press(s, "y")
+        self.assertIn("exit 0: solo-sdd uninstall --global-rules", self.text(s))
+        self.assertFalse(s.machine["rules"])
+        path = os.path.join(self.home, "AGENTS.md")  # install wrote the file: without the block it is gone
+        self.assertFalse(os.path.exists(path) and "solo-sdd:begin" in open(path, encoding="utf-8").read())
+
+    def tree(self):
+        out = {}
+        for d, _, names in os.walk(self.home):
+            for n in names:
+                with open(os.path.join(d, n), "rb") as f:
+                    out[os.path.join(d, n)] = f.read()
+        return out
+
+    def test_refusal_before_any_step(self):
+        from solo_sdd import cli
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(cli.main(["install", "--hooks"]), 0)
+        s = self.screen()
+        before = self.tree()
+        self.item(s, "agent", "claude")
+        press(s, "space")
+        self.item(s, "rules")
+        press(s, "space", "a")
+        self.assertIn("hooks need claude", self.text(s))
+        press(s, "y", "n")
+        self.assertEqual(self.tree(), before, "neither uninstall --global-rules nor install ran")
+
+    def test_a_failing_command_does_not_crash(self):
+        s = self.screen()
+        self.item(s, "rules")
+        press(s, "space", "a")
+        with open(os.path.join(self.home, ".local", "share", "solo-sdd", "state.json"), "w") as f:
+            f.write("{broken")
+        press(s, "y")
+        self.assertEqual(s.mode, "applied")
+        self.assertIn("exit 1", self.text(s))
+        self.assertIn("cannot be read", " ".join(" ".join(press(s, "esc") or s.draw(120, 40)[0]).split()))
+
+    def test_everything_reachable_at_40x12(self):
+        s = self.screen()
+        flat = lambda lines: " ".join(" ".join(lines).split())  # noqa: E731
+        info, items = s.machine_info(), s.machine_items()
+        for i, whole in enumerate(info):  # each layout and doctor row reads whole on the drawn screen, Enter scrolling it
+            s.mode, s.mpos = "machine", len(items) + i
+            lines = s.draw(40, 12)[0]
+            if flat([whole]) not in flat(lines):
+                self.assertIn("Enter shows all", flat(lines), whole)
+                press(s, "enter")
+                for _ in range(12):
+                    lines += s.draw(40, 12)[0]
+                    press(s, "down")
+                press(s, "esc")
+            self.assertIn(flat([whole]), flat(ln for ln in lines if not ln.endswith("Up/Down scrolls")), whole)
+        self.assertIn("0.2", flat([info[0]]), "the version is in the layout row")
+        self.item(s, "agent", "codex")
+        press(s, "space")
+        self.item(s, "rules")
+        press(s, "space", "a")
+        shown_lines = set()
+        for _ in range(12):
+            shown_lines |= set(s.draw(40, 12)[0])
+            press(s, "down")
+        text = " ".join(" ".join(shown_lines).split())
+        self.assertIn("~/.local/share/solo-sdd", text, "every folder reachable by scrolling")
+
+    def test_fewer_doctor_rows_after_refresh(self):
+        skill = os.path.join(self.home, ".claude", "skills", "spec-next", "SKILL.md")
+        with open(skill, encoding="utf-8") as f:
+            text = f.read()
+        with open(skill, "a") as f:
+            f.write("an edit in place\n")
+        s = self.screen()
+        s.mpos = len(s.machine_items()) + len(s.machine_info()) - 1  # the last row
+        with open(skill, "w", encoding="utf-8") as f:
+            f.write(text)
+        press(s, "r")
+        lines, marked = s.draw(40, 12)
+        self.assertEqual(len(marked), 1)
+        self.assertTrue(lines[min(marked)].startswith("> "))
+        press(s, "enter")
+        s.draw(40, 12)
+
+    def test_state_broken_while_on_a_layout_row(self):
+        s = self.screen()
+        state = os.path.join(self.home, ".local", "share", "solo-sdd", "state.json")
+        for keys in (["r"], ["r", "enter"]):  # the layout row, then the state cannot be read
+            s = self.screen()
+            s.mpos = len(s.machine_items())
+            with open(state) as f:
+                good = f.read()
+            with open(state, "w") as f:
+                f.write("{broken")
+            press(s, *keys)
+            self.assertIn("cannot be read", self.text(s), keys)
+            with open(state, "w") as f:
+                f.write(good)
+        s.mpos, s.mode = len(s.machine_items()), "whole"
+        with open(state, "w") as f:
+            f.write("{broken")
+        press(s, "esc")
+        s.read_machine()
+        self.assertIn("cannot be read", self.text(s), "the whole-text view of a row that is gone closes")
+
+    def test_broken_state(self):
+        with open(os.path.join(self.home, ".local", "share", "solo-sdd", "state.json"), "w") as f:
+            f.write("{broken")
+        s = self.screen()
+        self.assertIn("cannot be read", self.text(s))
+        self.assertIsNone(press(s, "space", "a"))
+        self.assertEqual(press(s, "q"), "exit")
 
 
 if __name__ == "__main__":
