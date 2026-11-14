@@ -620,16 +620,19 @@ class CiRunCost(unittest.TestCase):
         self.assertEqual(evaluate("github.event_name == 'x' && 'a' || 'b'", "x", ""), "a")
 
 
-PROBED = "`PR #<n> <url> CI: infra`"
+class MergeOnlyOnGreen(unittest.TestCase):
+    """Requirement: Merge only on green CI."""
 
-
-class DeliveryWithoutCi(unittest.TestCase):
-    def test_probed_output_quoted(self):
+    def test_rule_in_both_files(self):
         for rel in ("AGENTS.md", os.path.join("docs", "release.md")):
             with open(os.path.join(REPO, rel), encoding="utf-8") as f:
                 text = " ".join(f.read().split())
-            for words in (PROBED, "no log line", "code 4", "tests/run.py --tier slow", "waits for the owner"):
+            for words in ("`sdd-pr.py merge`", "`CI: green`", "`CI: red`", "`CI: infra`", "`CI: codeql`",
+                          "is still not green waits for the owner",
+                          "never merges around a red or missing check"):
                 self.assertTrue(words in text, "%s: %s" % (rel, words))
+            for words in ("spending limit", "starts no jobs"):
+                self.assertFalse(words in text, "%s: %s" % (rel, words))
 
 
 if __name__ == "__main__":
