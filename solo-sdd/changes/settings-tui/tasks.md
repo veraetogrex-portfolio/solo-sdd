@@ -3,7 +3,8 @@
 - [ ] 1.1 Requirement Edit by type: tests in `tests/test_settings_ui.py` that feed key sequences to the screen model with rows for a choice, a wrong and a right number, checkboxes, a branch text, a path list and reset; proof: they fail before 1.2
 - [ ] 1.2 The screen model in `solo_sdd/settings_ui.py`: state, key handling and drawing into a list of lines for a width and height, values checked by `settings.check_value`; proof: the 1.1 tests green
 - [ ] 1.3 Requirement Save only edited lines: a property test (Hypothesis, `max_examples=200`, the same number in the test) over generated config texts with comments, blank lines and `\r\n` and random edit sets: after save every line of an unedited key and every comment keeps its bytes, and the result parses to the edited values; plus rows for changed on disk and quit with unsaved edits; proof: the property test fails when save rewrites the whole file, and its generator reaches an empty file and a file of comments only
-- [ ] 1.4 Requirements Broken config read-only and Safe display: rows for a broken line, an ESC and other control characters in a comment and a value, a 30-column and a 40x12 screen, a long value cut at the width; proof: they fail before the code, then green
+- [ ] 1.4 Requirement Guidance on the screen: rows for the footer of each view, a `## Delivery` item the file overrides, and `pr` picked without a CI workflow (the warning text taken from `solo_sdd/init.py`, the detection from `solo_sdd/setup_detect.py`); proof: they fail before the code, then green
+- [ ] 1.5 Requirements Broken config read-only and Safe display: rows for a broken line, an ESC and other control characters in a comment and a value, a 30-column and a 40x12 screen, a long value cut at the width; proof: they fail before the code, then green
 
 ## 2. Command
 

@@ -13,6 +13,9 @@ The stand `python3 tests/stands/settings-tui.py` runs `solo-sdd settings` in a t
 | `process.review-rounds` set to 4 in the file before opening | reset key | `3` with source `default`, marked unsaved |
 | save key | press it | the list of edited keys with old and new values and a confirmation |
 | confirmation | `y` | `solo-sdd/config` differs from before only in the edited lines; `solo-sdd config list` shows the new values with source `file` |
+| footer | look at each view | it names the keys of that view |
+| `delivery.mode` with `- Mode: local` under `## Delivery` of `AGENTS.md` | set `pr`, save | the key is marked as overriding `AGENTS.md: local` |
+| `delivery.mode` in a project without `.github/workflows/` | pick `pr` | the warning that `pr` needs a CI workflow, the edit kept |
 | quit | `q` with an unsaved edit | the question save, discard or back |
 | quit | Ctrl-C | the process exits, no file write, the terminal echoes typed input again |
 | save | after another process appended a comment to the file | nothing written, the message names the change on disk |
@@ -42,4 +45,5 @@ Not needed: the stand runs locally through a pseudo-terminal. A person repeats r
 
 - analyze: the UI rule asks for widths 1280 and 390 and every theme, written for web pages → terminal sizes 120x40 and 40x12 (the smallest the screen supports) and colours with and without `NO_COLOR` — the screen is a terminal, it has no pixel width and no theme of its own
 - analyze: a terminal `curses` cannot start was not described → refused like no terminal, naming `solo-sdd config` — a crash would leave the terminal in raw mode
+- plan: guidance added after the owner asked to think ahead → footer keys, the `AGENTS.md` override mark and the CI warning of `init` — a setting changed on the screen must not silently contradict another source or a known requirement
 - analyze: the raw keys `integrations` and `integrations.off` are text keys on this screen and bypass the `AGENTS.md` block as `config set` does → kept here; `settings-tui-lists` makes them editable only through its section

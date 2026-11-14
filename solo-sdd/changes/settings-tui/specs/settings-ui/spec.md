@@ -57,6 +57,21 @@ Edits SHALL stay in memory until save. Save SHALL list each edited key with its 
 - **WHEN** there is an unsaved edit and the person presses `q`
 - **THEN** the screen asks to save, discard or go back
 
+### Requirement: Guidance on the screen
+The screen SHALL keep a footer naming the keys of the current view. A key whose `## Delivery` item in `AGENTS.md` differs from its file value SHALL be marked as overriding it with the `AGENTS.md` value shown. Choosing `delivery.mode: pr` in a project without a CI workflow SHALL show the warning `solo-sdd init` prints for it before save.
+
+#### Scenario: Footer
+- **WHEN** the key list is shown
+- **THEN** the footer names the keys for move, edit, reset, save and quit
+
+#### Scenario: AGENTS.md overridden
+- **WHEN** `AGENTS.md` has `- Mode: local` under `## Delivery` and the file has `delivery.mode: pr`
+- **THEN** the key is marked as overriding `AGENTS.md: local`
+
+#### Scenario: pr without CI
+- **WHEN** the project has no `.github/workflows/*.yml` and the person picks `pr` for `delivery.mode`
+- **THEN** the warning that `pr` needs a CI workflow is shown, and the edit stays possible
+
 ### Requirement: Broken config read-only
 A `solo-sdd/config` that does not parse SHALL open read-only: the screen SHALL show the file, line and reason from the settings check and SHALL offer no edit or save.
 
