@@ -144,12 +144,11 @@ class SettingsFile(unittest.TestCase):
 
 
 class Readme(unittest.TestCase):
-    """README.md, section Settings: one table row per registered key, with its values and defaults."""
+    """docs/settings.md: one table row per registered key, with its values and defaults."""
 
     def test_rows_match_the_registry(self):
-        with open(os.path.join(REPO, "README.md"), encoding="utf-8") as f:
-            text = f.read()
-        body = text.split("\n## Settings\n", 1)[1].split("\n## ", 1)[0]
+        with open(os.path.join(REPO, "docs", "settings.md"), encoding="utf-8") as f:
+            body = f.read().split("\n## Checklists\n", 1)[0]
         rows = {}
         for line in body.splitlines():
             cells = [c.strip() for c in line.strip().strip("|").split("|")]
@@ -162,9 +161,9 @@ class Readme(unittest.TestCase):
         self.assertIn("| `agents` | `claude`, `codex`, `cursor`, `other` | the detected agents |", body)
 
     def test_checklist_example_parses(self):
-        """Requirement: Path checklists: the README example config is valid settings."""
-        with open(os.path.join(REPO, "README.md"), encoding="utf-8") as f:
-            body = f.read().split("\n### Checklists\n", 1)[1].split("\n## ", 1)[0]
+        """Requirement: Path checklists: the docs/settings.md example config is valid settings."""
+        with open(os.path.join(REPO, "docs", "settings.md"), encoding="utf-8") as f:
+            body = f.read().split("\n## Checklists\n", 1)[1]
         example = body.split("```\n")[1]
         found = settings.parse_settings(example)
         self.assertEqual(sorted(found), ["checklist.money-safety.file", "checklist.money-safety.paths"])

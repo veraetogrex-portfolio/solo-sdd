@@ -29,13 +29,17 @@
   ],
   "README.md": [
    "tests/test_cli.py",
-   "tests/test_demo.py",
-   "tests/test_providers.py",
-   "tests/test_settings.py"
+   "tests/test_demo.py"
   ],
   "SOURCES.md": [],
   "bin/": [],
   "docs/": [],
+  "docs/agents.md": [
+   "tests/test_providers.py"
+  ],
+  "docs/settings.md": [
+   "tests/test_settings.py"
+  ],
   "examples/": [
    "tests/test_demo.py"
   ],
@@ -102,11 +106,11 @@
   "pyproject.toml": [
    "tests/test_cli.py"
   ],
-  "scripts/publish-first.sh": [
-   "tests/test_publish_first.py"
-  ],
   "scripts/pre-push-guard.sh": [
    "tests/test_pre_push_guard.py"
+  ],
+  "scripts/publish-first.sh": [
+   "tests/test_publish_first.py"
   ],
   "scripts/release_check.py": [],
   "scripts/sync_blocks.py": [

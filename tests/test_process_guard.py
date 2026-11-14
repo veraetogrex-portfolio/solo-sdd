@@ -302,7 +302,7 @@ class ProcessGuardTests(unittest.TestCase):
 
     def test_shell_forms_the_text_cut_cannot_read_a_known_false_refusal_of_an_array_assignment(self):
         self.assertEqual(self.command('A=(x y); git commit -m "graceful shutdown"').returncode, 2,
-                         "an array assignment passes now: move it to the passing tests and the README")
+                         "an array assignment passes now: move it to the passing tests and docs/hooks.md")
 
     def test_shell_forms_the_text_cut_cannot_read_a_long_line_of_zsh_substitutions(self):
         line = "=(" * 50000 + '; git commit -m "graceful shutdown"'
@@ -316,9 +316,9 @@ class ProcessGuardTests(unittest.TestCase):
         self.assertEqual(zsh_violations(pg.forbidden, name, form, at), [])
 
     def test_known_limit_a_computed_program_name(self):
-        # not a requirement: a name computed by an expansion is not analysed (README); a refusal here means it is now
+        # not a requirement: a name computed by an expansion is not analysed (docs/hooks.md); a refusal here means it is now
         result = self.command("${X:-kill} 1")
-        self.assertEqual(result.returncode, 0, "a computed name is refused now: move it to the refused tests and the README")
+        self.assertEqual(result.returncode, 0, "a computed name is refused now: move it to the refused tests and docs/hooks.md")
 
     def test_shell_forms_the_text_cut_cannot_read_property_catches_mutants(self):
         # the old trigger (every ${) refuses a plain expansion; an allowlist that takes the backslash passes ${X:-\a}

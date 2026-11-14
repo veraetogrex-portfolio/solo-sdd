@@ -105,7 +105,7 @@ def row(name):
 
 
 def table():
-    """The "Supported agents" table of README.md."""
+    """The agents table of docs/agents.md."""
     lines = ["| Agent | Detected by | Skills | Global rules | Project rules | Hooks | Subagents |", "|---|---|---|---|---|---|---|"]
     for name, p in PROVIDERS.items():
         det = "always" if p["detect"] is None else "`%s` in PATH or `%s`" % p["detect"]

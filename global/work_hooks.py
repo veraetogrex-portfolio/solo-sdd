@@ -1863,7 +1863,7 @@ def env_dump(cmd, depth=0):
 
 def guard_secrets_bash(cmd, cwd, raw=None):
     """cmd is the command without text (command_text), raw the whole. A guard against the agent's accidental reads, not a
-    boundary (the README lists known bypasses): the parser and its exemptions apply only when the command outside its
+    boundary (docs/hooks.md lists known bypasses): the parser and its exemptions apply only when the command outside its
     text-reader heredoc bodies is plain; otherwise any .env name or dump word in the whole raw command counts."""
     raw = cmd if raw is None else raw
     readable = plain(strip_heredocs(raw))
