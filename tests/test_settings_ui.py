@@ -616,6 +616,27 @@ class Machine(unittest.TestCase):
         press(s, "enter")
         s.draw(40, 12)
 
+    def test_state_broken_while_on_a_layout_row(self):
+        s = self.screen()
+        state = os.path.join(self.home, ".local", "share", "solo-sdd", "state.json")
+        for keys in (["r"], ["r", "enter"]):  # the layout row, then the state cannot be read
+            s = self.screen()
+            s.mpos = len(s.machine_items())
+            with open(state) as f:
+                good = f.read()
+            with open(state, "w") as f:
+                f.write("{broken")
+            press(s, *keys)
+            self.assertIn("cannot be read", self.text(s), keys)
+            with open(state, "w") as f:
+                f.write(good)
+        s.mpos, s.mode = len(s.machine_items()), "whole"
+        with open(state, "w") as f:
+            f.write("{broken")
+        press(s, "esc")
+        s.read_machine()
+        self.assertIn("cannot be read", self.text(s), "the whole-text view of a row that is gone closes")
+
     def test_broken_state(self):
         with open(os.path.join(self.home, ".local", "share", "solo-sdd", "state.json"), "w") as f:
             f.write("{broken")

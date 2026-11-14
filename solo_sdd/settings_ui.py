@@ -119,8 +119,20 @@ class Screen:
 
     # keys
 
+    def fit_cursor(self):
+        """The Machine cursor kept on a row that exists: a reread may leave fewer rows than before (fewer doctor lines,
+        a state that cannot be read), and the whole-text view closes when its row is gone. Every key and every draw
+        passes here, so no reader of the cursor sees a row that is not there."""
+        if self.machine is None:
+            return
+        rows = len(self.machine_items()) + len(self.machine_info())
+        self.mpos = max(0, min(self.mpos, rows - 1))
+        if self.mode == "whole" and self.mpos < len(self.machine_items()):
+            self.mode = "machine"
+
     def handle(self, key):
         """One key by name (up, down, enter, esc, space, backspace, resize, or the typed character); "exit" ends."""
+        self.fit_cursor()
         if key == "resize":
             return None
         if self.mode == "broken":
@@ -347,7 +359,6 @@ class Screen:
                         "source": state.get("_source"), "version": state.get("_version"), "doctor": checks,
                         "detected": providers.detected(self.home), "error": None}
         self.want = {"agents": set(chosen), "hooks": self.machine["hooks"], "rules": rules}
-        self.mpos = min(self.mpos, len(self.machine_items()) + len(self.machine_info()) - 1)  # the doctor rows may be fewer
 
     def machine_items(self):
         from solo_sdd import providers
@@ -374,7 +385,7 @@ class Screen:
         elif key == "r":
             self.read_machine()
             self.message = "refreshed"
-        elif key == "enter" and self.mpos >= len(items):
+        elif key == "enter" and self.mpos >= len(items) and self.machine_info():
             self.mode, self.scroll = "whole", 0
         elif key == "space" and self.want and self.mpos < len(items):
             kind, name = items[self.mpos]
@@ -574,6 +585,7 @@ class Screen:
 
     def draw(self, width, height):
         """(lines, indexes of highlighted lines) for a terminal of width x height."""
+        self.fit_cursor()
         if width < MIN_W or height < MIN_H:
             return ["Terminal too small: needs %dx%d, now %dx%d" % (MIN_W, MIN_H, width, height)], set()
         head = ["solo-sdd settings  " + shown(self.folder or ""), ""]
