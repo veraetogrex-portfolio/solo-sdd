@@ -128,9 +128,10 @@ def run_one(f, tier="slow"):
     os.close(fd)
     try:
         start = time.monotonic()
+        # macOS's own Python caches bytecode under $HOME/Library/Caches, so a test's temporary HOME would not stay empty
         p = subprocess.run([sys.executable, "-c", BOOT, str(ROOT / f)], cwd=ROOT, stdin=subprocess.DEVNULL,
                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                           env=dict(os.environ, SOLO_SDD_TESTS=tier, SOLO_SDD_TIMES=times))
+                           env=dict(os.environ, SOLO_SDD_TESTS=tier, SOLO_SDD_TIMES=times, PYTHONDONTWRITEBYTECODE="1"))
         secs = time.monotonic() - start
         return f, p.returncode, p.stdout, secs, read_times(times)
     finally:
