@@ -2,7 +2,7 @@
 
 solo-sdd is a spec-driven development process for AI coding agents: a change counts as done only after a live check and a review by an agent that did not write it. It works for one person or a team, with Claude Code, Codex or any agent that reads `AGENTS.md`.
 
-[![PyPI](https://img.shields.io/pypi/v/solo-sdd)](https://pypi.org/project/solo-sdd/) [![npm](https://img.shields.io/npm/v/solo-sdd)](https://www.npmjs.com/package/solo-sdd) [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/veraetogrex-portfolio/solo-sdd/blob/main/LICENSE)
+[![PyPI](https://img.shields.io/pypi/v/solo-sdd)](https://pypi.org/project/solo-sdd/) [![npm](https://img.shields.io/npm/v/solo-sdd)](https://www.npmjs.com/package/solo-sdd) [![Tests](https://github.com/veraetogrex-portfolio/solo-sdd/actions/workflows/test.yml/badge.svg)](https://github.com/veraetogrex-portfolio/solo-sdd/actions/workflows/test.yml) [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/veraetogrex-portfolio/solo-sdd/blob/main/LICENSE)
 
 ## Quick start
 
