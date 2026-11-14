@@ -3,6 +3,7 @@
 Screen is the state, the key handling and the drawing into plain lines; tests drive it by key names. The curses loop
 in run_curses only maps keys and paints the lines.
 """
+import collections
 import contextlib
 import io
 import os
@@ -13,9 +14,15 @@ import unicodedata
 from solo_sdd import init, integrations, process_format as pf, settings, setup_detect
 
 MIN_W, MIN_H = 40, 12
+STATE = "~/.local/share/solo-sdd"  # every install and uninstall writes its state and backups here
 KEYS = [k for g in settings.GROUPS for k in settings.REGISTRY if settings.ABOUT[k][0] == g]
 FOOTER = {
-    "list": "Up/Down move  Enter edit  r reset  i integrations  c checklists  s save  q quit",
+    "list": "Up/Down move  Enter edit  r reset  i integrations  c checklists  m machine  s save  q quit",
+    "machine": "Up/Down move  Space switch  a apply  r refresh  Esc back  q quit",
+    "apply": "Up/Down scroll  y run these  n back",
+    "refused": "Esc back",
+    "whole": "Up/Down scroll  Esc back",
+    "applied": "Up/Down scroll  Esc back  q quit",
     "integrations": "Up/Down move  Space switch on or off  Esc back",
     "checklists": "Up/Down move  a add  Enter edit  d remove  Esc back",
     "pick": "Up/Down choose  Enter set  Esc back",
@@ -47,7 +54,7 @@ def shown(text):
 
 
 class Screen:
-    def __init__(self, root, text, agents=None, ci=None, error=None, home=None):
+    def __init__(self, root, text, agents=None, ci=None, error=None, home=None, folder=None):
         self.root, self.text, self.agents, self.ci = root, text, agents or {}, ci
         self.error, self.home = error, home if home is not None else os.path.expanduser("~")
         self.edits = {}  # key -> new value, None: back to the value below the file
@@ -56,7 +63,9 @@ class Screen:
         self.options, self.cursor, self.ticked, self.buffer = [], 0, set(), ""
         self.back, self.target, self.step, self.before = "list", None, None, {}
         self.ipos = self.cpos = 0
-        self.base = {} if error else self.values()
+        self.base = {} if error or text is None else self.values()
+        self.machine, self.want, self.mpos, self.results, self.warned = None, None, 0, [], False
+        self.folder, self.plan, self.refusal, self.scroll = folder or root, [], None, 0
         self.read_integrations()
 
     @classmethod
@@ -67,11 +76,11 @@ class Screen:
             settings.parse_settings(text)
         except (OSError, UnicodeDecodeError, ValueError) as e:
             return cls(root, None, agents, ci, error=str(e), home=home)
-        return cls(root, text, agents, ci, home=home)
+        return cls(root, text, agents, ci, home=home, folder=root)
 
     def read_integrations(self):
         """The integrations `solo-sdd integrations list` finds, and the names enabled by the file as it is on disk."""
-        if self.error:
+        if self.error or self.text is None:
             self.entries, self.enabled = [], set()
             return
         found = settings.parse_settings(self.text)
@@ -135,6 +144,8 @@ class Screen:
             self.mode = "integrations"
         elif key == "c":
             self.mode = "checklists"
+        elif key == "m":
+            self.open_machine()
         elif key == "s":
             if self.unsaved:
                 self.mode, self.cursor = "confirm", 0
@@ -312,6 +323,187 @@ class Screen:
         elif key == "esc":
             self.mode = "list"
 
+    # machine: the agents, the hooks and the global rules of this home, changed by install and uninstall
+
+    def open_machine(self):
+        self.mode = "machine"
+        if self.machine is None:
+            self.read_machine()
+
+    def read_machine(self):
+        """The choices in effect and what the layout and doctor report, printing nothing; doctor runs here only."""
+        from solo_sdd import doctor, layout, providers
+        out = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(out):
+                state = layout.load_state()
+                counts = collections.Counter(kind for kind, _, _ in layout.status(quiet=True))
+                checks = [r for r in doctor.rows() if r[0] in ("warn", "fail")]
+                chosen, rules = list(layout.chosen(state)), bool(layout.global_rules(state))
+        except (layout.BrokenState, layout.BadTargets, OSError, ValueError) as e:
+            self.machine, self.want = {"error": shown(str(e))}, None
+            return
+        self.machine = {"agents": chosen, "hooks": bool(state.get("_hooks")), "rules": rules, "counts": counts,
+                        "source": state.get("_source"), "version": state.get("_version"), "doctor": checks,
+                        "detected": providers.detected(self.home), "error": None}
+        self.want = {"agents": set(chosen), "hooks": self.machine["hooks"], "rules": rules}
+        self.mpos = min(self.mpos, len(self.machine_items()) + len(self.machine_info()) - 1)  # the doctor rows may be fewer
+
+    def machine_items(self):
+        from solo_sdd import providers
+        return [("agent", n) for n in providers.ALL] + [("hooks", None), ("rules", None)]
+
+    def machine_pending(self):
+        m, w = self.machine, self.want
+        return bool(w) and (w["agents"] != set(m["agents"]) or w["hooks"] != m["hooks"] or w["rules"] != m["rules"])
+
+    def machine_info(self):
+        m = self.machine
+        if not m or m.get("error"):
+            return []
+        counts = ", ".join("%d %s" % (n, k) for k, n in sorted(m["counts"].items())) or "no copies"
+        info = ["layout: %s; from %s %s" % (counts, shown(m["source"] or "none"), shown(m["version"] or ""))]
+        return info + (["%s %s: %s" % (lvl, name, shown(detail)) for lvl, name, detail in m["doctor"]]
+                       or ["doctor: no warnings"])
+
+    def on_machine(self, key):
+        self.message, warned, self.warned = "", self.warned, False
+        items = self.machine_items()
+        if key in ("up", "down"):  # past the switches Down goes on through the layout and doctor lines
+            self.mpos = (self.mpos + (1 if key == "down" else -1)) % (len(items) + len(self.machine_info()))
+        elif key == "r":
+            self.read_machine()
+            self.message = "refreshed"
+        elif key == "enter" and self.mpos >= len(items):
+            self.mode, self.scroll = "whole", 0
+        elif key == "space" and self.want and self.mpos < len(items):
+            kind, name = items[self.mpos]
+            if kind == "agent" and name == "other":
+                self.message = "other is always chosen: it holds ~/.agents/skills and ~/AGENTS.md"
+            elif kind == "agent":
+                self.want["agents"] ^= {name}
+            else:
+                self.want[kind] = not self.want[kind]
+        elif key == "a" and self.want:
+            if not self.machine_pending():
+                self.message = "nothing to apply"
+                return None
+            from solo_sdd import layout
+            try:
+                self.plan = self.machine_plan()
+            except (layout.BrokenState, layout.BadTargets, OSError, ValueError) as e:
+                self.message = "cannot plan the commands: %s" % shown(str(e))
+                return None
+            self.refusal = None
+            if self.want["hooks"] and "claude" not in self.want["agents"]:  # install's own check, before any step
+                self.refusal = ("hooks need claude among the agents: tick claude or turn the hooks off; "
+                                "nothing ran and no file changed")
+            self.mode, self.scroll = "apply", 0
+        elif key == "esc" and self.text is not None:
+            self.mode = "list"
+        elif key == "q":
+            if self.machine_pending() and not warned:
+                self.message, self.warned = "machine edits not applied: a applies them, q again leaves without them", True
+                return None
+            return "exit" if not self.unsaved else self.on_list("q")
+        return None
+
+    def machine_plan(self):
+        """[(command, folders, call)] in the order they run: the hooks and the rules off first, then install."""
+        from solo_sdd import cli, layout, providers
+        m, w = self.machine, self.want
+        rule_files = sorted(layout.opt_in_keys())
+        plan = []
+        if m["hooks"] and not w["hooks"]:
+            plan.append(("solo-sdd uninstall --hooks", ["~/.claude/settings.json", STATE], cli.uninstall_hooks))
+        if m["rules"] and not w["rules"]:
+            plan.append(("solo-sdd uninstall --global-rules", rule_files + [STATE], layout.uninstall_rules))
+        hooks_on, rules_on = w["hooks"] and not m["hooks"], w["rules"] and not m["rules"]
+        if w["agents"] != set(m["agents"]) or hooks_on or rules_on:
+            names = [n for n in providers.ALL if n in w["agents"]]
+            command = "solo-sdd install --agents %s%s%s" % (",".join(names), " --hooks" if hooks_on else "",
+                                                           " --global-rules" if rules_on else "")
+            folders = [f for n in sorted(w["agents"] ^ set(m["agents"])) for f in providers.PROVIDERS[n]["owns"]]
+            folders += (["~/.claude/settings.json"] if hooks_on else []) + (rule_files if rules_on else []) + [STATE]
+            plan.append((command, folders, lambda: cli.install(hooks_on, ",".join(names), rules_on)))
+        return plan
+
+    def on_apply(self, key):
+        from solo_sdd import layout
+        if key in ("up", "down"):
+            self.scroll = max(0, self.scroll + (1 if key == "down" else -1))
+        elif key == "y" and not self.refusal:
+            self.results = []
+            for command, _, call in self.plan:
+                out = io.StringIO()
+                try:
+                    with contextlib.redirect_stdout(out):
+                        code = call()
+                except (layout.BrokenState, layout.BadTargets, OSError, ValueError) as e:  # what cli.main catches
+                    code = 1
+                    out.write("fail %s\n" % e)
+                self.results.append((command, code, out.getvalue()))
+                if code:
+                    break
+            self.read_machine()
+            self.mode, self.scroll = "applied", 0
+        elif key in ("n", "esc"):
+            self.mode = "machine"
+
+    def on_whole(self, key):
+        if key in ("up", "down"):
+            self.scroll = max(0, self.scroll + (1 if key == "down" else -1))
+        elif key == "esc":
+            self.mode = "machine"
+
+    def on_applied(self, key):
+        if key in ("up", "down"):
+            self.scroll = max(0, self.scroll + (1 if key == "down" else -1))
+        elif key == "esc":
+            self.mode = "machine"
+        elif key == "q":
+            return self.on_machine("q")
+        return None
+
+    def draw_machine(self):
+        m = self.machine
+        if m.get("error"):
+            return ["Machine: the solo-sdd state cannot be read", "", m["error"]], set()
+        compact = self.room < 10  # a low screen drops the blank lines, so a selected row still reads whole
+        gap = [] if compact else [""]
+        head = [] if self.text is not None else self.wrap("No project here: solo-sdd init prepares one") + gap
+        lines = []
+        items = self.machine_items()
+        for i, (kind, name) in enumerate(items):
+            if kind == "agent":
+                on, was = name in self.want["agents"], name in m["agents"]
+                text = "[%s] agent %s%s" % ("x" if on else " ", name, "  detected" if name in m["detected"] else "")
+            else:
+                on, was = self.want[kind], m[kind]
+                text = "[%s] %s" % ("x" if on else " ", "hooks in ~/.claude/settings.json" if kind == "hooks"
+                                    else "global rules block in ~/AGENTS.md and the agents' rules files")
+            lines.append(("> " if i == self.mpos else "  ") + text + (" *not applied" if on != was else ""))
+        info = self.machine_info()
+        rows = lines + [("> " if len(items) + j == self.mpos else "  ") + ln for j, ln in enumerate(info)]
+        body = head + ["Machine: changes every project's agents" if compact else
+                       "Machine: these change every project's agents, through install and uninstall"] + gap
+        whole = (info[self.mpos - len(items)] if self.mpos >= len(items) else
+                 "Space switches it; a applies the switches through install and uninstall")
+        fits, wrapped = max(1, self.room - len(body) - len(gap) - 1), self.wrap(whole)
+        if len(wrapped) > fits:  # Enter shows the rest
+            wrapped = wrapped[:fits - 1] + [fit(wrapped[fits - 1], self.width - 22) + " ... Enter shows all"]
+        detail = gap + wrapped
+        room = max(1, self.room - len(body) - len(detail))
+        top = min(max(0, self.mpos - room // 2), max(0, len(rows) - room))
+        return body + rows[top:top + room] + detail, {len(body) + self.mpos - top}
+
+    def scrolled(self, lines):
+        """lines windowed from the scroll offset; the offset stops at the last full window."""
+        room = max(1, self.room - 1)
+        self.scroll = min(self.scroll, max(0, len(lines) - room))
+        more = "%d-%d of %d lines, Up/Down scrolls" % (self.scroll + 1, min(len(lines), self.scroll + room), len(lines))
+        return ([more] if len(lines) > room else [""]) + lines[self.scroll:self.scroll + room], set()
+
     def on_confirm(self, key):
         if key in ("up", "down"):
             last = len(self.edits) + len(self.toggles) - 1
@@ -384,8 +576,8 @@ class Screen:
         """(lines, indexes of highlighted lines) for a terminal of width x height."""
         if width < MIN_W or height < MIN_H:
             return ["Terminal too small: needs %dx%d, now %dx%d" % (MIN_W, MIN_H, width, height)], set()
-        head = ["solo-sdd settings  " + shown(self.root), ""]
-        footer = textwrap.wrap(FOOTER[self.mode], width - 1)
+        head = ["solo-sdd settings  " + shown(self.folder or ""), ""]
+        footer = textwrap.wrap(FOOTER["refused" if self.mode == "apply" and self.refusal else self.mode], width - 1)
         cap = max(1, min(3, height - len(head) - len(footer) - 6))  # the list keeps a row above its blank and detail
         message = textwrap.wrap(shown(self.message), width - 1) or [""]
         if len(message) > cap:
@@ -442,6 +634,9 @@ class Screen:
         top = min(max(0, sel - room // 2), max(0, len(rows) - room))
         return [title, ""] + rows[top:top + room] + [""] + detail, {sel - top + 2} if rows else set()
 
+    def wrap(self, text):
+        return textwrap.wrap(text, max(10, self.width - 1), subsequent_indent="  ", break_on_hyphens=False) or [""]
+
     def wrapped(self, text):
         lines = textwrap.wrap(text, max(10, self.width - 1))
         return lines if len(lines) <= 2 else [lines[0], fit(lines[1], self.width - 5) + " ..."]
@@ -459,6 +654,24 @@ class Screen:
             else:
                 title = self.target + ": " + settings.describe(self.target, self.values())["type"]
             return [title, "", "> " + shown(self.buffer) + "_"], set()
+        if self.mode == "machine":
+            return self.draw_machine()
+        if self.mode == "whole":
+            info = self.machine_info()
+            return self.scrolled(self.wrap(info[self.mpos - len(self.machine_items())]))
+        if self.mode == "apply":
+            if self.refusal:
+                return self.scrolled(self.wrap(self.refusal))
+            lines = ["Run these commands?"]
+            for command, folders, _ in self.plan:
+                lines += self.wrap(command) + self.wrap("  changes " + ", ".join(folders))
+            return self.scrolled(lines)
+        if self.mode == "applied":
+            lines = []
+            for command, code, out in self.results:
+                lines += self.wrap("exit %d: %s" % (code, command))
+                lines += [w for ln in out.splitlines() for w in self.wrap("  " + shown(ln))]
+            return self.scrolled(lines + ["the state is read again: Esc shows it"])
         if self.mode == "integrations":
             rows, lines = self.integration_rows(), []
             for i, e in enumerate(rows):
@@ -579,11 +792,13 @@ def main(args):
         print(NO_TERMINAL)
         return 1
     tree = pf.find_tree(args[0] if args else ".")
-    if tree is None:
-        print("no solo-sdd/ tree here: prepare the project with solo-sdd init")
-        return 1
     try:
-        run_curses(Screen.load(str(tree.parent)))
+        if tree is None:  # no project: only the machine settings
+            screen = Screen(None, None, folder=os.path.abspath(args[0] if args else "."))
+            screen.open_machine()
+        else:
+            screen = Screen.load(str(tree.parent))
+        run_curses(screen)
     except KeyboardInterrupt:
         return 130
     return 0

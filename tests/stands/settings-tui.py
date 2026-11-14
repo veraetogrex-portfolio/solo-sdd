@@ -168,7 +168,11 @@ class Session:
         self.term = Term(rows, cols)
         full = dict(os.environ, PYTHONPATH=ROOT, TERM="vt100", NCURSES_NO_PADDING="1")
         full.pop("NO_COLOR", None)
-        full.update(env or {})
+        for key, value in (env or {}).items():  # None unsets a variable of this session
+            if value is None:
+                full.pop(key, None)
+            else:
+                full[key] = value
         self.proc = subprocess.Popen([sys.executable, "-m", "solo_sdd", *args], cwd=cwd, env=full, stdin=self.slave,
                                      stdout=self.slave, stderr=self.slave, start_new_session=True,
                                      preexec_fn=lambda: fcntl.ioctl(0, termios.TIOCSCTTY, 0))
@@ -458,8 +462,11 @@ def main():
             need(s.wait() == 1 and settings_ui.NO_TERMINAL in flat(s.term.text()), "an unknown TERM", s.term.text())
             s.close()
             plain = tempfile.mkdtemp(dir=base)
-            s = Session(plain, 24, 80)
-            need(s.wait() == 1 and "solo-sdd init" in s.term.text(), "no tree", s.term.text())
+            s = Session(plain, 24, 80, {"HOME": tempfile.mkdtemp(dir=base)})
+            need("solo-sdd init" in flat(s.term.text()) and "Machine" in s.term.text(), "no tree: the Machine section",
+                 s.term.text())
+            s.send("q")
+            need(s.wait() == 0, "q leaves the Machine section with 0")
             s.close()
         row("refusals: no terminal, TERM=dumb, an unknown TERM, no tree", refusals)
 

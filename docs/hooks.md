@@ -55,7 +55,7 @@ A broken `model-policy.json` lets through only the checks that read it (models, 
 
 ## Claude Code process protection
 
-`sync.py push` puts the hook `global/process-guard.py` into `~/.claude/hooks/`. `solo-sdd install --hooks` (and `work_hooks_settings.py`) connects it in `~/.claude/settings.json`: a PreToolUse hook on `Bash|Monitor` and `permissions.deny` rules `Bash(<name> *)` for `pkill`, `killall`, `kill`, `osascript`, `launchctl`, `shutdown`, and `Read(**/.env)`, which keeps the `Read` tool off `.env` when the `guard` hook fails open (it claims nothing about `Grep` or Bash); an entry or a rule already there, connected by hand, is kept and not recorded, and `uninstall` removes only what install added.
+`sync.py push` puts the hook `global/process-guard.py` into `~/.claude/hooks/`. `solo-sdd install --hooks` (and `work_hooks_settings.py`) connects it in `~/.claude/settings.json`: a PreToolUse hook on `Bash|Monitor` and `permissions.deny` rules `Bash(<name> *)` for `pkill`, `killall`, `kill`, `osascript`, `launchctl`, `shutdown`, and `Read(**/.env)`, which keeps the `Read` tool off `.env` when the `guard` hook fails open (it claims nothing about `Grep` or Bash); an entry or a rule already there, connected by hand, is kept and not recorded, and `uninstall` removes only what install added; `uninstall --hooks` does the same and keeps the copies.
 
 `doctor` prints `ok process guard: connected` or `warn process guard: not connected`. The hook command: `exec /usr/bin/python3 "$HOME/.claude/hooks/process-guard.py"`, `timeout: 5`, `onFailure: "block"`.
 

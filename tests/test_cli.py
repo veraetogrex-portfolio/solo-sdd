@@ -1075,6 +1075,47 @@ class Hooks(unittest.TestCase):
         self.assertEqual(self.get(), broken)
         self.assertEqual(len(self.state()["_hooks"]), 1)
 
+    def test_uninstall_hooks_only(self):
+        """Requirement: Uninstall hooks only."""
+        rows = [  # settings before install --hooks, an edit a person makes after it
+            ({"model": "x"}, lambda s: s.setdefault("hooks", {}).setdefault("Stop", []).append(
+                {"hooks": [{"type": "command", "command": "echo later"}]})),
+            ({"env": {D: "3"}}, None),
+            (None, None),
+        ]
+        for before, edit in rows:
+            if os.path.exists(self.settings):
+                os.remove(self.settings)
+            if before is not None:
+                self.put(json.dumps(before))
+            self.assertEqual(inproc(self.home, "install", "--hooks")[0], 0)
+            want = json.loads(json.dumps(before or {}))
+            if edit:
+                s = json.loads(self.get())
+                edit(s)
+                self.put(json.dumps(s))
+                edit(want)
+            copies = {p: b for p, b in self.tree().items() if "/skills/" in p or p.endswith("AGENTS.md")}
+            code, out = inproc(self.home, "uninstall", "--hooks")
+            self.assertEqual(code, 0, out)
+            if before is None and edit is None:
+                self.assertFalse(os.path.exists(self.settings), "the file install created goes")
+            else:
+                self.assertEqual(json.loads(self.get()), want, before)
+            self.assertNotIn("_hooks", self.state())
+            self.assertEqual({p: b for p, b in self.tree().items() if p in copies}, copies, "every copy kept")
+
+    def test_uninstall_hooks_broken_settings(self):
+        """Requirement: Uninstall hooks only, scenario Broken settings."""
+        inproc(self.home, "install", "--hooks")
+        broken = b'{"hooks": ['
+        self.put(broken)
+        code, out = inproc(self.home, "uninstall", "--hooks")
+        self.assertEqual(code, 1)
+        self.assertIn("fail settings:", out)
+        self.assertEqual(self.get(), broken)
+        self.assertEqual(len(self.state()["_hooks"]), 1)
+
     def test_uninstall_broken_marks(self):
         inproc(self.home, "install", "--global-rules")
         rules = os.path.join(self.home, ".claude", "CLAUDE.md")
@@ -1171,7 +1212,7 @@ class Hooks(unittest.TestCase):
 
     def test_unknown_flags(self):
         self.assertEqual(inproc(self.home, "install", "--bogus")[0], 2)
-        self.assertEqual(inproc(self.home, "uninstall", "--hooks")[0], 2)
+        self.assertEqual(inproc(self.home, "uninstall", "--hooks", "--purge")[0], 2)  # --hooks alone is a command now
         self.assertEqual(inproc(self.home, "install", "--purge")[0], 2)
 
 

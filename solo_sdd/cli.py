@@ -15,9 +15,9 @@ COMMANDS = """solo-sdd commands:
                                      --global-rules also writes the rules block into ~/AGENTS.md, ~/.codex/AGENTS.md and
                                      ~/.claude/CLAUDE.md (a home that has the block from an earlier version keeps it);
                                      a file solo-sdd did not lay out is kept, --replace-foreign replaces it with a backup
-  uninstall [--purge | --global-rules]
+  uninstall [--purge | --global-rules | --hooks]
                                      remove copies and hooks; --purge also removes solo-sdd data and a solo schema left by an
-                                     old version; --global-rules removes only the global rules block
+                                     old version; --global-rules removes only the global rules block; --hooks only the hooks
   init [folder] [--yes] [--solo|--team] [--agents a,b] [--delivery local|pr] [--set key=value]... [--reconfigure]
                                      prepare a project git repository: solo-sdd/ (project.md, analyze.md, specs/, changes/,
                                      config from the detected authors, CODEOWNERS, branch protection, remote and agents;
@@ -97,6 +97,21 @@ def uninstall(purge=False):
     return 1 if layout.uninstall(purge) or code else 0
 
 
+def uninstall_hooks():
+    """Disconnects only what install --hooks recorded; the copies, the rules block and a person's entries stay."""
+    steps = layout.load_state().get("_hooks")
+    if not steps:
+        print("hooks are not connected; nothing changed")
+        return 0
+    if hooks.restore(steps):
+        return 1
+    state = layout.load_state()
+    state.pop("_hooks", None)
+    layout.save_state(state)
+    print("ok: hooks disconnected, the copies stay; restart Claude Code")
+    return 0
+
+
 def update(replace_foreign=False):
     problems = layout.push(replace_foreign=replace_foreign)
     print(upgrade_hint(sys.prefix, layout.REPO))
@@ -167,6 +182,8 @@ def _main(argv=None):
         return uninstall(bool(argv[1:]))
     if argv == ["uninstall", "--global-rules"]:
         return layout.uninstall_rules()
+    if argv == ["uninstall", "--hooks"]:
+        return uninstall_hooks()
     if argv and argv[0] == "migrate-agents":
         rest = [a for a in argv[1:] if a != "--write"]
         if len(rest) <= 1 and len(argv) - len(rest) <= 2:

@@ -18,6 +18,7 @@ Part of what a person configures is not in `solo-sdd/config` but on the machine:
 
 ### Modified Capabilities
 - `cli`: Uninstall hooks only is added.
+- `settings-ui`: Settings screen changes: a folder without `solo-sdd/` opens the Machine section instead of a refusal.
 
 ## Impact
 

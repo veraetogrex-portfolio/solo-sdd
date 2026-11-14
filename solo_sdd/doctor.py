@@ -329,10 +329,15 @@ def _integrations(folder=".", home=None):
         yield ("warn" if missing else "ok"), "integration " + name, detail + (", command " + f["command"] if e["source"] == "project" else "")
 
 
-def run():
+def rows():
+    """[(level, name, detail)] of every check, printing nothing; the settings screen shows them too."""
     state = layout.load_state()
-    rows = [*_python(), *_layout(state), *_hooks(state), *_policy(state), *_hook_errors(), *_guard(), *_sandbox(), *_depth(), *_source(state), *_providers(state), *_gh(), *_agents(), *_integrations(),
+    return [*_python(), *_layout(state), *_hooks(state), *_policy(state), *_hook_errors(), *_guard(), *_sandbox(), *_depth(), *_source(state), *_providers(state), *_gh(), *_agents(), *_integrations(),
             *_rules_size()]
-    for level, name, detail in rows:
+
+
+def run():
+    rows_ = rows()
+    for level, name, detail in rows_:
         print(f"{level} {name}: {detail}")
-    return 1 if any(r[0] == "fail" for r in rows) else 0
+    return 1 if any(r[0] == "fail" for r in rows_) else 0
