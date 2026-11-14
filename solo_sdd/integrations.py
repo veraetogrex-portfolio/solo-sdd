@@ -282,6 +282,38 @@ def run(args, cwd=".", home=None):
         print("no solo-sdd/ tree")
         return 1
     root = str(tree.parent)
+    if args[0] != "list":
+        return toggle(root, args[0], args[1], home)
+    try:
+        found = settings.parse_settings(settings.read_settings_text(root))
+    except (OSError, ValueError) as e:
+        print(e)
+        return 1
+    listed = listed_names(found.get(LISTED, ""))
+    entries = find_integrations(root, home if home is not None else os.path.expanduser("~"), all_sources())
+    used = {e["name"]: e for e in entries if e["name"] and not e["shadowed"]}
+    on = enabled_names(entries, found)
+    code = 0
+    for e in entries:
+        if e["shadowed"]:
+            print("%s %s shadowed by the %s copy" % (e["name"], e["source"], used[e["name"]]["source"]))
+        elif e["error"]:
+            print("%s %s broken: %s" % (e["name"] or "-", e["source"], e["error"]))
+            code = 1
+        else:
+            print("%s %s %s %s: %s" % (e["name"], e["source"], "enabled" if e["name"] in on else "disabled",
+                                       ", ".join(e["fields"]["points"]), e["fields"]["about"]))
+    for name in listed:
+        if name not in used:
+            print("%s: listed in %s of %s, %s" % (name, LISTED, settings.SETTINGS_FILE, NOWHERE))
+            code = 1
+    return code
+
+
+def toggle(root, action, name, home=None):
+    """`integrations enable|disable <name>` in the project at root, the one path the command and the settings screen
+    take: the settings line and the AGENTS.md rules block change together or not at all; prints what it did and
+    returns the exit code."""
     try:
         text = settings.read_settings_text(root)
         found = settings.parse_settings(text)
@@ -291,26 +323,9 @@ def run(args, cwd=".", home=None):
     listed, off = listed_names(found.get(LISTED, "")), listed_names(found.get(OFF, ""))
     entries = find_integrations(root, home if home is not None else os.path.expanduser("~"), all_sources())
     used = {e["name"]: e for e in entries if e["name"] and not e["shadowed"]}
-    on = enabled_names(entries, found)
-    if args[0] == "list":
-        code = 0
-        for e in entries:
-            if e["shadowed"]:
-                print("%s %s shadowed by the %s copy" % (e["name"], e["source"], used[e["name"]]["source"]))
-            elif e["error"]:
-                print("%s %s broken: %s" % (e["name"] or "-", e["source"], e["error"]))
-                code = 1
-            else:
-                print("%s %s %s %s: %s" % (e["name"], e["source"], "enabled" if e["name"] in on else "disabled",
-                                           ", ".join(e["fields"]["points"]), e["fields"]["about"]))
-        for name in listed:
-            if name not in used:
-                print("%s: listed in %s of %s, %s" % (name, LISTED, settings.SETTINGS_FILE, NOWHERE))
-                code = 1
-        return code
-    name = integration_shown(args[1])
+    name = integration_shown(name)
     key, names = (OFF, off) if name in used and used[name]["source"] == "bundled" else (LISTED, listed)
-    if args[0] == "enable":
+    if action == "enable":
         if name not in used:
             print("%s: %s; found: %s" % (name, NOWHERE, ", ".join(sorted(used)) or "none"))
             return 1
