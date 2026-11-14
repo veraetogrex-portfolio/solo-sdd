@@ -4,8 +4,7 @@
 1. test.yml, by the line reader of tests/test_release.py: the operating systems and the runner tier per event, the
    concurrency group with cancel-in-progress: true, Lint before the runner steps.
 2. release.yml: its runner step is the release tier.
-3. The probed `sdd-pr.py wait` output is quoted in AGENTS.md and docs/release.md.
-4. python3 tests/test_release.py exits with code 0.
+3. python3 tests/test_release.py exits with code 0.
 
 Usage: python3 tests/stands/ci-cost.py (from the repository root). Without Hypothesis it reruns itself with the
 first interpreter that has it: sys.executable, then /usr/bin/python3.
@@ -34,7 +33,6 @@ EXPECTED = {("push", "refs/heads/main"): (["ubuntu-latest"], ["slow"]),
             ("pull_request", "refs/pull/1/merge"): (["ubuntu-latest"], ["slow"]),
             ("push", "refs/tags/v0.3.0"): (["macos-latest"], ["release"]),
             ("workflow_dispatch", "refs/heads/main"): (["ubuntu-latest", "macos-latest"], ["release"])}
-PROBED = "`PR #<n> <url> CI: infra`"
 failed = []
 
 
@@ -69,15 +67,10 @@ def main():
            "steps %s" % names)
     tiers = t.runner_tiers(t.jobs(release)["check"], "push", "refs/tags/v0.3.0")
     report("2 release.yml tier", tiers == ["release"], "tier %s" % tiers)
-    for rel in ("AGENTS.md", "docs/release.md"):
-        text = " ".join(read(rel).split())
-        missing = [w for w in (PROBED, "no log line", "code 4", "tests/run.py --tier slow", "waits for the owner")
-                   if w not in text]
-        report("3 %s quotes the wait output" % rel, not missing, "missing %s" % missing if missing else PROBED)
     r = subprocess.run([sys.executable, os.path.join(ROOT, "tests", "test_release.py")], capture_output=True,
                        text=True, cwd=ROOT, stdin=subprocess.DEVNULL)
     tail = (r.stderr.strip().splitlines() or [""])[-1]
-    report("4 tests/test_release.py", r.returncode == 0, "code %d, %s" % (r.returncode, tail))
+    report("3 tests/test_release.py", r.returncode == 0, "code %d, %s" % (r.returncode, tail))
     if r.returncode:
         print(r.stderr[-3000:])
     print("SUMMARY: all steps passed" if not failed else "SUMMARY: failed: %s" % ", ".join(failed))

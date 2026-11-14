@@ -176,13 +176,6 @@ The `pre-push` hook SHALL refuse a push if the refs being sent include `refs/hea
 - **WHEN** Actions starts jobs and a PR is pushed twice in a row
 - **THEN** only an Ubuntu job runs for each push, and the first run is cancelled
 
-### Requirement: Delivery without CI
-`AGENTS.md` and `docs/release.md` SHALL quote the output `sdd-pr.py wait` gives for a PR of this repository whose jobs Actions does not start, as probed, and say that while `wait` gives it the full local run before delivery (`tests/run.py --tier slow`) is the only suite check; they SHALL NOT tell an agent to merge around a red or missing check: the PR then waits for the owner.
-
-#### Scenario: A PR whose jobs do not start
-- **WHEN** an agent delivers a change in `pr` mode and `wait` gives the probed output
-- **THEN** `docs/release.md` names that output, the local run before delivery that stands for CI, and that the merge waits for the owner
-
 ### Requirement: Old history push guard
 `scripts/pre-push-guard.sh`, installed as the `pre-push` hook, SHALL refuse a push whose refs include a commit sharing history with the local branch `history-local` or `history-private`, or a ref not to a commit, and SHALL pass any other push.
 
@@ -197,3 +190,14 @@ The `pre-push` hook SHALL refuse a push if the refs being sent include `refs/hea
 #### Scenario: A tag on a blob
 - **WHEN** a tag pointing to a blob is pushed
 - **THEN** the push is refused and the hook names the ref
+
+### Requirement: Merge only on green CI
+`AGENTS.md` and `docs/release.md` SHALL say that an agent merges a PR only when `sdd-pr.py wait` gives `CI: green`, and that on `CI: red`, `CI: infra` or `CI: codeql` the agent fixes, reruns and waits again by `/ship` or `spec-dispatch`, and a PR that is still not green waits for the owner; they SHALL NOT tell an agent to merge around a red or missing check, and SHALL NOT say that Actions starts no jobs.
+
+#### Scenario: A PR with green checks
+- **WHEN** an agent delivers a change in `pr` mode and `wait` gives `CI: green`
+- **THEN** both files let the agent merge it through `sdd-pr.py merge`, where `delivery.merge-by` lets an agent merge
+
+#### Scenario: A PR whose checks are red or did not start
+- **WHEN** `wait` gives `CI: red`, `CI: infra` or `CI: codeql`
+- **THEN** both files send the agent to the fixes and reruns of `/ship` or `spec-dispatch` first, and say that a PR that is still not green waits for the owner and that an agent never merges around a red or missing check

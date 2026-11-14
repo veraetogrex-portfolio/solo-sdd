@@ -83,7 +83,7 @@ Before "done": the `Tests` row, the lint from the table without output, `python3
 - Merge: squash
 - PR title: the change name
 - Deploy: no; deployment to agent folders is done separately (`sync.py push`).
-- No CI: while GitHub Actions starts no jobs (the spending limit, since 2026-11-08), `sdd-pr.py wait <url>` prints `PR #<n> <url> CI: infra` with no log line and exits with code 4 (probed on PR #79 on 2026-11-12). Then the full local run before delivery, `python3 tests/run.py --tier slow`, is the only suite check, and the PR waits for the owner: an agent never merges around a red or missing check (`docs/release.md`).
+- CI: an agent merges a PR through `sdd-pr.py merge` only when `sdd-pr.py wait <url>` gives `CI: green`. On `CI: red`, `CI: infra` or `CI: codeql` the agent fixes, reruns and waits again as `/ship` (under the dispatcher, `spec-dispatch`) says; a PR that is still not green waits for the owner: an agent never merges around a red or missing check (`docs/release.md`).
 
 ## Security
 
