@@ -33,6 +33,9 @@ COMMANDS = """solo-sdd commands:
   archive <id> [--yes] [--force]     apply the change's deltas to the main specs and move it to changes/archive/
   config list|get <key>|set <key> <value>|unset <key>
                                      project settings in solo-sdd/config: every key with its value and source, one value, change one line
+  config describe [<key>]|list --json
+                                     what each key changes, its type, allowed values, defaults and value in effect; the
+                                     list rows with these fields as JSON
   integrations list|enable <name>|disable <name>
                                      integrations of solo-sdd/integrations/, ~/.local/share/solo-sdd/integrations/ and
                                      the bundled ones with their source and state; enable or disable one by the integrations

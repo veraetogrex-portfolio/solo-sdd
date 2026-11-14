@@ -3,6 +3,7 @@
 The block between the settings markers is copied into the scripts of global/ that hold its markers
 (they are laid out as separate files and run on /usr/bin/python3 3.9) by python3 scripts/sync_blocks.py: edit it here.
 """
+import json
 import os
 import sys
 
@@ -175,6 +176,63 @@ def read_settings(root, registry=REGISTRY):
 # The block above is copied into files that cannot import the package: the agents default is the detected ones here.
 REGISTRY["agents"] = REGISTRY["agents"][:2] + (", ".join(providers.detected()), None)
 
+GROUPS = ("process", "delivery", "dispatch", "agents", "integrations", "checklists")
+# key or pattern -> (group, what it changes); kept out of the block above: the scripts do not show them
+ABOUT = {
+    "mode": ("process", "Solo or team project; a team project takes the team default of every key that has one."),
+    "delivery.mode": ("delivery", "How finished work reaches the base branch: a local merge or a pull request."),
+    "delivery.merge": ("delivery", "How a pull request or a local change is merged into the base branch."),
+    "delivery.merge-by": ("delivery", "Who merges into the base branch: the agent, or a person while the agent waits."),
+    "delivery.base": ("delivery", "The branch worktrees start from and merges go into; empty means the remote's default branch."),
+    "delivery.promote": ("delivery", "The branches after the base in order, each promoted from the one before by a pull request."),
+    "dispatch.limit": ("dispatch", "The most orchestrators the dispatcher runs at the same time."),
+    "process.review-rounds": ("process", "The most independent acceptance rounds of one change before it counts as not done."),
+    "process.light-path": ("process", "Whether a small code edit outside every spec may skip the change cycle."),
+    "process.light-path.max-files": ("process", "The most files a light path edit may change."),
+    "reply.language": ("agents", "The language the stop hook expects in the agent's final reply; off checks none."),
+    "agents": ("agents", "The agents this project is worked on with; doctor warns about one the installation lacks."),
+    "rules.scope": ("agents", "Where the agents get the rules: a block in this project's AGENTS.md, or only the global rules."),
+    "integrations": ("integrations", "The integrations enabled in this project, by folder name."),
+    "integrations.off": ("integrations", "The bundled integrations switched off in this project, by folder name."),
+    "checklist.<name>.paths": ("checklists", "The files a person checks by this list before merging, as globs."),
+    "checklist.<name>.file": ("checklists", "The markdown file of the list's items, from the repository root."),
+}
+KIND_TEXT = {"int": "a whole number from 1", "names": "lowercase letters, digits and -, separated by commas",
+             "paths": "relative paths, separated by commas", "path": "a relative path",
+             "choice": "a branch name", "list": "branch names, separated by commas"}
+
+
+def pattern_of(key, registry=REGISTRY):
+    """The registry key or the pattern a key is described under; None when the key is unknown."""
+    if key in registry or key in PATTERNS:
+        return key
+    for pattern in PATTERNS:
+        head, tail = pattern.split("<name>")
+        if key.startswith(head) and key.endswith(tail) and good_name(key[len(head):len(key) - len(tail)]):
+            return pattern
+    return None
+
+
+def describe(key, values, registry=REGISTRY):
+    """{field: value} of a key, a pattern or a pattern key: values is the `effective` dict; a pattern has no value."""
+    name = pattern_of(key, registry)
+    kind, allowed, default, team = registry.get(name) or PATTERNS[name]
+    group, about = ABOUT.get(name, ("", ""))  # a key of a registry passed to run, described nowhere
+    row = {"key": key, "group": group, "about": about,
+           "type": "%s: %s" % (kind, ", ".join(allowed) if allowed else KIND_TEXT[kind]),
+           "allowed": list(allowed) if allowed else None, "default": default, "team_default": team}
+    if key not in PATTERNS:
+        row["value"], row["source"] = values.get(key, ("", "default"))
+    return row
+
+
+def describe_text(row):
+    lines = [row["key"], "  group: " + row["group"], "  about: " + row["about"], "  type: " + row["type"],
+             "  default: " + (row["default"] or "(none)"), "  team default: " + (row["team_default"] or "(same)")]
+    if "value" in row:
+        lines.append("  value: %s (%s)" % (row["value"] or "(none)", row["source"]))
+    return "\n".join(lines)
+
 
 def set_text(text, key, value):
     """The text with the line of key replaced by `key: value` (appended when missing); value None removes it.
@@ -199,8 +257,10 @@ def unknown_key(key, registry=REGISTRY):
 
 
 def run(args, cwd=".", registry=REGISTRY):
-    """`config list | get <key> | set <key> <value> | unset <key>`; the exit code, or None on bad arguments."""
-    if not args or (args[0], len(args)) not in (("list", 1), ("get", 2), ("set", 3), ("unset", 2)):
+    """`config list [--json] | describe [<key>] | get <key> | set <key> <value> | unset <key>`; the exit code, or None
+    on bad arguments."""
+    if not args or (args[0], len(args)) not in (("list", 1), ("describe", 1), ("describe", 2), ("get", 2), ("set", 3),
+                                                ("unset", 2)) and args != ["list", "--json"]:
         return None
     tree = pf.find_tree(cwd)
     if tree is None:
@@ -214,14 +274,24 @@ def run(args, cwd=".", registry=REGISTRY):
     except (OSError, ValueError) as e:
         print(e)
         return 1
-    if args[0] == "list":
+    if args == ["list"]:
         for key, (value, source) in values.items():
             print("%s %s %s" % (key, value, source))
         return 0
-    bad = unknown_key(args[1], registry)
+    if args == ["list", "--json"]:
+        print(json.dumps([describe(key, values, registry) for key in values], indent=2, ensure_ascii=False))
+        return 0
+    if args == ["describe"]:
+        keys = list(registry) + list(PATTERNS) + [k for k in values if k not in registry]
+        print("\n".join(describe_text(describe(key, values, registry)) for key in keys))
+        return 0
+    bad = None if args[0] == "describe" and args[1] in PATTERNS else unknown_key(args[1], registry)
     if bad:
         print(bad)
         return 1
+    if args[0] == "describe":
+        print(describe_text(describe(args[1], values, registry)))
+        return 0
     if args[0] == "get":
         value, source = values.get(args[1], ("", "default"))  # a pattern key not set reads as empty
         print(value)
