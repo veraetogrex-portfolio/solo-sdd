@@ -143,6 +143,19 @@ class SettingsFile(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
 
 
+class KeyDescriptions(unittest.TestCase):
+    """Requirement: Key descriptions."""
+
+    def test_every_key_described(self):
+        keys = list(settings.REGISTRY) + list(settings.PATTERNS)
+        self.assertEqual([k for k in keys if k not in settings.ABOUT], [], "a key without a group and description")
+        self.assertEqual([k for k in settings.ABOUT if k not in keys], [], "a description of no key")
+        for key, (group, about) in settings.ABOUT.items():
+            self.assertIn(group, settings.GROUPS, key)
+            self.assertTrue(about[:1].isupper() and about.endswith(".") and about.count(". ") == 0
+                            and "\n" not in about, key)
+
+
 class Readme(unittest.TestCase):
     """docs/settings.md: one table row per registered key, with its values and defaults."""
 
@@ -292,6 +305,75 @@ class Command(unittest.TestCase):
     def test_outside_a_tree(self):
         shutil.rmtree(os.path.join(self.dir, "solo-sdd"))
         self.assertEqual(self.cli("list"), (1, "no solo-sdd/ tree\n"))
+
+    def describe(self, *args):
+        """The blocks of `config describe` as {key: {field: value}}; a block is the key line, then `  field: value`."""
+        code, out = self.cli("describe", *args)
+        blocks, key = {}, None
+        for ln in out.splitlines():
+            if ln and not ln.startswith(" "):
+                key = ln
+                blocks[key] = {}
+            elif ln.strip():
+                field, _, value = ln.strip().partition(": ")
+                blocks[key][field] = value
+        return code, blocks
+
+    def test_describe_one_key(self):
+        """Requirement: Describe a setting, scenario One key."""
+        code, blocks = self.describe("delivery.mode")
+        self.assertEqual(code, 0)
+        self.assertEqual(blocks, {"delivery.mode": {
+            "group": "delivery", "about": settings.ABOUT["delivery.mode"][1], "type": "choice: local, pr",
+            "default": "local", "team default": "pr", "value": "local (default)"}})
+        self.assertEqual(self.describe("delivery.base")[1]["delivery.base"]["value"], "(none) (default)")
+
+    def test_describe_all_keys_then_patterns(self):
+        """Requirement: Describe a setting, scenario Pattern keys."""
+        self.write("checklist.money.paths: billing/**\n")
+        code, blocks = self.describe()
+        self.assertEqual(code, 0)
+        want = list(settings.REGISTRY) + list(settings.PATTERNS) + ["checklist.money.paths"]
+        self.assertEqual(list(blocks), want)
+        self.assertEqual(blocks["checklist.<name>.paths"]["about"], settings.ABOUT["checklist.<name>.paths"][1])
+        self.assertNotIn("value", blocks["checklist.<name>.paths"], "a pattern has no value of its own")
+        self.assertEqual(blocks["checklist.money.paths"]["value"], "billing/** (file)")
+        self.assertEqual(self.describe("checklist.money.file")[1]["checklist.money.file"]["value"], "(none) (default)")
+        code, blocks = self.describe("checklist.<name>.paths")
+        self.assertEqual((code, list(blocks)), (0, ["checklist.<name>.paths"]))
+        self.assertNotIn("value", blocks["checklist.<name>.paths"])
+
+    def test_list_json(self):
+        """Requirement: Describe a setting, scenario JSON list; plain `config list` keeps its output."""
+        import json
+        plain = self.cli("list")
+        code, out = self.cli("list", "--json")
+        self.assertEqual(code, 0)
+        rows = json.loads(out)
+        self.assertEqual([r["key"] for r in rows], list(settings.REGISTRY))
+        fields = ["key", "group", "about", "type", "allowed", "default", "team_default", "value", "source"]
+        self.assertTrue(all(set(r) == set(fields) for r in rows))
+        mode = rows[list(settings.REGISTRY).index("delivery.mode")]
+        self.assertEqual((mode["allowed"], mode["default"], mode["team_default"], mode["value"], mode["source"]),
+                         (["local", "pr"], "local", "pr", "local", "default"))
+        self.assertIsNone(rows[list(settings.REGISTRY).index("dispatch.limit")]["allowed"])
+        self.assertEqual(self.cli("list"), plain)
+        for args in (["list", "--json"], ["describe"], ["describe", "delivery.branches"]):
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                self.assertEqual(settings.run(args, self.dir, LISTS), 0, args)
+            self.assertIn("delivery.branches", out.getvalue(), "a registry passed to run: %s" % args)
+
+    def test_describe_refusals(self):
+        """Requirement: Describe a setting, scenarios Unknown key and A broken file."""
+        code, out = self.cli("describe", "delivery.color")
+        self.assertEqual(code, 1)
+        self.assertIn("unknown key delivery.color; known: mode, ", out)
+        self.write("mode: solo\n\n# c\ndelivery.mode pr\n")
+        for args in (("describe",), ("describe", "mode"), ("list", "--json")):
+            code, out = self.cli(*args)
+            self.assertEqual(code, 1, args)
+            self.assertIn("solo-sdd/config:4", out, args)
 
     def test_bad_arguments_print_usage(self):
         r = subprocess.run([sys.executable, "-m", "solo_sdd", "config", "get"], cwd=self.dir, capture_output=True,
