@@ -25,6 +25,8 @@ Done when the local main branch matches the remote and the working tree has no u
 
    `python3 ~/.local/bin/sdd-pr.py open <working folder of the branch> <main branch> "<title>"` pushes the branch and prints `PR #<n> <url>`; `python3 ~/.local/bin/sdd-pr.py wait <url>`: 0 green, 3 red (fix, push, repeat `wait`), 4 infra (rerun the failed run, repeat `wait`), 8 code scanning alerts (fix them, push, repeat `wait`); `python3 ~/.local/bin/sdd-pr.py merge <url> <the merge method of step 1> <git rev-parse HEAD>`.
 
+   CI not finished yet: while the agent may merge (`delivery.merge-by` is `agent`, or no `solo-sdd/` tree), run `wait` as a background command and merge on `green` yourself; never ask the owner to come back with a word that starts the merge. Tell the owner once what waits, for about how long (`wait` gives up after 1200 s) and that nothing is needed from them. A red check is never merged around, and a prod deploy still needs consent (step 2).
+
    Merge codes: 0 merged; 5 main moved ahead: `git fetch origin`, `git merge origin/<main branch>`, push, then `wait` and `merge` again; 8 (`waits for human merge`, `waits for the owner: …`, `checklist <name>: …`): stop with the printed line, the PR stays open for the owner, the report says `PR: <link>, waits for human merge` for a human merge and `PR: <link>, <printed line>` otherwise, skip steps 8 and 9 until a person merges, then `git pull` the main branch; 1: stop, not done, with the printed reason.
 
    A repository without `solo-sdd/` merges as before: `gh pr create`, wait for the checks, merge yourself with `gh pr merge`. Do not turn on auto-merge.
