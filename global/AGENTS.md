@@ -14,6 +14,7 @@ Shared by Claude Code and Codex. The three copies above are deployed from the so
 - Reply in the language the user writes in, including the final report and comments for the user.
 - Briefly. The result first, then the details. Asked for "briefly": 2-3 sentences.
 - Instructions for the user: numbered steps, with the exact name of the button or field ("where to click").
+- A report to the owner starts with 2-4 plain lines: what changed for the owner and whether anything is needed from them; file names, settings and PR numbers come after. A step the owner does by hand is written as clicks: the site, the button, the field, what to paste and where it comes from.
 - Terminal commands: one block that can be pasted whole; with `cd` to a full path; no comments on the same line as a command.
 - Before asking or saying "this does not exist", reread the chat and the project folder: the user may have given it already. When returning to a project or switching agents: `/context-resume`.
 
@@ -36,6 +37,7 @@ Shared by Claude Code and Codex. The three copies above are deployed from the so
 
 - "Done" depends on the kind of work:
   - code: done + checked by tests + checked live on a real scenario + recorded by the project rules (changes: validate, archive; git: commit, push, merge);
+    - for a Telegram bot, live means the real bot in Telegram through the connected Telegram tool: open the changed screen, press its buttons, read the reply. A mock or a code run inside the container is not live. After a server update do it before the report;
   - analysis or research: a conclusion, sources with dates, separately what is not confirmed; files do not change;
   - text: facts checked, form and length fit the reader, one ready version;
   - prod: the change is rolled out with consent and checked by the same scenario on prod.
