@@ -1,0 +1,10 @@
+## 1. Fix
+
+- [ ] 1.1 Test `test_unknown_arguments_refused` (Requirement Unknown arguments refused) in `tests/test_sync.py`, one table on the `SyncTest` fixture home: rows `push --help`, `push -h`, `status -h`, `--help`, `pull alpha --help`, `push --bogus --help` (exit 0, usage) and `push --frobnicate`, `push --forc`, `push --force=yes`, `status --bogus`, `push --quiet extra`, `push --bogus` with `state.json` holding `[]` (exit 2, first line `unknown argument <arg>`, then the usage); `sync pull alpha --bogus`, once after an in-place edit of the deployed `alpha` and once with `state.json` holding `[]`, runs `python3 -m solo_sdd` with `cwd` the fixture repository (never `REPO`). Each row checks the exit code, the first output line, that the usage is in the output, and that the home and `skills/alpha/SKILL.md` are byte for byte the same. It fails on the current code
+- [ ] 1.2 Property test `test_unknown_arguments_refused_property` (Hypothesis, `max_examples=25`, the same number in the task and the test, one fixture home per example): for any of `status`, `push`, `pull alpha` and an argument outside that command's options and other than `-h`/`--help`, drawn to reach prefixes and case variants of the known options, `=value` forms, `-`, `--` and plain words, the exit code is 2 and no file in the home changes. Proven by a mutation: with the refusal removed for `push` the test fails
+- [ ] 1.3 `_main` in `solo_sdd/layout.py` checks every argument against the command's options before it calls `status`, `push` or `pull`, and answers `--help`/`-h` anywhere among them with the usage and exit 0, before the unknown-argument check; the module docstring names `-h, --help` and the exit code 2. The tests of 1.1 and 1.2 pass, and so does `python3 tests/run.py --jobs 5 --affected solo_sdd/layout.py`
+
+## 2. Acceptance
+
+- [ ] 2.1 Run the Live Scenario (or its Fallback) from verification.md and record the Result, Not Verified and Decisions Without Owner sections
+- [ ] 2.2 Run `solo-sdd validate sync-args-fix` and archive the change with `solo-sdd archive sync-args-fix --yes`
