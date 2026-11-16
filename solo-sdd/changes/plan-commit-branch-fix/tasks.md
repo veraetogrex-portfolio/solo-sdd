@@ -1,7 +1,7 @@
 ## 1. Implementation
 
-- [ ] 1.1 Requirement Plan committed: a row in `tests/test_skill_commands.py` that step 9 of `skills/spec-plan/SKILL.md` names the branch `plan/<first id>`, a temporary worktree, `delivery.mode` and `ship` for `pr`, and the main branch for `local`; fails on the current text
-- [ ] 1.2 Step 9 and the `Plan:` line of the report form in `skills/spec-plan/SKILL.md` by the requirement; the row of 1.1 passes, the Line length test of `tests/test_readme.py` passes, `python3 sync.py push` deploys the skill and `python3 sync.py status` shows no unexpected drift
+- [x] 1.1 Requirement Plan committed: a row in `tests/test_skill_commands.py` that step 9 of `skills/spec-plan/SKILL.md` names the branch `plan/<first id>`, a temporary worktree, `delivery.mode` and `ship` for `pr`, and the main branch for `local`; fails on the current text
+- [x] 1.2 Step 9 and the `Plan:` line of the report form in `skills/spec-plan/SKILL.md` by the requirement; the row of 1.1 passes, the Line length test of `tests/test_readme.py` passes, `python3 sync.py push` deploys the skill and `python3 sync.py status` shows no unexpected drift
 
 ## 2. Acceptance
 
