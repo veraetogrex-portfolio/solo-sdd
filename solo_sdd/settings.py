@@ -22,7 +22,7 @@ REGISTRY = {
     "delivery.base": ("choice", None, "", None),  # "": the remote's default branch
     "delivery.promote": ("list", None, "", None),  # branches after the base in order; `release/*`: the newest by version
     "dispatch.limit": ("int", None, "2", None),
-    "process.review-rounds": ("int", None, "3", None),
+    "process.review-rounds": ("int", None, "5", None),
     "process.light-path": ("choice", ("on", "off"), "on", None),  # off: every code edit goes through a change
     "process.light-path.max-files": ("int", None, "3", None),
     "reply.language": ("choice", ("ru", "en", "off"), "off", None),
@@ -186,7 +186,7 @@ ABOUT = {
     "delivery.base": ("delivery", "The branch worktrees start from and merges go into; empty means the remote's default branch."),
     "delivery.promote": ("delivery", "The branches after the base in order, each promoted from the one before by a pull request."),
     "dispatch.limit": ("dispatch", "The most orchestrators the dispatcher runs at the same time."),
-    "process.review-rounds": ("process", "The most independent acceptance rounds of one change before it counts as not done."),
+    "process.review-rounds": ("process", "The most independent acceptance rounds of one change, plus one extra round for findings on the last fix, before it counts as not done."),
     "process.light-path": ("process", "Whether a small code edit outside every spec may skip the change cycle."),
     "process.light-path.max-files": ("process", "The most files a light path edit may change."),
     "reply.language": ("agents", "The language the stop hook expects in the agent's final reply; off checks none."),

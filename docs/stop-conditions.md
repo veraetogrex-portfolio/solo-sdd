@@ -9,7 +9,7 @@ The goal of the loop is not "tests green": a change is done when it is accepted 
 | Stop condition | What happens | Where it is enforced |
 |---|---|---|
 | One run, one change | The next change is not started | `skills/spec-next/SKILL.md`, step 11 |
-| Review: at most three rounds | An open `Important` after the third: the findings and "reconsider the approach" go to `Not Verified`, no archive | `skills/spec-next/SKILL.md`, step 7a; `ALGORITHM.md`, step 5 |
+| Review: at most `process.review-rounds`, default 5 | An open `Important` after the last round: the findings and "reconsider the approach" go to `Not Verified`, no archive; one extra round runs without asking when the last round is the second or later and every open `Important` has all its places in the lines of the last rework, never a second one | `skills/spec-next/SKILL.md`, step 7a; `ALGORITHM.md`, step 5 |
 | Reviewer failure | One rerun per round; a second failure in the round: the requirements without a verdict go to `Not Verified`, no archive | `skills/spec-next/SKILL.md`, step 7a; `ALGORITHM.md`, step 5 |
 | The same edit did not help twice | Stop and find the cause; no third attempt the same way | `global/AGENTS.md`, section 3; `skills/relay/SKILL.md` |
 | A running service: the second edit did not help | Stop and analyse; a third edit the same way is forbidden | `skills/debug-profile/SKILL.md`, "Two failures in a row"; `ALGORITHM.md`, step 6 |
