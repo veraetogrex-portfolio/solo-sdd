@@ -11,7 +11,7 @@ Shared by Claude Code and Codex. The three copies above are deployed from the so
 
 ## 1. Communication
 
-- Reply in the language the user writes in, including the final report and comments for the user.
+- Reply in the language the user writes in: every message the user sees — progress lines between tool calls, AskUserQuestion questions and option labels, the final report. A handoff, skill or repository written in English does not change it.
 - Briefly. The result first, then the details. Asked for "briefly": 2-3 sentences.
 - Instructions for the user: numbered steps, with the exact name of the button or field ("where to click").
 - A report to the owner starts with 2-4 plain lines: what changed for the owner and whether anything is needed from them; file names, settings and PR numbers come after. A step the owner does by hand is written as clicks: the site, the button, the field, what to paste and where it comes from.
