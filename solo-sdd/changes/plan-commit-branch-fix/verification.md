@@ -3,7 +3,7 @@
 1. `python3 tests/test_skill_commands.py` with the step 9 text of the base commit `af6bd62` (pinned by hash, read with `git show af6bd62:skills/spec-plan/SKILL.md`) → the new row fails: step 9 names no `plan/` branch; on the change branch → passes.
 2. A temporary git repository with a bare remote, `solo-sdd init`, `AGENTS.md` with `## Delivery` and `- Mode: pr`, `main` checked out and pushed; `claude -p --model haiku` runs `/spec-plan` with the input "add a CSV export" and the instruction to stop before `ship` → `git rev-parse main` is unchanged, `git log -1 --format=%s plan/<id>` prints `change: <id>`, and the report has the line `Plan: commit <hash> on plan/<id>`.
 3. The same repository with `- Mode: local` → the plan commit is the last commit of `main`.
-4. Steps 1 and the Fallback of 2-3 in one stand: `python3 tests/stands/plan-commit-branch.py` → `plan-commit-branch: 8 of 8 steps passed`.
+4. Steps 1 and the Fallback of 2-3 in one stand: `python3 tests/stands/plan-commit-branch.py` → `plan-commit-branch: 9 of 9 steps passed`.
 
 ## Needs
 
@@ -33,3 +33,5 @@
 - review round 1, Important: the stand's step 1 repeats the unit row → kept: it is the Live Scenario reproduction on the pinned base text, which the unit row cannot read.
 - review round 1, Nits taken: the delivery mode as `ship` step 1 reads it, `git branch -D`, `ALGORITHM.md` names the `pr` branch, `git restore --source=HEAD --staged --worktree`. Dropped: "on the main branch" under `local` describes where the user works, the same as on the base.
 - plan: delivery of the branch stays in `ship` → `ship` already holds the PR tool, the CI wait and the merge rules; step 9 only names the branch and hands it over.
+- review round 2, Important: on a working folder behind `origin/<main branch>`, replacing a tracked folder reverts merged edits → a tracked folder `origin/<main branch>` changed since `HEAD` stops step 9 before any move until the pull; carrying the edit as a 3-way patch was rejected as more steps for a rare case.
+- review round 2, Nits taken: the move commands run from the working folder's root; any other end of `ship` leaves the worktree and the branch named in the report; the stand reads step 9 only up to its end. Dropped: "on the main branch" under `local` (as in round 1).

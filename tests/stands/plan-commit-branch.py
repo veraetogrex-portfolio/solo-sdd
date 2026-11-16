@@ -7,7 +7,7 @@
    an edited tracked change `old` and someone else's edit `src/x.py`; and a fresh one with no tracked change. The
    commands of step 9, each checked to be named in its text, leave `main` where it was, put `change: csv-export, old`
    with only the plan folders on `plan/csv-export`, and leave no untracked copy, so the pull after the merge passes and
-   the worktree and the local branch go; a control copy instead of a move makes git refuse that pull.
+   the worktree and the local branch go; a tracked folder origin/main changed since HEAD stops the step; a control copy instead of a move makes git refuse that pull.
 3. The same repository with `- Mode: local`: the plan commit is the last commit of `main`.
 Run from the repository root: python3 tests/stands/plan-commit-branch.py. The temporary folder is removed; the last
 line is the summary."""
@@ -70,7 +70,8 @@ base, now = plan_commit_misses(text), plan_commit_misses((ROOT / "skills/spec-pl
 step("1 step 9 text", bool(base) and now == [], "base %s misses %d words; this tree misses %s" % (BASE, len(base), now))
 
 STEP = re.sub(r"\s+", " ", (ROOT / "skills/spec-plan/SKILL.md").read_text("utf-8")).split("9. **Plan commit.**")[1]
-NAMED = ("`git fetch origin`", "`git worktree add -b plan/<first id> ${TMPDIR:-/tmp}/plan-<first id> origin/<main branch>`",
+STEP = STEP.split(" More than five changes")[0]
+NAMED = ("`git fetch origin`", "`git diff --quiet HEAD origin/<main branch> -- <folder>`", "`git worktree add -b plan/<first id> ${TMPDIR:-/tmp}/plan-<first id> origin/<main branch>`",
          "`mkdir -p <worktree>/solo-sdd/changes`", "`rm -rf <worktree>/<folder>`", "`mv <folder> <worktree>/<folder>`",
          "`git restore --source=HEAD --staged --worktree -- <folder>`", "run with `git -C <worktree>`",
          "`git worktree remove <worktree>`", "`git branch -D plan/<first id>`")
@@ -86,6 +87,7 @@ def plan_pr(t, name, tracked):
     wt = str(t / ("plan-csv-export-" + name))
     git(work, "fetch", "origin")
     added = git(work, "worktree", "add", "-b", "plan/csv-export", wt, "origin/main")[0]
+    stale = [git(work, "diff", "--quiet", "HEAD", "origin/main", "--", rel)[0] for rel in folders]
     moved = [run(work, "mkdir", "-p", wt + "/solo-sdd/changes")[0]]
     for rel in folders:
         moved += [run(work, "rm", "-rf", wt + "/" + rel)[0], run(work, "mv", rel, wt + "/" + rel)[0]]
@@ -96,7 +98,7 @@ def plan_pr(t, name, tracked):
     subject = git(work, "log", "-1", "--format=%s", "plan/csv-export")[1]
     files = git(work, "show", "--name-only", "--format=", "plan/csv-export")[1].split()
     status = git(work, "status", "--porcelain")[1]
-    step("2 plan branch (%s)" % name, mode == "pr" and added == 0 and moved == [0] * len(moved)
+    step("2 plan branch (%s)" % name, mode == "pr" and added == 0 and stale == [0] * len(folders) and moved == [0] * len(moved)
          and git(work, "rev-parse", "main")[1] == main and subject == "change: " + ", ".join(
              f.rsplit("/", 1)[1] for f in folders) and all(f.startswith(tuple(folders)) for f in files)
          and status == "M src/x.py", "config %s; main kept %s; plan/csv-export: %r, %d files under the plan folders; "
@@ -113,6 +115,16 @@ with tempfile.TemporaryDirectory() as t:
     t = pathlib.Path(t)
     plan_pr(t, "pr", True)
     plan_pr(t, "fresh", False)
+
+    old = project(t, "stale")
+    other = t / "other"
+    git(t, "clone", "-q", str(t / "stale.git"), str(other))
+    put(other, "solo-sdd/changes/old/proposal.md", "# Proposal\n\nv3, merged elsewhere\n")
+    git(other, "commit", "-qam", "tick")
+    git(other, "push", "-q", "origin", "main")
+    git(old, "fetch", "origin")
+    stop = git(old, "diff", "--quiet", "HEAD", "origin/main", "--", "solo-sdd/changes/old")[0]
+    step("2 stale tracked folder", stop == 1, "origin/main changed old since HEAD: the check exits %d, step 9 stops" % stop)
 
     ctl = project(t, "control")
     git(ctl, "switch", "-q", "-c", "plan/x")
