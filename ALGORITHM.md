@@ -63,7 +63,7 @@ Input: a plan, a bug list, the result of a discussion. Output: a queue of small 
 
 **Gate G1:** `solo-sdd validate --all`; then `spec-analyze` on every created change (stage 4); full coverage of the input.
 
-After G1 the folders of created and changed changes go in one commit `change: <id>, …`, without other edits. If `solo-sdd/changes` is ignored, there is no commit, and the report says "plan outside git".
+After G1 the folders of created and changed changes go in one commit `change: <id>, …`, without other edits; under `delivery.mode` `pr` it goes on a new branch `plan/<first id>` in a temporary worktree and reaches the main branch through `ship`. If `solo-sdd/changes` is ignored, there is no commit, and the report says "plan outside git".
 
 ### 4. Check before code: `spec-analyze`
 

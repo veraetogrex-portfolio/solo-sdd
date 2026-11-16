@@ -72,13 +72,13 @@ The result is a set of changes, each of which closes in one `/spec-next` run. No
 7. **Check.** `solo-sdd validate --all`.
 7a. **Cross-check.** The `spec-analyze` skill on every created change; edits only in the artifacts. Then repeat step 7.
 8. **Coverage.** Match every input item with a change or with the light path of step 1a (its commit, or `to do` until the commit after step 9). Any other item without a change is an error: create a change or explain in the report why there is none.
-9. **Plan commit.** After gate G1 (steps 7, 7a, 8). If `git check-ignore -q solo-sdd/changes` found a rule, there is no commit, and the report has the line "plan outside git". Otherwise one commit `change: <id>, …` holds only `<folders>`, the folders of created and changed changes: other edits do not get into it. Without this commit the dispatcher's worktree will not see the change. Where it lands follows `solo-sdd config get delivery.mode`:
+9. **Plan commit.** After gate G1 (steps 7, 7a, 8). If `git check-ignore -q solo-sdd/changes` found a rule, there is no commit, and the report has the line "plan outside git". Otherwise one commit `change: <id>, …` holds only `<folders>`, the folders of created and changed changes: other edits do not get into it. Without this commit the dispatcher's worktree will not see the change. Where it lands follows the delivery mode `ship` step 1 reads (`solo-sdd config get delivery.mode`):
    - `delivery.mode` `local`: `git add -- <folders> && git commit -m "change: <id>, …" -- <folders>` in the working folder, on the main branch; `ship` pushes it.
-   - `delivery.mode` `pr`: the branch checked out in the working folder does not move. `git fetch origin`, then, as a command of its own, `git worktree add -b plan/<first id> ${TMPDIR:-/tmp}/plan-<first id> origin/<main branch>` makes a temporary worktree on the new branch `plan/<first id>` (a taken name gets `-2`, `-3`).
+   - `delivery.mode` `pr`: the branch checked out in the working folder does not move. `git fetch origin`, then, as a command of its own, `git worktree add -b plan/<first id> ${TMPDIR:-/tmp}/plan-<first id> origin/<main branch>` makes a temporary worktree `<worktree>` on the new branch `plan/<first id>` (a taken branch or path gets `-2`, `-3` in both).
 
-     Every folder is moved there with `mv`, replacing the copy the worktree already has, and a tracked one is brought back in the working folder with `git restore -- <folder>`: an untracked copy left behind would make git refuse the pull after the merge. The commit is the `local` one, run with `git -C <worktree>`.
+     Each folder is moved there by `mkdir -p <worktree>/solo-sdd/changes`, `rm -rf <worktree>/<folder>` and `mv <folder> <worktree>/<folder>`, and a tracked one is brought back in the working folder with `git restore --source=HEAD --staged --worktree -- <folder>`: an untracked copy left behind would make git refuse the pull after the merge. The commit is the `local` one, run with `git -C <worktree>`.
 
-     `ship` delivers the branch from the temporary worktree through `sdd-pr.py` (open, wait, merge by `delivery.merge-by`); after the merge `git worktree remove <worktree>` and the pull of the local main branch. Under a human merge the worktree stays until a person merges.
+     `ship` delivers the branch from `<worktree>` through `sdd-pr.py` (open, wait, merge by `delivery.merge-by`). After the merge, or at code 8 of a human merge (the branch is already pushed), `git worktree remove <worktree>` and `git branch -D plan/<first id>`; after the merge the pull of the local main branch. Until the merge the plan lives only on the pushed `plan/<first id>`: `/spec-next` and the dispatcher see it after the pull, and the report's `Next:` says so.
 
 More than five changes: you write the artifacts yourself; Codex executors only if the user named `codex-orchestration`.
 
@@ -131,7 +131,7 @@ Coverage: <input items> of <input items>; light path: <item — `light:` <hash> 
 Plan: commit <hash> | commit <hash> on plan/<id>, PR <url> | commit <hash> on plan/<id>, PR <url>, waits for human merge | plan outside git | no change: light path only
 Waiting for external conditions: <change — what is needed> | none
 My interpretations: <item — how I understood it> | none
-Next: /spec-next | the light path items
+Next: /spec-next | /spec-next after the merge of <PR url> | the light path items
 ```
 
 ## Mistakes

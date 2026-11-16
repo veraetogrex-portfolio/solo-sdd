@@ -35,8 +35,11 @@ def legacy_stop(text):
 
 
 PLAN_PR = ("`delivery.mode` `pr`", "`plan/<first id>`", "temporary worktree", "`git fetch origin`",
-           "`git worktree add -b plan/<first id> ${TMPDIR:-/tmp}/plan-<first id> origin/<main branch>`", "moved",
-           "`git restore -- <folder>`", "`ship`", "`sdd-pr.py`", "`git worktree remove", "does not move")
+           "`git worktree add -b plan/<first id> ${TMPDIR:-/tmp}/plan-<first id> origin/<main branch>`",
+           "`mkdir -p <worktree>/solo-sdd/changes`", "`rm -rf <worktree>/<folder>`", "`mv <folder> <worktree>/<folder>`",
+           "`git restore --source=HEAD --staged --worktree -- <folder>`", "`ship`", "`sdd-pr.py`",
+           "code 8 of a human merge", "`git worktree remove <worktree>`", "`git branch -D plan/<first id>`",
+           "does not move")
 PLAN_LOCAL = ("`delivery.mode` `local`", "on the main branch", "`ship` pushes it")
 
 
@@ -46,7 +49,8 @@ def plan_commit_misses(text):
     step = flat.split("9. **Plan commit.**", 1)[-1].split(" More than five changes", 1)[0]
     report = flat.split("## Report", 1)[-1]
     return ([w for w in PLAN_PR + PLAN_LOCAL if w not in step]
-            + [w for w in ("on plan/<id>, PR <url>", "waits for human merge") if w not in report])
+            + [w for w in ("on plan/<id>, PR <url>", "waits for human merge",
+                                                       "/spec-next after the merge of <PR url>") if w not in report])
 
 
 class SkillCommandsTest(unittest.TestCase):
