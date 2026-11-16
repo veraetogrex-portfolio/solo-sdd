@@ -8,6 +8,9 @@ where Claude Code and Codex read them (map: targets.json).
     python3 sync.py push --force    lay out over edits made in place too (with a backup)
     python3 sync.py push --replace-foreign  also replace files solo-sdd did not lay out (with a backup)
     python3 sync.py pull <name>     take an edit made in place back into the repository
+    python3 sync.py -h, --help      this text, exit 0, also after a command; nothing is read or written
+An argument outside the command's options prints "unknown argument <arg>", this text and exits 2
+before anything is read or written.
 
 State of each copy:
     ok           matches the repository
@@ -789,28 +792,38 @@ def main(argv):
         return 1
 
 
+OPTIONS = {"status": ("--quiet",), "push": ("--force", "--quiet", "--global-rules", "--replace-foreign"), "pull": ()}
+
+
 def _main(argv):
-    if not argv or argv[0] not in ("status", "push", "pull"):
+    """Every argument is checked before status, push or pull reads the state or writes a file."""
+    if argv[:1] in (["-h"], ["--help"]) or (argv[:1] and argv[0] in OPTIONS and {"-h", "--help"} & set(argv[1:])):
+        print(__doc__)
+        return 0
+    if not argv or argv[0] not in OPTIONS:
         print(__doc__)
         return 2
     command, rest = argv[0], argv[1:]
+    names, origin, args = [], None, iter(rest)
+    for arg in args:
+        if command == "pull" and arg == "--from":
+            origin = next(args, None)
+            if origin is None:
+                print("--from needs a folder or file: --from ~/.codex/skills")
+                return 2
+        elif command == "pull" and not arg.startswith("-") and not names:
+            names.append(arg)
+        elif arg not in OPTIONS[command]:
+            print(f"unknown argument {arg}")
+            print(__doc__)
+            return 2
     if command == "status":
         status(quiet="--quiet" in rest)
         return 0
     if command == "push":
         return 1 if push(force="--force" in rest, quiet="--quiet" in rest, rules="--global-rules" in rest,
                          replace_foreign="--replace-foreign" in rest) else 0
-    names = [a for a in rest if not a.startswith("--")]
-    origin = None
-    if "--from" in rest:
-        position = rest.index("--from") + 1
-        if position >= len(rest):
-            print("--from needs a folder or file: --from ~/.codex/skills")
-            return 2
-        origin = rest[position]
-    if origin in names:
-        names.remove(origin)
-    if len(names) != 1:
+    if not names:
         print("name one item: python3 sync.py pull <skill or path from targets.json>")
         return 2
     return pull(names[0], origin)
