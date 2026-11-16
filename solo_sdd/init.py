@@ -131,6 +131,58 @@ def rules_body(base, sections):
     return base + "".join("\n## Integration: %s\n\n%s" % (name, rules_block.norm(text)) for name, text in sections)
 
 
+def rules_sections(folder, home, text):
+    """The integration rules sections the block of the project at folder ends with, by its settings text `text`;
+    a broken settings text gives none. Raises integrations.IntegrationError."""
+    try:
+        listed = integrations.listed_names(settings.parse_settings(text).get(integrations.LISTED, ""))
+    except ValueError:
+        listed = []
+    return integrations.rules_sections(integrations.find_integrations(folder, home), listed)
+
+
+def rules_state(folder, scope, sections=(), create=True):
+    """The decision project_rules writes by, writing and printing nothing: (outcome, detail, body, recorded).
+    outcome: "ok"; "created" or "updated" with detail the new text of AGENTS.md; "drift" with detail the note;
+    "unreadable" with detail the message; "absent" (no block and create off) and "keep" (global scope, no integration
+    section to drop) with detail None. body is the block body of this version, recorded the digest in RECORD or None."""
+    path, record = os.path.join(folder, RULES), os.path.join(folder, RECORD)
+    source = os.path.join(resources.ROOT, "global", "AGENTS.md")
+    try:
+        name = source
+        body = rules_body(rules_block.norm(_read(source).replace("\r\n", "\n")), sections)  # CRLF clone: same rules
+        name = path
+        text = _read(path) if os.path.lexists(path) else None
+        name = record
+        recorded = _read(record).strip() if os.path.lexists(record) else None
+    except (OSError, UnicodeDecodeError) as e:
+        return "unreadable", "cannot read %s: %s" % (os.path.relpath(name, folder) if name != source else name,
+                                                     getattr(e, "strerror", None) or "not UTF-8"), None, None
+    parts = None if text is None else rules_block.parse(text)
+    if parts not in (None, rules_block.BROKEN):
+        crlf = "\r\n" in parts[1]
+        parts = parts[:1] + (parts[1].replace("\r\n", "\n"),) + parts[2:]
+        if scope == "global":  # under global the block keeps its base rules, of whichever version wrote them
+            cut = parts[1].find("\n## Integration: ")
+            if cut < 0:
+                return "keep", None, body, recorded
+            body = parts[1][:cut]
+    if parts is None and not create and (recorded is None or text is None):
+        return "absent", None, body, recorded
+    if parts is rules_block.BROKEN:
+        return "drift", "broken solo-sdd markers", body, recorded
+    if parts is None and recorded is not None and text is not None:
+        return "drift", "the solo-sdd markers were erased", body, recorded
+    if parts is None:
+        return "created", rules_block.block(body) if text is None else rules_block.append(text, body)[0], body, recorded
+    if parts[1] == body:
+        return "ok", None, body, recorded
+    if recorded == _digest(parts[1]):
+        fresh = rules_block.block(body)
+        return "updated", parts[0] + (fresh.replace("\n", "\r\n") if crlf else fresh) + parts[2], body, recorded
+    return "drift", "the solo-sdd block was edited in place", body, recorded
+
+
 def project_rules(folder, scope, sections=(), create=True):
     """The solo-sdd rules block in the project AGENTS.md (bytes outside it kept) and CLAUDE.md with @AGENTS.md;
     sections: the (name, text) of the integration rules (integrations.rules_sections) the block ends with. An edited
@@ -152,46 +204,18 @@ def project_rules(folder, scope, sections=(), create=True):
         if create or not has:
             return 0
         sections, names = (), ""  # enable and disable drop only the sections of an existing block: none kept stale
-    strip = scope == "global"
-    source = os.path.join(resources.ROOT, "global", "AGENTS.md")
-    try:
-        name = source
-        body = rules_body(rules_block.norm(_read(source).replace("\r\n", "\n")), sections)  # CRLF clone: same rules
-        name = path
-        text = _read(path) if os.path.lexists(path) else None
-        name = record
-        recorded = _read(record).strip() if os.path.lexists(record) else None
-    except (OSError, UnicodeDecodeError) as e:
-        print("cannot read %s: %s" % (os.path.relpath(name, folder) if name != source else name,
-                                      getattr(e, "strerror", None) or "not UTF-8"))
+    outcome, detail, body, recorded = rules_state(folder, scope, sections, create)
+    if outcome == "unreadable":
+        print(detail)
         return 1
-    parts = None if text is None else rules_block.parse(text)
-    if parts not in (None, rules_block.BROKEN):
-        crlf = "\r\n" in parts[1]
-        parts = parts[:1] + (parts[1].replace("\r\n", "\n"),) + parts[2:]
-        if strip:  # under global the block keeps its base rules, of whichever version wrote them
-            cut = parts[1].find("\n## Integration: ")
-            if cut < 0:
-                return 0
-            body = parts[1][:cut]
-    new = note = None
-    if parts is None and not create and (recorded is None or text is None):
+    if outcome == "keep":
+        return 0
+    if outcome == "absent":
         if names:
             print("the rules of %s are not written: %s has no solo-sdd block; solo-sdd init writes it" % (names, RULES))
         return 0
-    if parts is rules_block.BROKEN:
-        note = "broken solo-sdd markers"
-    elif parts is None and recorded is not None and text is not None:
-        note = "the solo-sdd markers were erased"
-    elif parts is None:
-        new, done = (rules_block.block(body) if text is None else rules_block.append(text, body)[0]), "created"
-    elif parts[1] == body:
-        done = "ok"
-    elif recorded == _digest(parts[1]):
-        fresh = rules_block.block(body)
-        new, done = parts[0] + (fresh.replace("\n", "\r\n") if crlf else fresh) + parts[2], "updated"
-    else:
-        note = "the solo-sdd block was edited in place"
+    note = detail if outcome == "drift" else None
+    new = detail if outcome in ("created", "updated") else None
     if note:
         print("drift   %s — %s, kept as is; the rules of this version: %s" % (
             RULES, note, os.path.join(resources.ROOT, "global", "AGENTS.md")))
@@ -205,7 +229,7 @@ def project_rules(folder, scope, sections=(), create=True):
     try:
         if new is not None:
             _write(path, new)
-            print("%s the solo-sdd rules block in %s" % (done, RULES))
+            print("%s the solo-sdd rules block in %s" % (outcome, RULES))
         if not note and recorded != _digest(body):
             _write(record, _digest(body) + "\n")
         if claude in writes:
@@ -241,13 +265,11 @@ def run(folder=".", given=None, yes=False, reconfigure=False, read=None, home=No
             print(e)
             return 1
     try:  # the rules are refused before the first write; a broken config is named where the scope is read below
-        listed = integrations.listed_names(settings.parse_settings(
-            new if new is not None else settings.read_settings_text(folder)).get(integrations.LISTED, ""))
-    except (OSError, ValueError):
-        listed = []
+        text = new if new is not None else settings.read_settings_text(folder)
+    except (OSError, ValueError):  # a non-UTF-8 config: named where the scope is read
+        text = ""
     try:
-        sections = integrations.rules_sections(integrations.find_integrations(
-            folder, home if home is not None else os.path.expanduser("~")), listed)
+        sections = rules_sections(folder, home if home is not None else os.path.expanduser("~"), text)
     except integrations.IntegrationError as e:
         print("%s; nothing written" % e)
         return 1

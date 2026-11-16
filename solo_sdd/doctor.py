@@ -1,7 +1,7 @@
 """solo-sdd doctor: environment checks, one line each: `ok|warn|fail <what>: <detail>`."""
 import datetime, json, os, re, shutil, subprocess, sys
 
-from solo_sdd import hooks, integration_run, integrations, keywords, layout, process_format, providers, settings
+from solo_sdd import hooks, init, integration_run, integrations, keywords, layout, process_format, providers, resources, settings
 
 
 def _version(text):
@@ -329,11 +329,42 @@ def _integrations(folder=".", home=None):
         yield ("warn" if missing else "ok"), "integration " + name, detail + (", command " + f["command"] if e["source"] == "project" else "")
 
 
+def _project_rules(folder=".", home=None):
+    """Inside a project with rules.scope project: the project-rules line by the decision init writes by, writing
+    nothing; under global scope, outside a project or with a broken settings file (named by _integrations) none."""
+    tree = process_format.find_tree(folder)
+    if tree is None:
+        return
+    root = str(tree.parent)
+    try:
+        text = settings.read_settings_text(root)
+        if settings.read_settings(root)["rules.scope"][0] != "project":
+            return
+        sections = init.rules_sections(root, home if home is not None else os.path.expanduser("~"), text)
+    except integrations.IntegrationError as e:  # a ValueError: caught first
+        yield "warn", "project-rules", "%s; the block is not checked" % e
+        return
+    except (OSError, ValueError):
+        return
+    outcome, detail, _, _ = init.rules_state(root, "project", sections)
+    rules = os.path.join(resources.ROOT, "global", "AGENTS.md")
+    if outcome == "ok":
+        yield "ok", "project-rules", "the solo-sdd block in %s is current" % init.RULES
+    elif outcome == "updated":
+        yield "warn", "project-rules", "the solo-sdd block in %s is from an older solo-sdd; refresh: solo-sdd init" % init.RULES
+    elif outcome == "created":
+        yield "warn", "project-rules", "%s has no solo-sdd block; solo-sdd init writes it" % init.RULES
+    elif outcome == "drift":
+        yield "warn", "project-rules", "%s: %s, kept as is; the rules of this version: %s" % (init.RULES, detail, rules)
+    else:
+        yield "warn", "project-rules", detail
+
+
 def rows():
     """[(level, name, detail)] of every check, printing nothing; the settings screen shows them too."""
     state = layout.load_state()
     return [*_python(), *_layout(state), *_hooks(state), *_policy(state), *_hook_errors(), *_guard(), *_sandbox(), *_depth(), *_source(state), *_providers(state), *_gh(), *_agents(), *_integrations(),
-            *_rules_size()]
+            *_project_rules(), *_rules_size()]
 
 
 def run():
