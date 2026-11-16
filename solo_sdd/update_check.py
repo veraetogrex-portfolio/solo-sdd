@@ -3,7 +3,7 @@
 Only `check(network=True)` asks a registry, and only through `fetch`; every other command reads the cache at most.
 No text of a registry answer but a version of the form N.N.N in ASCII digits is kept, shown or put into a command.
 """
-import http.client, json, os, re, socket, subprocess, sys, time, urllib.error, urllib.request
+import http.client, json, os, re, socket, subprocess, sys, threading, time, urllib.error, urllib.request
 
 from solo_sdd import __version__, layout
 
@@ -73,7 +73,7 @@ def save(cache):
     target = path()
     try:
         os.makedirs(os.path.dirname(target), exist_ok=True)
-        tmp = "%s.%d.tmp" % (target, os.getpid())
+        tmp = "%s.%d.%d.tmp" % (target, os.getpid(), threading.get_ident())  # the menu's check thread saves too
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(cache, f)
         os.replace(tmp, target)
@@ -81,8 +81,12 @@ def save(cache):
         pass
 
 
+def env_off():
+    return os.environ.get(OFF, "") not in ("", "0")
+
+
 def off_reason(cache=None):
-    if os.environ.get(OFF, "") not in ("", "0"):
+    if env_off():
         return "%s=%s" % (OFF, "1" if os.environ[OFF] == "1" else "set")
     if (load() if cache is None else cache).get("off"):
         return "switched off in the Machine section"
@@ -90,18 +94,34 @@ def off_reason(cache=None):
 
 
 def fetch(url):
-    """The only network call: the answer's bytes, at most LIMIT + 1 of them, within TIMEOUT seconds in all."""
-    deadline = time.monotonic() + TIMEOUT
+    """The only network call: the answer's bytes, at most LIMIT + 1 of them; `ask` bounds its whole time."""
     with urllib.request.urlopen(url, timeout=TIMEOUT) as r:
         body = b""
         while len(body) <= LIMIT:
-            if time.monotonic() > deadline:
-                raise TimeoutError
             chunk = r.read1(65536)
             if not chunk:
                 break
             body += chunk
     return body
+
+
+def bounded(url):
+    """fetch within TIMEOUT seconds in all, the name lookup included: a later answer is dropped with its thread."""
+    got = {}
+
+    def work():
+        try:
+            got["body"] = fetch(url)
+        except BaseException as e:  # noqa: BLE001 handed to the caller's thread
+            got["error"] = e
+    worker = threading.Thread(target=work, daemon=True)
+    worker.start()
+    worker.join(TIMEOUT)
+    if worker.is_alive():
+        raise TimeoutError
+    if "error" in got:
+        raise got["error"]
+    return got["body"]
 
 
 def parse(body, registry):
@@ -122,7 +142,7 @@ def ask(registry):
     """(version, None) or (None, one of REASONS): no text of the answer or of its error goes further."""
     host, tail = REGISTRIES[registry]
     try:
-        version = parse(fetch(os.environ.get(ADDRESS, host).rstrip("/") + tail), registry)
+        version = parse(bounded(os.environ.get(ADDRESS, host).rstrip("/") + tail), registry)
     except urllib.error.HTTPError:
         return None, REASONS[2]
     except urllib.error.URLError as e:

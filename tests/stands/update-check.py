@@ -4,14 +4,14 @@
 Everything lives in one temporary folder T, removed at the end:
   - HOME is T/home; a named pipe under a file:// address stands in for PyPI (the address through SOLO_SDD_REGISTRY),
    logging every read as a request;
-  - T/home/.local/share/uv/tools/solo-sdd is a virtual environment holding solo-sdd 0.2.0 laid out from this tree as
+  - HOME/.local/share/uv/tools/solo-sdd is a virtual environment holding solo-sdd 0.2.0 laid out from this tree as
     the wheel lays it out (solo_sdd/ with its data/ folder), so the install method is uv;
   - a fake `uv` first on PATH logs its arguments and replaces that package with a 0.3.0 build of the same tree.
 The menu runs from that environment on a pseudo-terminal (the vt100 emulator of tests/stands/settings-tui.py): every
 row at 120x40, the menu rows also at 40x12 and both with NO_COLOR=1.
 Prints one PASS or FAIL line per row and `SUMMARY: all rows passed`, exit 1 on a failure.
 """
-import fcntl, importlib.util, json, os, re, shutil, subprocess, sys, tempfile, termios, threading, time
+import errno, fcntl, importlib.util, json, os, re, shutil, subprocess, sys, tempfile, termios, threading, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
@@ -50,25 +50,41 @@ class Registry:
         self.body, self.delay, self.stopped, self.log, self.running = b"", 0, False, [], True
         threading.Thread(target=self.serve, daemon=True).start()
 
+    def writer(self):
+        """A write end when a reader has the pipe open, else None (ENXIO: no reader)."""
+        try:
+            return os.open(self.pipe, os.O_WRONLY | os.O_NONBLOCK)
+        except OSError as e:
+            if e.errno != errno.ENXIO:
+                raise
+            return None
+
     def serve(self):
         while self.running:
-            with open(self.pipe, "wb") as f:  # returns when a reader opens the pipe
-                if not self.running:
-                    return
-                self.log.append("/pypi/solo-sdd/json")
-                time.sleep(self.delay)
+            fd = self.writer()
+            if fd is None:
+                time.sleep(0.05)
+                continue
+            self.log.append("/pypi/solo-sdd/json")  # one reader: one request
+            fcntl.fcntl(fd, fcntl.F_SETFL, fcntl.fcntl(fd, fcntl.F_GETFL) & ~os.O_NONBLOCK)
+            time.sleep(self.delay)
+            with os.fdopen(fd, "wb") as f:
                 try:
                     f.write(b"" if self.stopped else self.body)
                 except BrokenPipeError:  # the reader stopped at its size limit
                     pass
+            while self.running:  # the same reader is not a second request: wait until it has closed the pipe
+                fd = self.writer()
+                if fd is None:
+                    break
+                os.close(fd)
+                time.sleep(0.05)
 
     def answer(self, version=None, body=None):
         self.body = body if body is not None else json.dumps({"info": {"version": version}}).encode()
 
     def close(self):
         self.running = False
-        with open(self.pipe, "rb"):  # wakes the writer waiting for a reader
-            pass
 
 
 def build(dest, version):

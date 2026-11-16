@@ -507,9 +507,7 @@ class Screen:
                 text = "[%s] agent %s%s" % ("x" if on else " ", name, "  detected" if name in m["detected"] else "")
             elif kind == "updates":
                 on = was = m["updates"]
-                text = "[%s] update check: ask for a newer solo-sdd at most once a day%s" % (
-                    "x" if on else " ", " (off while %s is set)" % update_check.OFF if os.environ.get(update_check.OFF, "")
-                    not in ("", "0") else "")
+                text = "[%s] update check%s" % ("x" if on else " ", " (off by env)" if update_check.env_off() else "")
             else:
                 on, was = self.want[kind], m[kind]
                 text = "[%s] %s" % ("x" if on else " ", "hooks in ~/.claude/settings.json" if kind == "hooks"
@@ -520,7 +518,8 @@ class Screen:
         body = head + ["Machine: changes every project's agents" if compact else
                        "Machine: these change every project's agents, through install and uninstall"] + gap
         whole = (info[self.mpos - len(items)] if self.mpos >= len(items) else
-                 "Space switches it at once: the home menu and doctor stop or start asking the registry"
+                 "Space switches it at once: the home menu and doctor ask for a newer solo-sdd at most once a day, "
+                 "or never" + ("; %s is set, so the check stays off" % update_check.OFF if update_check.env_off() else "")
                  if items[self.mpos][0] == "updates" else
                  "Space switches it; a applies the switches through install and uninstall")
         fits, wrapped = max(1, self.room - len(body) - len(gap) - 1), self.wrap(whole)
@@ -915,7 +914,7 @@ class Home:
                 if entry == "Changes":
                     process_cli.list_cmd(self.tree, False, False)
                 elif entry == "Doctor":
-                    doctor.run()
+                    doctor.run(network=False)
                 else:
                     print(cli.COMMANDS)
         except (layout.BrokenState, layout.BadTargets, OSError, ValueError) as e:  # what cli.main catches

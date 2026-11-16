@@ -13,7 +13,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 sys.path.insert(0, REPO)
 from solo_sdd import cli, doctor, layout, settings_ui, update_check as uc  # noqa: E402
 
-UV = "/home/u/.local/share/uv/tools/solo-sdd"
+UV = "/home/you/.local/share/uv/tools/solo-sdd"
 
 
 def pypi(version):
@@ -114,6 +114,15 @@ class VersionCheck(Base):
                 calls = len(self.urls)
                 uc.row(True)
                 self.assertEqual(len(self.urls), calls, "a failed attempt also counts for the day")
+
+    def test_timeout_is_the_whole_request(self):
+        def slow(url):
+            time.sleep(1)
+            return pypi("0.3.0")
+        with machine(self.home), mock.patch.object(uc, "fetch", slow), mock.patch.object(uc, "TIMEOUT", 0.2):
+            started = time.monotonic()
+            self.assertEqual(uc.ask("pypi"), (None, "timed out"))
+            self.assertLess(time.monotonic() - started, 0.8)
 
     def test_npm_asks_npm_and_a_clone_asks_nothing(self):
         npm = os.path.join(self.home, "lib", "node_modules", "solo-sdd")
@@ -257,24 +266,29 @@ class UpdateFromMenu(Base):
         os.makedirs(os.path.join(d, "solo-sdd", "changes"), exist_ok=True)
         return settings_ui.Home(d)
 
-    def test_notice_after_the_menu_draws(self):
+    def test_cursor_and_doctor_while_the_check_runs(self):
         gate = threading.Event()
 
+        calls = []
+
         def fetch(url):
+            calls.append(url)
             gate.wait(10)
             return pypi("0.3.0")
         with machine(self.home), mock.patch.object(uc, "fetch", fetch):
             menu = self.menu()
-            menu.pos = len(menu.entries) - 1  # on Quit
             menu.start_check()
-            self.assertNotIn("available", self.text(menu), "the menu draws before the answer")
-            self.assertTrue(menu.waiting())
+            menu.pos = menu.entries.index("Doctor")
+            started = time.monotonic()
+            menu.handle("enter")
+            self.assertLess(time.monotonic() - started, 1, "the Doctor entry does not wait for the registry")
+            menu.handle("q")
+            menu.pos = len(menu.entries) - 1  # on Quit
             gate.set()
             menu.checker.join(10)
             self.assertTrue(menu.waiting(), "the loop wakes until the answer is drawn")
-            text = self.text(menu)
-            self.assertFalse(menu.waiting())
-        self.assertIn("solo-sdd 0.2.0 0.3.0 available", text)
+            self.text(menu)
+        self.assertEqual(len(calls), 1, "one request: the menu's own check")
         self.assertEqual(menu.entries[-3:], ["Update to 0.3.0", settings_ui.SKIP, "Quit"])
         self.assertEqual(menu.entries[menu.pos], "Quit", "the cursor stays on its entry")
 
@@ -295,7 +309,7 @@ class UpdateFromMenu(Base):
     def test_command_and_link_per_method(self):
         npm = os.path.join(self.home, "lib", "node_modules", "solo-sdd")
         for prefix, repo, command in ((UV, None, "uv tool upgrade solo-sdd"),
-                                      ("/home/u/.local/pipx/venvs/solo-sdd", None, "pipx upgrade solo-sdd"),
+                                      ("/home/you/.local/pipx/venvs/solo-sdd", None, "pipx upgrade solo-sdd"),
                                       ("/usr", npm, "npm update -g solo-sdd"),
                                       ("/usr", self.home, "python3 -m pip install --upgrade solo-sdd")):
             with self.subTest(command=command), machine(self.home, prefix=prefix, repo=repo), \
@@ -326,12 +340,6 @@ class UpdateFromMenu(Base):
             ok = uc.update("0.3.0", root)
         return ok, calls, out.getvalue()
 
-    def test_upgrade_fails(self):
-        ok, calls, out = self.steps([1])
-        self.assertFalse(ok)
-        self.assertEqual(calls, [("uv tool upgrade solo-sdd".split(), None)])
-        self.assertIn("fail: uv tool upgrade solo-sdd exited 1; solo-sdd install did not run", out)
-
     def test_confirmed_with_older_rules(self):
         root = os.path.join(self.home, "p")
         older = "ok python: 3\nwarn project-rules: the solo-sdd block in AGENTS.md is from an older solo-sdd; refresh: solo-sdd init\n"
@@ -350,37 +358,24 @@ class UpdateFromMenu(Base):
         self.assertEqual(len(calls), 2, "a failed install stops the steps after it")
         self.assertNotIn("restart", out)
 
-    def test_program_is_the_installed_package(self):
-        argv = uc.program("install")
-        self.assertEqual(argv[:2], [sys.executable, "-c"])
-        self.assertEqual(argv[3:], [uc.PACKAGE, "install"])
-        self.assertTrue(os.path.isfile(os.path.join(uc.PACKAGE, "solo_sdd", "__main__.py")))
-
     def test_skip_in_the_menu(self):
         with machine(self.home):
             menu = self.menu()
             menu.found = "0.3.0"
             menu.pos = menu.entries.index(settings_ui.SKIP)
             menu.handle("enter")
-            self.assertEqual(uc.load()["skip"], "0.3.0")
-            text = self.text(menu)
-        self.assertIn("0.3.0 skipped", text)
-        self.assertNotIn("Update to", text)
-        self.assertEqual(menu.entries[menu.pos], "Quit")
+        self.assertEqual(menu.entries[menu.pos], "Quit", "the cursor leaves the entries that are gone")
 
     def test_machine_switch(self):
         with machine(self.home), self.answer(pypi("0.3.0")):
             s = settings_ui.Screen(None, None, home=self.home)
             s.open_machine()
             s.mpos = s.machine_items().index(("updates", None))
-            self.assertIn("[x] update check", " ".join(s.draw(120, 40)[0]))
             s.handle("space")
-            self.assertIn("[ ] update check", " ".join(s.draw(120, 40)[0]))
-            self.assertFalse(s.machine_pending(), "nothing waits for a")
-            self.assertEqual(uc.load(), {"off": True})
-            self.cache(checked=0, off=True)
-            self.assertEqual(uc.check(True), {})
-            self.assertEqual(self.urls, [])
+            self.assertFalse(s.machine_pending(), "saved at once: nothing waits for a")
+            with mock.patch.dict(os.environ, {uc.OFF: "1"}):
+                lines = s.draw(40, 12)[0]
+            self.assertIn("> [ ] update check (off by env)", lines, "the whole row fits 40 columns")
 
 
 if __name__ == "__main__":

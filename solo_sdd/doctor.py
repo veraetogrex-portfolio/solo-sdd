@@ -377,8 +377,10 @@ def rows(network=False):
             *_project_rules(), *_rules_size()]
 
 
-def run():
-    rows_ = rows(network=True)
+def run(network=True):
+    """`doctor`: asks the registry when the cache is a day old; the home menu's Doctor entry reads the cache only, its
+    own check runs off the drawing thread."""
+    rows_ = rows(network=network)
     for level, name, detail in rows_:
         print(f"{level} {name}: {detail}")
     return 1 if any(r[0] == "fail" for r in rows_) else 0
