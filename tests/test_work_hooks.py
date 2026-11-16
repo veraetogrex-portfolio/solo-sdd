@@ -13,6 +13,9 @@ from hypothesis import given, settings, strategies as st
 
 import marks
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
+from solo_sdd import hooks as sh_hooks  # noqa: E402
+
 HOOK = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "global", "work_hooks.py")
 PY = "/usr/bin/python3"
 # Requirement: Hook self-check is location independent. Projects for the write checks are outside the working copy and outside the hook's TMP_ROOTS:
@@ -813,6 +816,13 @@ class Stop(HookCase):
         assert wh.wrong_language(ru, "en") == "English" and wh.wrong_language(en, "en") is None
         assert wh.wrong_language("Short English reply.", "ru") is None, "under 80 letters: no check"
         assert wh.wrong_language("`" + "code " * 40 + "` " + ru, "ru") is None, "code is not counted"
+        ru2 = "\u0412\u043e\u0442 \u0447\u0435\u0440\u043d\u043e\u0432\u0438\u043a.\n\u041f\u0440\u043e\u0432\u0435\u0440\u044c \u0435\u0433\u043e.\n"
+        draft = "Release notes draft for the agent folders update, written in English for the public readers. " * 3
+        assert wh.wrong_language(ru2 + ":::writing\n" + draft + "\n", "ru") == "Russian", "an unclosed writing block is counted"
+        quote = "> " + draft[:100] + "\n>" + draft[100:200] + "\n"
+        assert wh.wrong_language(ru2 + quote + ru2, "ru") is None, "Quoted English lines are not counted"
+        assert wh.wrong_language(ru2 + quote.replace(">", "") + ru2, "ru") == "Russian", "the same lines without > are counted"
+        assert wh.wrong_language(ru2 + "> ok\n" + draft, "ru") == "Russian", "a quote line ends at its line break"
         stop = {"session_id": "S-lang", "cwd": H, "last_assistant_message": en}
         assert run("stop", stop) is None, "unset: an English reply passes"
         o = run("stop", dict(stop, session_id="S-lang-ru"), dict(ENV, SOLO_SDD_REPLY_LANG="ru"))
@@ -838,6 +848,130 @@ class Stop(HookCase):
         assert run("stop", dict(at, session_id="S-cfg-bad"), bare) is None, "a broken file: the defaults"
         assert "solo-sdd/config:1" in open(elog).read(), "a broken file is logged"
         os.remove(elog)
+
+
+RU_TRANSLATE = "\u041f\u0435\u0440\u0435\u0432\u0435\u0434\u0438 \u043d\u0430 \u0430\u043d\u0433\u043b\u0438\u0439\u0441\u043a\u0438\u0439"
+RU_QUESTION = "\u0410 \u0447\u0442\u043e \u0441 \u0442\u0435\u0441\u0442\u0430\u043c\u0438?"
+EN_400 = ("The change rolls the hooks out to every agent folder on this computer and the tests pass on both runners. " * 4)[:400]
+
+
+def human(text, origin=True):
+    """A user-written entry as Claude Code writes it: `origin.kind` human; an older transcript has no origin."""
+    return dict({"type": "user", "message": {"role": "user", "content": text}}, **({"origin": {"kind": "human"}} if origin else {}))
+
+
+def tool_result(text):
+    return {"type": "user", "toolUseResult": {"stdout": text},
+            "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t1", "content": text}]}}
+
+
+def hook_feedback(text):
+    return {"type": "user", "isMeta": True, "message": {"role": "user", "content": "Stop hook feedback:\n" + text}}
+
+
+def queued(text, kind="human"):
+    """A message the user typed while the agent worked, as Claude Code stores it: a queued_command attachment."""
+    return {"type": "attachment", "attachment": {"type": "queued_command", "prompt": text, "commandMode": "prompt",
+                                                 "origin": {"kind": kind}}}
+
+
+def said(text):
+    return {"type": "assistant", "message": {"content": [{"type": "text", "text": text}]}}
+
+
+class RequestedTranslation(HookCase):
+    """Requirement: Requested translation passes. The reply language is `ru` from solo-sdd/config of REPO."""
+
+    def setUp(self):
+        super().setUp()
+        os.makedirs(os.path.join(REPO, "solo-sdd"))
+        open(os.path.join(REPO, "solo-sdd/config"), "w").write("reply.language: ru\n")
+        self.n = 0
+
+    def stop(self, *entries):
+        self.n += 1
+        tr = os.path.join(H, "tr-%d.jsonl" % self.n)
+        open(tr, "w").write("".join(json.dumps(e) + "\n" for e in entries))
+        return run("stop", {"session_id": "S-tr-%d" % self.n, "cwd": REPO, "transcript_path": tr, "last_assistant_message": EN_400})
+
+    def test_requested_translation_passes_translation_asked_in_russian(self):
+        assert self.stop(human(RU_TRANSLATE)) is None
+        assert self.stop(human([{"type": "text", "text": RU_TRANSLATE.upper()}])) is None, "text parts, any case"
+        assert self.stop(human("Now give it to me in English, please.")) is None
+        assert self.stop(human("Translate the summary.", origin=False)) is None, "an older transcript without origin"
+        limit = {"type": "user", "turnOrigin": "sdk", "message": {"role": "user", "content": "I hit my usage limit. Please continue."}}
+        assert self.stop(human(RU_TRANSLATE), said(EN_400), limit) is None, "a harness continue after the request"
+        assert self.stop(human(RU_TRANSLATE), said(EN_400), human("[Request interrupted by user]", origin=False)) is None
+        assert self.stop(human(RU_QUESTION), queued(RU_TRANSLATE)) is None, "a request typed while the agent worked"
+        assert self.stop(human(RU_QUESTION), queued([{"type": "text", "text": "translate it"}])) is None
+
+    def test_requested_translation_passes_a_tool_result_is_not_the_user(self):
+        o = self.stop(human(RU_QUESTION), tool_result("translate"))
+        assert o and "Rewrite it in Russian" in o["reason"], o
+        o = self.stop(human(RU_QUESTION), hook_feedback("The final reply is not in Russian. translate"))
+        assert o and "Rewrite it in Russian" in o["reason"], ("hook feedback is not the user", o)
+        o = self.stop(human(RU_QUESTION), human("<system-reminder>\ntranslate\n</system-reminder>"))
+        assert o and "Rewrite it in Russian" in o["reason"], ("a harness reminder is not the user", o)
+        o = self.stop(human(RU_QUESTION), dict(human("translate"), origin={"kind": "task-notification"}))
+        assert o and "Rewrite it in Russian" in o["reason"], ("a task notification is not the user", o)
+        o = self.stop(human(RU_QUESTION), {"type": "user", "turnOrigin": "sdk", "message": {"role": "user", "content":
+                      '<cross-session-message from="x">translate the notes</cross-session-message>'}})
+        assert o and "Rewrite it in Russian" in o["reason"], ("a message of another session is not the user", o)
+        o = self.stop(human(RU_QUESTION), human("<local-command-stdout>translate</local-command-stdout>", origin=False))
+        assert o and "Rewrite it in Russian" in o["reason"], ("an older harness entry is not the user", o)
+        for odd in ({"type": "user", "message": "translate"}, human(7), human([{"type": "text", "text": 7}]), "translate", [1]):
+            o = self.stop(human(RU_QUESTION), odd)
+            assert o and "Rewrite it in Russian" in o["reason"], ("an entry of another shape", odd, o)
+        o = self.stop(human(RU_QUESTION), queued("translate", kind="peer"))
+        assert o and "Rewrite it in Russian" in o["reason"], ("a queued message of another agent is not the user", o)
+        o = self.stop(human(RU_TRANSLATE), said(EN_400), queued(RU_QUESTION))
+        assert o and "Rewrite it in Russian" in o["reason"], ("a question typed after the request, while the agent worked", o)
+        o = self.stop(human(RU_TRANSLATE), said(EN_400), human([{"type": "image", "source": {}}]))
+        assert o and "Rewrite it in Russian" in o["reason"], ("an image-only message is the last user message", o)
+
+
+EN_WINDOW = [{"question": "Roll out the change to the agent folders now?", "header": "Rollout", "multiSelect": False,
+              "options": [{"label": "Yes, roll out", "description": "Run sync.py push and update every agent folder"},
+                          {"label": "Not now", "description": "Keep the change in the branch until later"}]}]
+RU_WINDOW = [{"question": "\u0420\u0430\u0441\u043a\u0430\u0442\u0438\u0442\u044c \u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u0435 "
+                          "\u0432 `~/.claude/hooks/work_hooks.py` \u0441\u0435\u0439\u0447\u0430\u0441?", "header": "Rollout",
+              "options": [{"label": "\u0414\u0430, \u0440\u0430\u0441\u043a\u0430\u0442\u0438\u0442\u044c",
+                           "description": "\u041e\u0431\u043d\u043e\u0432\u0438\u0442\u044c \u0432\u0441\u0435 \u043f\u0430\u043f\u043a\u0438 "
+                                          "\u0430\u0433\u0435\u043d\u0442\u043e\u0432 \u043d\u0430 \u044d\u0442\u043e\u043c \u043a\u043e\u043c\u043f\u044c\u044e\u0442\u0435\u0440\u0435"},
+                          {"label": "\u041d\u0435 \u0441\u0435\u0439\u0447\u0430\u0441",
+                           "description": "\u041e\u0441\u0442\u0430\u0432\u0438\u0442\u044c \u0432 \u0432\u0435\u0442\u043a\u0435 \u0434\u043e \u0440\u0435\u0448\u0435\u043d\u0438\u044f"}]}]
+
+
+class QuestionWindow(HookCase):
+    """Requirement: Question window language. The `guard` hook on an AskUserQuestion call in REPO."""
+
+    def setUp(self):
+        super().setUp()
+        os.makedirs(os.path.join(REPO, "solo-sdd"))
+        self.cfg = os.path.join(REPO, "solo-sdd/config")
+        open(self.cfg, "w").write("reply.language: ru\n")
+
+    def ask(self, questions, env=None, **extra):
+        return run("guard", dict({"session_id": "S-ask", "cwd": REPO, "tool_name": "AskUserQuestion",
+                                  "tool_input": {"questions": questions}}, **extra), env)
+
+    def test_question_window_language_the_owner_language_and_length(self):
+        assert self.ask([{"question": "Roll out now?", "options": [{"label": "Yes"}, {"label": "No"}]}]) is None, "under 80 letters"
+        open(self.cfg, "w").write("reply.language: en\n")
+        assert self.ask(EN_WINDOW) is None, "an English window for an English owner"
+        o = self.ask(RU_WINDOW)["hookSpecificOutput"]
+        assert o["permissionDecision"] == "deny" and "Rewrite the questions and options in English" in o["permissionDecisionReason"], o
+
+    def test_question_window_language_a_broken_input(self):
+        for bad in ("Roll out the change to the agent folders now? " * 3, [None, "x", {"options": "Yes"}], {"q": 1}, None):
+            assert self.ask(bad) is None, bad
+        assert run("guard", {"session_id": "S-ask", "cwd": REPO, "tool_name": "AskUserQuestion", "tool_input": "x"}) is None
+
+    def test_question_window_language_a_translation_request_does_not_open_the_window(self):
+        tr = os.path.join(H, "tr-ask.jsonl")
+        open(tr, "w").write(json.dumps(human(RU_TRANSLATE)) + "\n")
+        o = self.ask(EN_WINDOW, transcript_path=tr)
+        assert o and o["hookSpecificOutput"]["permissionDecision"] == "deny", o
 
 
 GATE = "name: marker-check\nabout: refuses a marker line\npoints: checks\ncommand: true\napplies: *.py\nmode: gate\n"
@@ -1234,6 +1368,28 @@ class Registration(unittest.TestCase):
             assert second[:at] + second[at + 1:] == [x for x in src if not ours(x)], (allow, second)
         finally:
             shutil.rmtree(home)
+
+
+    @settings(max_examples=200, deadline=None)
+    @given(st.sampled_from(["none", "empty", "no-pre", "pre"]),
+           st.lists(st.sampled_from(["Bash", "Read|Write", "*", "AskUserQuestion", "SubagentHandback"]), max_size=3),
+           st.sampled_from([None, "Bash|Read|Grep|Write|Edit|MultiEdit|NotebookEdit|Agent|EnterWorktree|SubagentHandback",
+                            "Bash|AskUserQuestion|SubagentHandback|AskUserQuestion", "AskUserQuestion"]),
+           st.lists(st.sampled_from(["Bash", "Edit", "AskUserQuestion"]), max_size=3))
+    def test_question_guard_registration_property(self, shape, before, guard, after):
+        """Requirement: Question guard registration. apply twice equals apply once; the guard matcher holds
+        AskUserQuestion and SubagentHandback once; foreign PreToolUse entries keep their order."""
+        foreign = lambda ms, tag: [{"matcher": m, "hooks": [{"type": "command", "command": "foreign-%s-%d" % (tag, i)}]} for i, m in enumerate(ms)]
+        pre = foreign(before, "b") + ([{"matcher": guard, "hooks": [sh_hooks._cmd("guard", timeout=10)]}] if guard else []) + foreign(after, "a")
+        s = {} if shape == "none" else {"hooks": {}} if shape == "empty" else {"hooks": {"Stop": []}} if shape == "no-pre" \
+            else {"hooks": {"PreToolUse": pre}}
+        once = sh_hooks.apply(s)[0]
+        assert sh_hooks.apply(once)[0] == once, (s, once)
+        got = once["hooks"]["PreToolUse"]
+        guards = [g["matcher"].split("|") for g in got if sh_hooks._ours(g) and g["hooks"][0]["command"].endswith('"$f" guard')]
+        assert len(guards) == 1 and guards[0].count("AskUserQuestion") == 1 and guards[0].count("SubagentHandback") == 1, guards
+        mine = [g for g in pre if not sh_hooks._ours(g)] if shape == "pre" else []
+        assert [g for g in got if not sh_hooks._ours(g) and g != sh_hooks.GUARD] == mine, (pre, got)
 
 
 # ---------- guard: text is not a command ----------

@@ -2169,6 +2169,24 @@ def status_problems(message, cwd):
     return archived_problems(f, cwd)
 
 
+def guard_question(ti, cwd):
+    """An AskUserQuestion window in the reply language: questions, option labels and descriptions together; an input
+    of another shape passes."""
+    qs = ti.get("questions") if isinstance(ti, dict) else None
+    if not isinstance(qs, list):
+        return
+    parts = []
+    for q in qs:
+        if isinstance(q, dict):
+            parts.append(q.get("question"))
+            for o in q.get("options") if isinstance(q.get("options"), list) else []:
+                if isinstance(o, dict):
+                    parts += [o.get("label"), o.get("description")]
+    lang = wrong_language("\n".join(p for p in parts if isinstance(p, str)), reply_language(git_root(cwd) or cwd))
+    if lang:
+        deny("The question window is not in %s. Rewrite the questions and options in %s." % (lang, lang))
+
+
 def cmd_guard(inp):
     tool, ti = inp.get("tool_name"), inp.get("tool_input") or {}
     sid, cwd = inp.get("session_id", ""), os.path.realpath(inp.get("cwd") or os.getcwd())
@@ -2195,6 +2213,8 @@ def cmd_guard(inp):
         note_claim_cmd(inp, cmd)
     elif tool == "Agent":
         guard_models_agent(ti, bool(inp.get("agent_id")))
+    elif tool == "AskUserQuestion":
+        guard_question(ti, cwd)
     elif tool == "SubagentHandback":
         problems = status_problems(ti.get("message") or "", cwd)
         if problems:
@@ -2279,27 +2299,81 @@ def scan_transcript(path, signs):
     return edited, browser, pushed
 
 
-def last_text(inp):
-    if inp.get("last_assistant_message"):
-        return inp["last_assistant_message"]
+def tail_entries(path):
+    """The transcript entries of the last 3 MB, newest first; an unreadable file or line gives none."""
     try:
-        with open(inp["transcript_path"], "rb") as f:
+        with open(path, "rb") as f:
             f.seek(0, 2)
             f.seek(max(0, f.tell() - 3000000))
             lines = f.read().splitlines()
     except Exception:
-        return ""
+        return
     for raw in reversed(lines):
         try:
             d = json.loads(raw)
         except Exception:
             continue
+        if isinstance(d, dict):
+            yield d
+
+
+def part_texts(c):
+    """Text of a message content: a string, or the string `text` of its text parts."""
+    if isinstance(c, str):
+        return [c]
+    return [p["text"] for p in c if isinstance(p, dict) and p.get("type") == "text" and isinstance(p.get("text"), str)] \
+        if isinstance(c, list) else []
+
+
+def entry_texts(d):
+    m = d.get("message")
+    return part_texts(m.get("content") if isinstance(m, dict) else None)
+
+
+def last_text(inp):
+    if inp.get("last_assistant_message"):
+        return inp["last_assistant_message"]
+    for d in tail_entries(inp.get("transcript_path") or ""):
         if d.get("type") == "assistant":
-            texts = [p.get("text", "") for p in (d.get("message") or {}).get("content") or []
-                     if isinstance(p, dict) and p.get("type") == "text"]
+            texts = entry_texts(d)
             if texts:
                 return "\n".join(texts)
     return ""
+
+
+def user_turn(d):
+    """(origin kind or None, content) of a user entry or of a message queued while the agent worked; else None."""
+    if d.get("type") == "user" and not (d.get("isMeta") or d.get("isCompactSummary") or d.get("toolUseResult")):
+        origin, m = d.get("origin"), d.get("message")
+        return (origin.get("kind") if isinstance(origin, dict) else d.get("turnOrigin"),
+                m.get("content") if isinstance(m, dict) else None)
+    a = d.get("attachment")
+    if d.get("type") == "attachment" and isinstance(a, dict) and a.get("type") == "queued_command":
+        origin = a.get("origin")
+        return origin.get("kind") if isinstance(origin, dict) else None, a.get("prompt")
+    return None
+
+
+def last_user_text(path):
+    """The last message the user wrote: a user entry that is no tool result, hook feedback (isMeta), compact summary
+    or system reminder only, or a message queued while the agent worked, whose origin (`origin.kind`, else
+    `turnOrigin`) is human; an older entry with neither is the user unless it starts with a harness marker (`<…>`
+    output or notification, `[Request interrupted…]`). A message of images only is the user's, with no text."""
+    for d in tail_entries(path):
+        turn = user_turn(d)
+        if not turn or turn[0] not in (None, "human"):
+            continue
+        kind, content = turn
+        text = re.sub(r"<system-reminder>.*?</system-reminder>", "", "\n".join(part_texts(content)), flags=re.S).strip()
+        if text and not (kind is None and text[0] in "<["):
+            return text
+        if not text and isinstance(content, list) and any(isinstance(p, dict) and p.get("type") == "image" for p in content):
+            return ""
+    return ""
+
+
+# translat, in English, the Cyrillic stems angl- and perev(o|e|yo)d-
+TRANSLATION = re.compile(r"translat|\bin\s+english\b|\u0430\u043d\u0433\u043b|\u043f\u0435\u0440\u0435\u0432[\u043e\u0435\u0451]\u0434", re.I)
 
 
 CYRILLIC = "[\u0430-\u044f\u0451\u0410-\u042f\u0401]"
@@ -2311,7 +2385,8 @@ def wrong_language(text, lang):
     if lang not in REPLY_LANGS:
         return None
     name, letters, share = REPLY_LANGS[lang]
-    t = re.sub(r"```.*?```|`[^`]*`|https?://\S+|(?:~|\.{0,2})?/[\w./-]+", " ", text, flags=re.S)
+    t = re.sub(r"```.*?```|^:::writing.*?^:::[ \t]*$|^[ \t]*>[^\n]*$|`[^`]*`|https?://\S+|(?:~|\.{0,2})?/[\w./-]+", " ", text,
+               flags=re.S | re.M)
     cyr, lat = len(re.findall(CYRILLIC, t)), len(re.findall(r"[A-Za-z]", t))
     own = len(re.findall(letters, t))
     return name if cyr + lat >= 80 and own / float(cyr + lat) < share else None
@@ -2425,6 +2500,8 @@ def cmd_stop(inp):
 
     text = last_text(inp)
     lang = wrong_language(text, reply_language(root or cwd))
+    if lang and TRANSLATION.search(last_user_text(tp)):
+        lang = None
     if lang:
         reasons.append("The final reply is not in %s. Rewrite it in %s." % (lang, lang))
 
