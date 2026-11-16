@@ -9,9 +9,10 @@ import io
 import os
 import sys
 import textwrap
+import threading
 import unicodedata
 
-from solo_sdd import __version__, init, integrations, process_format as pf, settings, setup_detect
+from solo_sdd import __version__, init, integrations, process_format as pf, settings, setup_detect, update_check
 
 MIN_W, MIN_H = 40, 12
 STATE = "~/.local/share/solo-sdd"  # every install and uninstall writes its state and backups here
@@ -362,12 +363,13 @@ class Screen:
         self.machine = {"agents": chosen, "hooks": bool(state.get("_hooks") or state.get("_codex_hooks")),
                         "claude_hooks": bool(state.get("_hooks")), "rules": rules, "counts": counts,
                         "source": state.get("_source"), "version": state.get("_version"), "doctor": checks,
-                        "detected": providers.detected(self.home), "error": None}
+                        "detected": providers.detected(self.home), "error": None,
+                        "updates": not update_check.load().get("off")}
         self.want = {"agents": set(chosen), "hooks": self.machine["hooks"], "rules": rules}
 
     def machine_items(self):
         from solo_sdd import providers
-        return [("agent", n) for n in providers.ALL] + [("hooks", None), ("rules", None)]
+        return [("agent", n) for n in providers.ALL] + [("hooks", None), ("rules", None), ("updates", None)]
 
     def machine_pending(self):
         m, w = self.machine, self.want
@@ -398,6 +400,10 @@ class Screen:
                 self.message = "other is always chosen: it holds ~/.agents/skills and ~/AGENTS.md"
             elif kind == "agent":
                 self.want["agents"] ^= {name}
+            elif kind == "updates":  # no install or uninstall behind it: saved at once
+                self.machine["updates"] = not self.machine["updates"]
+                update_check.switch(self.machine["updates"])
+                self.message = "update check %s" % ("on" if self.machine["updates"] else "off")
             else:
                 self.want[kind] = not self.want[kind]
         elif key == "a" and self.want:
@@ -499,6 +505,11 @@ class Screen:
             if kind == "agent":
                 on, was = name in self.want["agents"], name in m["agents"]
                 text = "[%s] agent %s%s" % ("x" if on else " ", name, "  detected" if name in m["detected"] else "")
+            elif kind == "updates":
+                on = was = m["updates"]
+                text = "[%s] update check: ask for a newer solo-sdd at most once a day%s" % (
+                    "x" if on else " ", " (off while %s is set)" % update_check.OFF if os.environ.get(update_check.OFF, "")
+                    not in ("", "0") else "")
             else:
                 on, was = self.want[kind], m[kind]
                 text = "[%s] %s" % ("x" if on else " ", "hooks in ~/.claude/settings.json" if kind == "hooks"
@@ -509,6 +520,8 @@ class Screen:
         body = head + ["Machine: changes every project's agents" if compact else
                        "Machine: these change every project's agents, through install and uninstall"] + gap
         whole = (info[self.mpos - len(items)] if self.mpos >= len(items) else
+                 "Space switches it at once: the home menu and doctor stop or start asking the registry"
+                 if items[self.mpos][0] == "updates" else
                  "Space switches it; a applies the switches through install and uninstall")
         fits, wrapped = max(1, self.room - len(body) - len(gap) - 1), self.wrap(whole)
         if len(wrapped) > fits:  # Enter shows the rest
@@ -758,8 +771,10 @@ class Screen:
 
 PROJECT = ["Project settings", "Integrations and checklists", "Machine", "Changes", "Doctor", "Commands", "Quit"]
 PREPARE = "Prepare this folder"
+SKIP = "Skip this version"
 MENU_FOOTER = "Up/Down move  Enter open  q quit"
 VIEW_FOOTER = "Up/Down scroll  q back"
+UPDATE_FOOTER = "Up/Down scroll  y update  n back"
 
 
 class Home:
@@ -769,7 +784,37 @@ class Home:
     def __init__(self, folder, home=None):
         self.folder, self.home = os.path.abspath(folder), home
         self.pos, self.sub, self.start, self.view, self.scroll, self.message = 0, None, None, None, 0, ""
+        self.found, self.checker, self.answer, self.applied = None, None, None, True
         self.refresh()
+
+    @property
+    def entries(self):
+        """The folder's entries; with a newer version noticed, Update to it and Skip this version before Quit."""
+        extra = ["Update to " + self.found, SKIP] if self.found else []
+        return self.base[:-1] + extra + self.base[-1:]
+
+    def start_check(self):
+        """The version check off the drawing thread: the menu draws at once, the notice comes when it answers."""
+        def work():
+            try:
+                self.answer = update_check.notice(update_check.check(True))
+            except Exception:  # noqa: BLE001 the check is optional: any failure is no notice
+                self.answer = None
+        self.applied = False
+        self.checker = threading.Thread(target=work, daemon=True)
+        self.checker.start()
+
+    def waiting(self):
+        """True until the check's answer is drawn: the curses loop then wakes without a key."""
+        return self.checker is not None and not self.applied
+
+    def poll(self):
+        """Takes the check's answer on the drawing thread, the cursor kept on the entry it was on."""
+        if self.applied or self.checker is None or self.checker.is_alive():
+            return
+        name = self.entries[self.pos]
+        self.found, self.applied = self.answer, True
+        self.pos = self.entries.index(name) if name in self.entries else min(self.pos, len(self.entries) - 1)
 
     def refresh(self):
         """The header and the entries of the folder as it is now: after a screen or `init` it may have changed."""
@@ -782,13 +827,13 @@ class Home:
                 mode = "unreadable: " + str(e)
             n = len(pf.open_changes(self.tree))
             # the count first: a long unreadable-mode reason is what a cut to two lines drops
-            self.status, self.entries = "%d open change%s, mode %s" % (n, "" if n == 1 else "s", mode), PROJECT
+            self.status, self.base = "%d open change%s, mode %s" % (n, "" if n == 1 else "s", mode), PROJECT
         elif os.path.isdir(os.path.join(self.folder, "openspec")) and not os.path.lexists(
                 os.path.join(self.folder, "solo-sdd")):  # init's own test: it creates nothing here
             self.status = "openspec/ found: solo-sdd import openspec converts it"
-            self.entries = PROJECT[2:3] + PROJECT[4:]
+            self.base = PROJECT[2:3] + PROJECT[4:]
         else:
-            self.status, self.entries = "no solo-sdd/ here", [PREPARE] + PROJECT[2:3] + PROJECT[4:]
+            self.status, self.base = "no solo-sdd/ here", [PREPARE] + PROJECT[2:3] + PROJECT[4:]
         self.pos = min(self.pos, len(self.entries) - 1)
 
     def handle(self, key):
@@ -797,6 +842,14 @@ class Home:
             return None
         if self.sub:
             return self.on_sub(key)
+        self.poll()
+        if self.view and self.view[0].startswith("Update to "):
+            if key == "y":
+                self.view = None
+                return "update"
+            if key in ("n", "q", "esc"):
+                self.view = None
+                return None
         if self.view:
             if key in ("up", "down"):
                 self.scroll = max(0, self.scroll + (1 if key == "down" else -1))
@@ -822,6 +875,23 @@ class Home:
             with contextlib.redirect_stdout(out):
                 init.run(self.folder)  # refuses outside a git repository before any write
             self.message = " ".join(out.getvalue().split())
+            return None
+        if entry.startswith("Update to "):
+            _, hint, _ = update_check.method()
+            version = entry[len("Update to "):]
+            self.view, self.scroll = (entry, [
+                "Runs: " + hint,
+                "Release notes: " + update_check.RELEASES + version,
+                "Nothing runs until y.",
+                "Then: solo-sdd install of the upgraded program; in a project whose rules block is from the older "
+                "rules, solo-sdd init after a second question; then solo-sdd asks to be restarted."]), 0
+            return None
+        if entry == SKIP:
+            update_check.skip(self.found)
+            self.message = "%s skipped: the notice comes back with a newer version" % self.found
+            name = self.entries[self.pos]
+            self.found = None
+            self.pos = self.entries.index(name) if name in self.entries else self.entries.index("Quit")
             return None
         if entry in ("Changes", "Doctor", "Commands"):
             self.view, self.scroll = (entry, self.text_of(entry)), 0
@@ -872,9 +942,12 @@ class Home:
         folder = shown(self.folder)
         if fit(folder, width - 1) != folder:  # one line whatever the path, by columns: its end names the folder
             folder = "..." + fit(folder[::-1], width - 4)[::-1]
-        head = ["solo-sdd " + __version__] + wrap(shown(self.status))[:2] + [folder, ""]
+        self.poll()
+        notice = "  %s available" % self.found if self.found else ""
+        head = ["solo-sdd " + __version__ + notice] + wrap(shown(self.status))[:2] + [folder, ""]
         message = wrap(shown(self.message))[:2] if self.message else []
-        footer = wrap(VIEW_FOOTER if self.view else MENU_FOOTER)
+        updating = self.view and self.view[0].startswith("Update to ")
+        footer = wrap(UPDATE_FOOTER if updating else VIEW_FOOTER if self.view else MENU_FOOTER)
         room = max(2, height - len(head) - len(message) - len(footer))
         if self.view:
             title, text = self.view
@@ -895,9 +968,17 @@ class Home:
 def home(folder="."):
     """Bare `solo-sdd` on a terminal: the menu; Prepare this folder runs the `init` questions off the full screen."""
     menu = Home(folder)
+    menu.start_check()
     try:
-        while run_curses(menu) == "init":
-            init.run(menu.folder)
+        while True:
+            got = run_curses(menu)
+            if got == "init":
+                init.run(menu.folder)
+            elif got == "update":
+                if update_check.update(menu.found, menu.root if menu.tree else None):
+                    return 0  # the program in memory is the old one: it asked to be restarted
+            else:
+                break
             try:
                 input("Enter returns to the menu ")
             except EOFError:
@@ -939,7 +1020,12 @@ def run_curses(screen):
                 except curses.error:  # the last cell of the screen
                     pass
             win.refresh()
-            ch = win.get_wch()
+            waiting = getattr(screen, "waiting", None)
+            win.timeout(200 if waiting and waiting() else -1)  # a pending check redraws without a key
+            try:
+                ch = win.get_wch()
+            except curses.error:  # no key within the timeout
+                continue
             name = curses.keyname(ch).decode() if isinstance(ch, int) else ch
             got = screen.handle(CURSES_KEYS.get(name, name if isinstance(ch, str) else ""))
             if got:  # "exit", or what the caller runs off the full screen

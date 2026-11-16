@@ -172,7 +172,7 @@ class DoctorBrokenIntegration(Project):
         self.integration(text="name: marker-check\nabout: x\nnosuchkey: 1\n")
         self.config("integrations: marker-check\n")
         quiet = {n: (lambda *a, **k: iter(())) for n in (
-            "_python", "_layout", "_hooks", "_policy", "_hook_errors", "_guard", "_sandbox", "_depth", "_source",
+            "_python", "_update", "_layout", "_hooks", "_policy", "_hook_errors", "_guard", "_sandbox", "_depth", "_source",
             "_providers", "_gh", "_agents", "_rules_size")}
         out = io.StringIO()
         with mock.patch.multiple(doctor, **quiet), mock.patch.object(doctor.layout, "load_state", lambda: {}), \

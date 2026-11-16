@@ -1,7 +1,7 @@
 """solo-sdd doctor: environment checks, one line each: `ok|warn|fail <what>: <detail>`."""
 import datetime, json, os, re, shutil, subprocess, sys
 
-from solo_sdd import hooks, init, integration_run, integrations, keywords, layout, process_format, providers, resources, settings
+from solo_sdd import hooks, init, integration_run, integrations, keywords, layout, process_format, providers, resources, settings, update_check
 
 
 def _version(text):
@@ -26,6 +26,10 @@ def _python():
         yield "ok", "python-hooks", "/usr/bin/python3 " + ".".join(map(str, v))
     else:
         yield "fail", "python-hooks", f"hooks need /usr/bin/python3 3.9+; {'version ' + '.'.join(map(str, v)) if v else (err or 'not found')}"
+
+
+def _update(network):
+    yield update_check.row(network)
 
 
 def _layout(state):
@@ -365,15 +369,16 @@ def _project_rules(folder=".", home=None):
         yield "warn", "project-rules", detail
 
 
-def rows():
-    """[(level, name, detail)] of every check, printing nothing; the settings screen shows them too."""
+def rows(network=False):
+    """[(level, name, detail)] of every check, printing nothing; the settings screen shows them too. The version line
+    asks the registry only with `network`: `doctor` itself, never the settings screen."""
     state = layout.load_state()
-    return [*_python(), *_layout(state), *_hooks(state), *_policy(state), *_hook_errors(), *_guard(), *_sandbox(), *_depth(), *_source(state), *_providers(state), *_gh(), *_agents(), *_integrations(),
+    return [*_python(), *_update(network), *_layout(state), *_hooks(state), *_policy(state), *_hook_errors(), *_guard(), *_sandbox(), *_depth(), *_source(state), *_providers(state), *_gh(), *_agents(), *_integrations(),
             *_project_rules(), *_rules_size()]
 
 
 def run():
-    rows_ = rows()
+    rows_ = rows(network=True)
     for level, name, detail in rows_:
         print(f"{level} {name}: {detail}")
     return 1 if any(r[0] == "fail" for r in rows_) else 0

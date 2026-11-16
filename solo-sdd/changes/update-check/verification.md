@@ -1,6 +1,6 @@
 ## Live Scenario
 
-The stand `python3 tests/stands/update-check.py` uses a temporary `HOME`, a local HTTP server standing in for PyPI and npm (its address given through the registry address variable the module reads, used by the tests only), and a virtual environment at `$T/.local/share/uv/tools/solo-sdd` holding a wheel built from the tree with version `0.2.0`, so the install method is uv; a fake `uv` on `PATH` installs a second wheel built with version `0.3.0` into that environment. The menu is driven through a pseudo-terminal at 120x40 and 40x12, with colours and with `NO_COLOR=1`.
+The stand `python3 tests/stands/update-check.py` uses a temporary `HOME`, a local registry standing in for PyPI: a named pipe under a `file://` address given through `SOLO_SDD_REGISTRY` (the registry address variable the module reads, used by the tests only) that logs each read as a request, and a virtual environment at `$T/.local/share/uv/tools/solo-sdd` holding the package laid out from the tree as the wheel lays it out, with version `0.2.0`, so the install method is uv; a fake `uv` on `PATH` replaces it with the same layout at version `0.3.0`. The menu is driven through a pseudo-terminal at 120x40 and 40x12, with colours and with `NO_COLOR=1`.
 
 | Element | Action | Expected result |
 |---|---|---|
@@ -35,7 +35,15 @@ The last step needs the network; without it, the stand's local server stands in 
 <!-- Filled during apply: what stayed unproven and why. Write: nothing - if all proven. -->
 
 ## Decisions Without Owner
+- apply: the stand's registry is a named pipe under `file://`, not an HTTP server on 127.0.0.1, and the package is laid out by copying the wheel's layout instead of building wheels → this session's sandbox refuses loopback connections (a proxy answers 403, a direct connect fails) and building a wheel needs `hatchling` from the network; the real HTTP path is checked once against pypi.org and registry.npmjs.org
 
 - plan: update on launch was asked → an automatic check and an update on confirmation, never a silent upgrade — a silent upgrade rewrites the agents' folders mid-session and may pick the wrong one of five install methods
 - plan: the check runs only in the home menu and `doctor` → agents and hooks call the other commands constantly and must not wait on the network
 - plan: the update also lays out the new version and offers to refresh the current project's rules block → an upgraded package with old copies or old project rules is a half update
+- analyze: whether a failed request counts toward the once in 24 hours → every attempt stores its time; a failure keeps the last checked version and stores a fixed reason word, never the answer's text — offline, each launch would otherwise wait 2 seconds
+- analyze: the Machine section of `solo-sdd settings` shows the doctor rows → it shows the version line from the cache only and makes no request — `settings` is a command other than the home menu and `doctor`
+- analyze: whether a skipped version still warns in `doctor` → `doctor` warns about any newer version; Skip hides only the menu notice — `doctor` is the check a person runs on purpose
+- analyze: how the update check switch of the Machine section is applied → Space saves it at once in the cache file, outside the `a` plan — it runs no install or uninstall command
+- analyze: where the update steps run → off the full screen, like Prepare this folder, so their output streams to the terminal; after success solo-sdd asks to restart and exits — the menu in memory is still the old program
+- analyze: the release notes link → `https://github.com/veraetogrex-portfolio/solo-sdd/releases/tag/v<version>`, the Repository URL of `pyproject.toml` kept in one constant — an npm install carries no Python package metadata to read it from
+- analyze: hooks and the request → the deployed hooks are standalone scripts that import no `solo_sdd` module, so they cannot reach the request; the property test covers the CLI commands

@@ -151,6 +151,7 @@
    "tests/test_setup_detect.py",
    "tests/test_sync.py",
    "tests/test_sync_blocks.py",
+   "tests/test_update_check.py",
    "tests/test_vendor_antislop.py",
    "tests/test_vendor_security_audit.py",
    "tests/test_work_hooks.py"
@@ -351,6 +352,9 @@
   ],
   "tests/test_sync_blocks.py": [
    "tests/test_sync_blocks.py"
+  ],
+  "tests/test_update_check.py": [
+   "tests/test_update_check.py"
   ],
   "tests/test_vendor_antislop.py": [
    "tests/test_vendor_antislop.py"
