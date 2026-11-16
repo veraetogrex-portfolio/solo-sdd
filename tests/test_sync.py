@@ -599,6 +599,71 @@ class SyncTest(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertIn("--from", out)
 
+    # Requirement: Unknown arguments refused; Broken state refused.
+    def run_fixture_cli(self, *args):
+        """solo-sdd from the fixture repository (cwd), never from REPO."""
+        result = subprocess.run([sys.executable, "-m", "solo_sdd", *args], cwd=self.repo, stdin=subprocess.DEVNULL,
+                                env=dict(os.environ, HOME=self.home), capture_output=True, text=True)
+        return result.returncode, result.stdout
+
+    def source_bytes(self):
+        with open(os.path.join(self.repo, "skills/alpha/SKILL.md"), "rb") as f:
+            return f.read()
+
+    def test_unknown_arguments_refused(self):
+        usage = "python3 sync.py status          what diverged"
+        rows = [(("push", "--help"), None, 0, None), (("push", "-h"), None, 0, None),
+                (("status", "-h"), None, 0, None), (("--help",), None, 0, None),
+                (("pull", "alpha", "--help"), None, 0, None), (("push", "--bogus", "--help"), None, 0, None),
+                (("push", "--frobnicate"), "unknown argument --frobnicate", 2, None),
+                (("push", "--forc"), "unknown argument --forc", 2, None),
+                (("push", "--force=yes"), "unknown argument --force=yes", 2, None),
+                (("status", "--bogus"), "unknown argument --bogus", 2, None),
+                (("push", "--quiet", "extra"), "unknown argument extra", 2, None),
+                (("push", "--bogus"), "unknown argument --bogus", 2, "state"),
+                (("sync", "pull", "alpha", "--bogus"), "unknown argument --bogus", 2, "edit"),
+                (("sync", "pull", "alpha", "--bogus"), "unknown argument --bogus", 2, "state")]
+        for args, first, code, setup in rows:
+            with self.subTest(args=args, setup=setup):
+                self.tearDown()
+                self.setUp()
+                if setup == "edit":
+                    self.assertEqual(self.run_sync("push")[0], 0)
+                    with open(self.home_path(".codex/skills/alpha/SKILL.md"), "w") as f:
+                        f.write("edited in place\n")
+                elif setup == "state":
+                    self.put_state("[]")
+                before, source = self.tree(), self.source_bytes()
+                got, out = (self.run_fixture_cli if args[0] == "sync" else self.run_sync)(*args)
+                self.assertEqual(got, code, out)
+                self.assertEqual(out.splitlines()[0], first or "Lays out skills, global rules, scripts and templates "
+                                 "from this repository to the places")
+                self.assertIn(usage, out)
+                self.assertEqual(self.tree(), before, "a file in the home changed")
+                self.assertEqual(self.source_bytes(), source, "the repository source changed")
+
+    @marks.slow
+    @settings(max_examples=25, deadline=None)
+    @given(st.sampled_from([("status",), ("push",), ("pull", "alpha")]),
+           st.one_of(st.sampled_from(["--force", "--quiet", "--global-rules", "--replace-foreign", "--from", "--help"])
+                     .flatmap(lambda o: st.sampled_from([o[:-1], o[:3], o.upper(), o.title(), o[1:], o + "=yes",
+                                                         o + "x", "-" + o, " " + o])),
+                     st.sampled_from(["-", "--", "-x", "--HELP", "-H", "extra", "alpha", ""]),
+                     st.text(st.characters(codec="utf-8", exclude_characters="\x00"), max_size=6)))
+    def test_unknown_arguments_refused_property(self, command, arg):
+        """Requirement: Unknown arguments refused. One fixture home per example."""
+        options = {"status": {"--quiet"}, "push": {"--force", "--quiet", "--global-rules", "--replace-foreign"},
+                   "pull": {"--from"}}[command[0]]
+        if arg in options or arg in ("-h", "--help"):
+            return
+        home = tempfile.mkdtemp(dir=self.tmp)
+        os.makedirs(os.path.join(home, ".codex"))
+        before = sorted(os.walk(home))
+        result = subprocess.run([sys.executable, os.path.join(self.repo, "sync.py"), *command, arg],
+                                env=dict(os.environ, HOME=home), capture_output=True, text=True)
+        self.assertEqual(result.returncode, 2, (command, arg, result.stdout))
+        self.assertEqual(sorted(os.walk(home)), before, (command, arg))
+
     def test_non_utf8_copy_is_unreachable_not_a_crash(self):
         os.makedirs(self.home_path(".agents/skills/alpha"))
         with open(self.home_path(".agents/skills/alpha/SKILL.md"), "wb") as f:
