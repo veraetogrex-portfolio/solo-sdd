@@ -6,7 +6,7 @@ What the `spec-plan` skill leaves in the project repository.
 ## Requirements
 
 ### Requirement: Plan committed
-After gate G1 `spec-plan` SHALL commit the folders of the changes it created and changed in one commit `change: <id>, …`, naming in the commit only these folders. If `solo-sdd/changes` is ignored by git, there is no commit, and the report names it with the line "plan outside git". Others' changes in the tree do not get into the commit.
+After gate G1 `spec-plan` SHALL commit the folders of the changes it created and changed in one commit `change: <id>, …`, naming in the commit only these folders. Under `delivery.mode` `pr` the commit SHALL go on a new branch `plan/<first id>` in a temporary worktree and SHALL reach the main branch only through `ship`; the working folder's branch SHALL NOT move. If `solo-sdd/changes` is ignored by git, there is no commit and the report has "plan outside git".
 
 #### Scenario: The plan is committed
 - **WHEN** `spec-plan` created changes `a` and `b`, and the tree has someone else's edit `src/x.py`
@@ -15,6 +15,14 @@ After gate G1 `spec-plan` SHALL commit the folders of the changes it created and
 #### Scenario: Specs are ignored
 - **WHEN** `git check-ignore solo-sdd/changes` finds a rule
 - **THEN** there is no commit, the report has the line "plan outside git"
+
+#### Scenario: A project that delivers through PRs
+- **WHEN** `solo-sdd config get delivery.mode` prints `pr` and `spec-plan` created change `a` while `main` is checked out
+- **THEN** `main` keeps its commit, the plan commit lies on `plan/a`, the working folder keeps no untracked copy of `solo-sdd/changes/a/`, `ship` opens its PR with `sdd-pr.py open`, the report line `Plan:` names `plan/a` and the PR link, and after the merge the temporary worktree is removed and the pull of the local `main` passes
+
+#### Scenario: A project that pushes the main branch
+- **WHEN** `solo-sdd config get delivery.mode` prints `local`
+- **THEN** the plan commit lies on the main branch and `ship` pushes it
 
 ### Requirement: Requirement text length
 The requirement text in a delta, from the line `### Requirement:` to the first `#### Scenario:`, SHALL be at most 500 chars. `spec-plan` SHALL move examples and edge cases into scenarios, and several behaviours into separate requirements. If a change modifies a long requirement (`MODIFIED`), it SHALL shorten it in the same delta without changing the behaviour. `spec-analyze` SHALL count a requirement longer than 500 chars as a HIGH finding.
