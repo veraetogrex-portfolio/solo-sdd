@@ -216,13 +216,7 @@ class Command(unittest.TestCase):
         self.assertIn("dispatch.limit 4 file", lines)
         self.assertIn("delivery.merge squash default", lines)
         self.assertEqual(self.cli("get", "delivery.mode"), (0, "pr\n"))
-
-    def test_review_rounds_default(self):
-        """Requirement: Review rounds: without a file value the limit is 5, from the default."""
-        r = subprocess.run([sys.executable, "-m", "solo_sdd", "config", "get", "process.review-rounds"], cwd=self.dir,
-                           capture_output=True, text=True, env=dict(os.environ, PYTHONPATH=REPO),
-                           stdin=subprocess.DEVNULL, timeout=60)
-        self.assertEqual((r.returncode, r.stdout, r.stderr), (0, "5\n", "source: default\n"))
+        self.assertIn("process.review-rounds 5 default", lines, "Requirement: Review rounds: default 5")
 
     def test_delivery_section_kept(self):
         """Requirement: Defaults by mode, scenario Delivery section kept; Config command, scenario Get names the source."""

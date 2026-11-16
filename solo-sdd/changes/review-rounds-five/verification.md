@@ -6,7 +6,7 @@
 4. `python3 tests/stands/settings-tui.py` → it passes and lists `process.review-rounds 5 default`.
 5. All tests from the `## Commands` table of `AGENTS.md` → code 0.
 
-Steps 1-3 in one call: `python3 tests/stands/review-rounds-five.py` → `7 of 7 checks passed`.
+Step 3 in one call: `python3 tests/stands/review-rounds-five.py` → `3 of 3 checks passed`.
 
 ## Needs
 
@@ -30,5 +30,5 @@ not needed.
 - analyze: with a limit of 1 there is no rework before the last round → no extra round — the extra round is for findings on a fix.
 - analyze: `docs/stop-conditions.md` still said three rounds → in Impact and task 1.4 — requirement of readme-content that every stop condition is listed with its file.
 - analyze: `README.md` ("at most three review rounds by default") is found by the grep of task 1.4 but was not in Impact → added to Impact and edited under 1.4 — the task names every reader the grep finds.
-- analyze: steps 1-3 of the Live Scenario need a temporary project and home → a stand `tests/stands/review-rounds-five.py` runs them, added to Impact — one command for the dispatcher's LIVE field.
+- analyze: step 3 of the Live Scenario needs a temporary home → a stand `tests/stands/review-rounds-five.py` runs it, added to Impact — one command for the dispatcher's LIVE field.
 - analyze: no property test → the extra round is a rule the agent follows, not code; a Hypothesis test has nothing to run — pass 3a does not apply.

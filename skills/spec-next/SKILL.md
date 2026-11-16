@@ -96,7 +96,7 @@ Decide yourself and record the decision in the report. The only allowed question
 | "The validation error is expected" | Fix the call or the artifact |
 | "The user will commit and merge themselves" | Delivery is part of closing, go through `/ship` |
 | "The subagent works in the background, I will hand back the status, it will catch up" | No, wait for it |
-| "One more review round, maybe it finds something" | At most `process.review-rounds` rounds (default 5), plus one extra round only when every open `Important` lies in the lines of the last rework; after that with an open `Important`: "not done" |
+| "One more review round, maybe it finds something" | At most `process.review-rounds` rounds (default 5), plus one extra round only after the second or later round when every open `Important` lies only in the lines of the last rework; after that with an open `Important`: "not done" |
 
 ## Report (in the user's language, in this form)
 

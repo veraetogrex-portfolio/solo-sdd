@@ -221,8 +221,8 @@ class SkillCommandsTest(unittest.TestCase):
                   "say whether the extra round ran"):
             self.assertIn(w, extra)
         self.assertIn("| \"One more review round, maybe it finds something\" | At most `process.review-rounds` rounds "
-                      "(default 5), plus one extra round only when every open `Important` lies in the lines of the last "
-                      "rework;", nxt)
+                      "(default 5), plus one extra round only after the second or later round when every open `Important` lies "
+                      "only in the lines of the last rework;", nxt)
         self.assertIn("Independent acceptance: rounds <k>; extra round: ran | did not run;", nxt)
         self.assertIn("the number of rounds, whether the extra round ran,", nxt)
         algo = read("ALGORITHM.md")
