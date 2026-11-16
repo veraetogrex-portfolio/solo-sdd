@@ -20,8 +20,8 @@ Three review rounds are too few for the changes this repository runs, and the ow
 ## Impact
 
 - `solo_sdd/settings.py`, `global/sdd_pr.py`, `global/sdd_dispatch_plan.py`, `global/sdd_worktree.py`, `global/work_hooks.py`
-- `skills/spec-next/SKILL.md`, `ALGORITHM.md`, `docs/settings.md`, `docs/stop-conditions.md`
-- `tests/test_settings.py`, `tests/test_skill_commands.py`, `tests/stands/settings-tui.py`
+- `skills/spec-next/SKILL.md`, `ALGORITHM.md`, `README.md`, `docs/settings.md`, `docs/stop-conditions.md`
+- `tests/test_settings.py`, `tests/test_skill_commands.py`, `tests/stands/settings-tui.py`, `tests/stands/review-rounds-five.py`
 
 ## Out of Scope
 

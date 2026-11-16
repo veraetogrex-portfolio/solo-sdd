@@ -115,7 +115,7 @@ The full table with probed versions: [docs/agents.md](https://github.com/veraeto
 There is no token budget: a run stops by rounds and proofs.
 
 - one run takes one change;
-- at most three review rounds by default, then the findings go to "not verified" and the change is not archived;
+- at most `process.review-rounds` review rounds (default 5), plus one extra round when every open finding lies in the lines of the last fix, then the findings go to "not verified" and the change is not archived;
 - the same edit failed twice: stop and find the cause;
 - a failed live scenario means "not done";
 - a paid call, deleting data or an action on prod: stop and ask.
