@@ -386,8 +386,8 @@ class InstallForChosenAgents(Temp):
         code, out = cli(["install", "--agents", "codex", "--hooks"], self.home, self.tmp, self.bin)
         self.assertEqual(code, 0, out)
         self.assertFalse(os.path.exists(os.path.join(self.home, ".claude")), "no Claude settings without claude")
-        self.assertEqual(sorted(json.load(open(os.path.join(self.home, ".codex", "hooks.json")))["hooks"]),
-                         ["PreToolUse", "SessionEnd", "SessionStart", "Stop"])
+        with open(os.path.join(self.home, ".codex", "hooks.json")) as f, mock.patch.object(layout, "HOME", self.home):
+            self.assertEqual(json.load(f)["hooks"], hooks.codex_need())
 
 
 FOREIGN = {"matcher": "Bash", "hooks": [{"type": "command", "command": "other-tool check"}]}
