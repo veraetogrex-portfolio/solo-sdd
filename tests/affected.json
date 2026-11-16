@@ -126,6 +126,7 @@
   ],
   "skills/": [
    "tests/test_cli.py",
+   "tests/test_integrations.py",
    "tests/test_providers.py",
    "tests/test_sdd_dispatch.py",
    "tests/test_sdd_dispatch_plan.py",
@@ -236,6 +237,12 @@
   ],
   "tests/fixtures/codex-rollout.jsonl": [
    "tests/test_work_hooks.py"
+  ],
+  "tests/skill_text.py": [
+   "tests/test_integrations.py",
+   "tests/test_sdd_dispatch.py",
+   "tests/test_sdd_dispatch_plan.py",
+   "tests/test_skill_commands.py"
   ],
   "tests/stands/": [],
   "tests/stands/map-stand/": [

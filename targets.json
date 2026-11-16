@@ -61,6 +61,15 @@
     "integrations/security-audit/skills/security-audit/report-schema.json": {"skills": {"spec-audit": "security/report-schema.json"}},
     "integrations/security-audit/skills/security-audit/validate-coverage-ledger.cjs": {"skills": {"spec-audit": "security/validate-coverage-ledger.cjs"}},
     "integrations/security-audit/skills/security-audit/validate-findings.cjs": {"skills": {"spec-audit": "security/validate-findings.cjs"}},
+    "skills/spec-dispatch/merge.md": {"skills": {"spec-dispatch": "merge.md"}},
+    "skills/spec-dispatch/orchestrator-prompt.md": {"skills": {"spec-dispatch": "orchestrator-prompt.md"}},
+    "skills/spec-dispatch/preparation.md": {"skills": {"spec-dispatch": "preparation.md"}},
+    "skills/spec-dispatch/questions.md": {"skills": {"spec-dispatch": "questions.md"}},
+    "skills/spec-dispatch/report.md": {"skills": {"spec-dispatch": "report.md"}},
+    "skills/spec-next/acceptance.md": {"skills": {"spec-next": "acceptance.md"}},
+    "skills/spec-next/closing.md": {"skills": {"spec-next": "closing.md"}},
+    "skills/spec-plan/creation.md": {"skills": {"spec-plan": "creation.md"}},
+    "skills/spec-plan/plan-commit.md": {"skills": {"spec-plan": "plan-commit.md"}},
     "templates/**": ["~/.local/share/solo-sdd/templates/"]
   }
 }

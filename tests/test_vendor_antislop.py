@@ -47,9 +47,9 @@ def core_rules(root):
 
 
 def dangling_rules(root):
-    """Mentions of R-XX from skills/*/SKILL.md that are not in the core."""
+    """Mentions of R-XX from skills/*/SKILL.md and their step files that are not in the core."""
     known, bad = core_rules(root), []
-    for path in sorted(glob.glob(os.path.join(root, "skills", "*", "SKILL.md"))):
+    for path in sorted(glob.glob(os.path.join(root, "skills", "*", "*.md"))):
         with open(path) as f:
             text = f.read()
         rel = os.path.relpath(path, root)

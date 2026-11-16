@@ -38,6 +38,8 @@ Mode: prod. Prod here is the agent folders on this computer (`~/.claude`, `~/.co
 | Path | Role |
 |---|---|
 | `skills/<name>/SKILL.md` | Algorithm skills and manual commands; deployed by `targets.json` |
+| `skills/<name>/<step>.md` | Step files: the body of a long step moved out of its `SKILL.md` (at most 16,000 bytes), named by the step's line; each has its own `targets.json` entry next to the skill |
+| `tests/skill_text.py` | A skill's text joined with its step files, the size budget and the step-file check the tests read |
 | `solo_sdd/` | Package and the `solo-sdd` command; deployment logic in `layout.py`, `sync.py` is a wrapper; the `solo-sdd/` tree rules and `validate` in `process_format.py`; `import openspec` in `import_openspec.py`; `init` in `init.py` |
 | `pyproject.toml` | Package description |
 | `package.json`, `bin/solo-sdd.js` | npm package: a wrapper that runs `python -m solo_sdd` |

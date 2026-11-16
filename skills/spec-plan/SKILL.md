@@ -40,47 +40,12 @@ The result is a set of changes, each of which closes in one `/spec-next` run. No
    It counts the commits since the file's `Commit:` stamp that change files outside `docs/` and `solo-sdd/`; more than 20, a stamp commit that is not an ancestor of `HEAD` (rebased away, another branch, unknown) or no stamp prints the line. Every printed line goes into the report as is; planning goes on with the map, it is not refreshed here.
 3. **Order and dependencies.** What must be archived earlier. Names follow the project's pattern (in a project with numbers, continue the numbering); `solo-sdd new` takes only a kebab-case id (`add-csv`, `12-fix-export`) that is neither open nor archived.
 4. **Check against the intent.** A unit that leads away from the intent in `solo-sdd/project.md` does not become a change: put it into the report as a separate line.
-5. **Creation.** For every unit: `solo-sdd new <name>`, then the artifacts in order, by the "Writing rules" section: proposal → specs → verification → tasks. `design.md` only when a decision cannot be recorded without it.
-   - `Source` is the user's verbatim quote that gave rise to this change.
-   - `Depends On` holds change names from step 3, or `none`.
-   - `Out of Scope` includes the neighbouring units of the same plan.
-   - `Impact`: in backquotes only paths of files and directories (from the project root) that the change creates, changes or deletes; function names, commands, words and languages without quotes. By the quoted paths the dispatcher decides which changes to run at the same time.
-   - The requirement text (from `### Requirement:` to the first header, usually `#### Scenario:`) is at most 500 chars: `solo-sdd validate` fails above it. Examples and edge cases go into scenarios, several behaviours into separate requirements. A change that modifies a long requirement (`MODIFIED`) shortens it in the same delta: the behaviour does not change, the previous scenarios stay, what is moved out goes into scenarios or `ADDED`.
-   - Every `#### Scenario:` has a WHEN (or GIVEN) step and a THEN step, written `- **WHEN** …`, `- **THEN** …`; a delta requirement stands only under `## ADDED`, `MODIFIED`, `REMOVED` or `RENAMED Requirements`; a requirement header has a space: `### Requirement: <name>`. `solo-sdd validate` fails on all three and on a requirement without a `#### Scenario:`.
-   - A change being created modifies a requirement with the same name in the same capability as another change being created or already open (`solo-sdd/changes/*/specs/`, except `archive`): the later one gets the earlier one in `Depends On`.
-   - A change changes the interface if the user sees its result on screen: a page, a panel, a widget, layout, styles. For such a change:
-     - The first item of the What Changes list, right under the header, before all other items, is the line `Design Read: <screen> for <audience>, <style>, ENERGY n / RHYTHM n / MOTION n`. The audience comes from the "Audience" field of `DESIGN.md`, the style from the "Character" field; an empty field or no `DESIGN.md` gives "not specified".
-
-       The direction is set only if `DESIGN.md` has the line `Dial: ENERGY n / RHYTHM n / MOTION n` with three numbers from 1 to 3; the template letters `n` mean not set. Do not derive dials from the user's words or the filled fields. Not set: ENERGY 1 / RHYTHM 1 / MOTION 1 and the mark "draft without direction" at the end of the line.
-     - The Live Scenario is a list "element → action → expected result" for every control (button, link, form, menu) the change creates or changes, plus widths 1280 and 390 and every theme the interface supports. A form: "empty form → submit → a message about the unfilled field", "valid email → submit → a success message"; a mobile menu: "menu at 390 → open and close → opens and closes".
-     - The user's business facts (their numbers, reviews, customer names, logos, photos of people): only those in `Source` or project files go into tasks and scenarios. The rest the task requires as an honest placeholder `[data needed: <what>]` and names it verbatim, separately for each kind of data (`[data needed: customer reviews]`, not `[data needed: …]`); `Needs` lists what is needed, `Fallback` says "the placeholder stays on screen".
-
-       The change does not wait for this data and gets no `WAITING` file. The rule also applies in `demo` mode: there the product's working data is invented (a seed, an emulation), but not the user's business numbers, reviews and customers.
-   - The change code reads foreign input: files, archives, documents or network data whose path or content arrive while the program runs (an argument, a request, the network, the user's choice), rather than lying in the project repository. Such a change gets one task of tests on hostile input in `tasks.md`. It belongs to the requirement that introduces reading this input and names only the items applicable to this input.
-
-     If the change already has 10 tasks, the items are added to the existing test task. Applicability is decided by the input format, not by the intended parsing method: any archive has entry paths, even if it is not unpacked to disk. An inapplicable item is not written (an archive without XML gets no item about entities):
-     - a limit on size and number of entries (ZIP bomb, compression ratio);
-     - archive entry paths (`..`, absolute, links);
-     - nesting depth;
-     - XML entity expansion;
-     - catastrophic regular expressions;
-     - truncated and broken input;
-     - escaping when inserting into code, HTML or a command.
-
-     A change that reads only `AGENTS.md`, configs and the project's own files needs no such task.
+5. **Creation.** Read `creation.md` each time this step starts, also after compaction: for every unit `solo-sdd new <name>`, then the artifacts in order by the "Writing rules" section, with what each must hold.
 6. **External conditions.** Access, a key, a person or a paid call is needed: write it into `Needs`. A change made up entirely of such conditions gets a `WAITING` file and a line in `docs/waiting.md`. The user's business facts under placeholders (step 5) does not give `WAITING`.
 7. **Check.** `solo-sdd validate --all`.
 7a. **Cross-check.** The `spec-analyze` skill on every created change; edits only in the artifacts. Then repeat step 7.
 8. **Coverage.** Match every input item with a change or with the light path of step 1a (its commit, or `to do` until the commit after step 9). Any other item without a change is an error: create a change or explain in the report why there is none.
-9. **Plan commit.** After gate G1 (steps 7, 7a, 8). If `git check-ignore -q solo-sdd/changes` found a rule, there is no commit, and the report has the line "plan outside git". Otherwise one commit `change: <id>, …` holds only `<folders>`, the folders of created and changed changes: other edits do not get into it. Without this commit the dispatcher's worktree will not see the change. Where it lands follows the delivery mode `ship` step 1 reads (`solo-sdd config get delivery.mode`):
-   - `delivery.mode` `local`: `git add -- <folders> && git commit -m "change: <id>, …" -- <folders>` in the working folder, on the main branch; `ship` pushes it.
-   - `delivery.mode` `pr`: the branch checked out in the working folder does not move. `git fetch origin`; a folder that `origin/<main branch>` changed since the fork point (`git diff --quiet HEAD...origin/<main branch> -- <folder>` exits 1) stops the step here: the report names it, and the plan commit waits for the pull of the main branch, so it never reverts merged work.
-
-     Then, as a command of its own, `git worktree add -b plan/<first id> ${TMPDIR:-/tmp}/plan-<first id> origin/<main branch>` makes a temporary worktree `<worktree>` on the new branch `plan/<first id>` (a taken branch or path gets `-2`, `-3` in both).
-
-     From the working folder's root, each folder is moved there by `mkdir -p <worktree>/solo-sdd/changes`, `rm -rf <worktree>/<folder>` and `mv <folder> <worktree>/<folder>`, and a tracked one is brought back in the working folder with `git restore --source=HEAD --staged --worktree -- <folder>`: an untracked copy left behind would make git refuse the pull after the merge. The commit is the `local` one, run with `git -C <worktree>`.
-
-     `ship` delivers the branch from `<worktree>` through `sdd-pr.py` (open, wait, merge by `delivery.merge-by`). After the merge, or at code 8 of a human merge (the branch is already pushed), `git worktree remove <worktree>` and `git branch -D plan/<first id>`; after the merge the pull of the local main branch. Any other end of `ship` leaves both, and the report names them. Until the merge the plan lives only on the pushed `plan/<first id>`: `/spec-next` and the dispatcher see it after the pull, and the report's `Next:` says so.
+9. **Plan commit.** Read `plan-commit.md` each time this step starts, also after compaction: after gate G1 (steps 7, 7a, 8), the plan commit on `plan/<first id>` under `delivery.mode` `pr` or on the main branch under `local`.
 
 More than five changes: you write the artifacts yourself; Codex executors only if the user named `codex-orchestration`.
 
