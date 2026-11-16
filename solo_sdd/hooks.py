@@ -45,7 +45,7 @@ def _need():
     need = {}
     add = lambda e, g: need.setdefault(e, []).append(g)
     add("SessionStart", {"hooks": [_cmd("context", timeout=15)]})
-    add("PreToolUse", {"matcher": "Bash|Read|Grep|Write|Edit|MultiEdit|NotebookEdit|Agent|EnterWorktree|SubagentHandback", "hooks": [_cmd("guard", timeout=10)]})
+    add("PreToolUse", {"matcher": "Bash|Read|Grep|Write|Edit|MultiEdit|NotebookEdit|Agent|EnterWorktree|SubagentHandback|AskUserQuestion", "hooks": [_cmd("guard", timeout=10)]})
     add("SubagentStart", {"hooks": [_cmd("subagent-context", timeout=10)]})
     add("PreToolUse", {"matcher": "*", "hooks": [b]})
     add("PostToolUse", {"matcher": "*", "hooks": [b]})
