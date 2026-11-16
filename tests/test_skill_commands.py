@@ -34,7 +34,32 @@ def legacy_stop(text):
     return any(HINT in l and "openspec/" in l and re.search(r"\bstop", l, re.I) for l in text.splitlines())
 
 
+PLAN_PR = ("`delivery.mode` `pr`", "`plan/<first id>`", "temporary worktree", "`git fetch origin`",
+           "`git diff --quiet HEAD...origin/<main branch> -- <folder>` exits 1) stops the step here",
+           "`git worktree add -b plan/<first id> ${TMPDIR:-/tmp}/plan-<first id> origin/<main branch>`",
+           "`mkdir -p <worktree>/solo-sdd/changes`", "`rm -rf <worktree>/<folder>`", "`mv <folder> <worktree>/<folder>`",
+           "`git restore --source=HEAD --staged --worktree -- <folder>`", "`ship`", "`sdd-pr.py`",
+           "code 8 of a human merge", "`git worktree remove <worktree>`", "`git branch -D plan/<first id>`",
+           "does not move")
+PLAN_LOCAL = ("`delivery.mode` `local`", "on the main branch", "`ship` pushes it")
+
+
+def plan_commit_misses(text):
+    """The words step 9 of a spec-plan text lacks for Requirement: Plan committed (pr and local), and the report form."""
+    flat = re.sub(r"\s+", " ", text)
+    step = flat.split("9. **Plan commit.**", 1)[-1].split(" More than five changes", 1)[0]
+    report = flat.split("## Report", 1)[-1]
+    return ([w for w in PLAN_PR + PLAN_LOCAL if w not in step]
+            + [w for w in ("on plan/<id>, PR <url>", "waits for human merge",
+                                                       "/spec-next after the merge of <PR url>") if w not in report])
+
+
 class SkillCommandsTest(unittest.TestCase):
+    def test_plan_committed_names_the_branch(self):
+        """Requirement: Plan committed: under pr the plan commit goes on plan/<first id> in a temporary worktree and
+        ship delivers it, under local it stays on the main branch; the Plan: line names the branch and the PR."""
+        self.assertEqual(plan_commit_misses((REPO / "skills/spec-plan/SKILL.md").read_text(encoding="utf-8")), [])
+
     def test_ship_through_the_pr_tool(self):
         """Requirement: Ship through the PR tool: step 7 names sdd-pr.py open, wait and merge with codes 1, 5 and 8;
         gh pr create and gh pr merge only in a sentence about a repository without solo-sdd/."""
