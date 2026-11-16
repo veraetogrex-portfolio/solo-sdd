@@ -56,7 +56,7 @@ The quick start step by step, after `solo-sdd install`.
 
 The solo-sdd rules (`global/AGENTS.md`) go into the projects that chose solo-sdd, not into the home folder. `solo-sdd init` writes them as a block between markers at the end of the project's `AGENTS.md` and creates `CLAUDE.md` with the line `@AGENTS.md` when the project has none, so Claude Code reads the same file; an existing `CLAUDE.md` is not changed. Text outside the block keeps every byte.
 
-`solo-sdd/rules-block` records the block written last: a repeated `init` after a package upgrade updates an unchanged older block, while an edited block, broken or erased markers are named as `drift` and left as they are. `install` and `update` do not touch projects: run `solo-sdd init` in a project to refresh its block. In `team` mode the block is committed with the repository.
+`solo-sdd/rules-block` records the block written last: a repeated `init` after a package upgrade updates an unchanged older block, while an edited block, broken or erased markers are named as `drift` and left as they are. `install` and `update` do not touch projects: run `solo-sdd init` in a project to refresh its block. `solo-sdd doctor` in a project with `rules.scope: project` names the block's state in a `project-rules` line without writing: `ok` for a current block, `warn` with `solo-sdd init` for an older unedited one or a missing one, `warn` with the path of this version's rules for an edited block or broken or erased markers. In `team` mode the block is committed with the repository.
 
 The setting `rules.scope: global` (see "Settings") makes `init` write no block and name the global rules as the source.
 
