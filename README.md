@@ -78,6 +78,8 @@ the share is the total divided by `n` and rounded up to a cent.
 | Status | `/work-status` five lines on the state, `/context-resume` the context after a pause, `/evidence-research` a choice on checked facts |
 | Manual | `/relay` another agent's report, `/blockers` blockers into changes, `/report` a summary for a period, `/health` the project's integrations, `/changes` a table of change states |
 
+A long skill keeps the order of its steps in `SKILL.md` and the body of a long step in a step file next to it (`skills/<name>/<step>.md`), which the step's line says to read each time the step starts: after compaction Claude Code re-attaches only the first 5,000 tokens of a skill, and a test keeps every `SKILL.md` within 16,000 bytes.
+
 ## Requirements
 
 - Python 3.9+, git; Node 20+ only for the solo-sdd npm wrapper.

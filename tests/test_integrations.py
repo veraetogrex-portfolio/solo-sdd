@@ -9,6 +9,8 @@ import tempfile
 import unittest
 from unittest import mock
 
+import skill_text
+
 from hypothesis import given, settings as hsettings, strategies as st
 
 REPO = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
@@ -313,8 +315,7 @@ class SkillsReadRulesByPointAndTag(unittest.TestCase):
     """Requirement: Skills read rules by point and tag."""
 
     def skill(self, name):
-        with open(os.path.join(REPO, "skills", name, "SKILL.md"), encoding="utf-8") as f:
-            return f.read()
+        return skill_text.read(os.path.join(REPO, "skills", name, "SKILL.md"))
 
     def test_skills_read_rules_by_point_and_tag_rules_off(self):
         """The call strings and the absence of copy paths are stand step 6; here the sentence for rules that are off,

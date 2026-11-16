@@ -61,6 +61,15 @@
     "integrations/security-audit/skills/security-audit/report-schema.json": ["~/.agents/skills/spec-audit/security/report-schema.json", "~/.codex/skills/spec-audit/security/report-schema.json", "~/.claude/skills/spec-audit/security/report-schema.json"],
     "integrations/security-audit/skills/security-audit/validate-coverage-ledger.cjs": ["~/.agents/skills/spec-audit/security/validate-coverage-ledger.cjs", "~/.codex/skills/spec-audit/security/validate-coverage-ledger.cjs", "~/.claude/skills/spec-audit/security/validate-coverage-ledger.cjs"],
     "integrations/security-audit/skills/security-audit/validate-findings.cjs": ["~/.agents/skills/spec-audit/security/validate-findings.cjs", "~/.codex/skills/spec-audit/security/validate-findings.cjs", "~/.claude/skills/spec-audit/security/validate-findings.cjs"],
+    "skills/spec-dispatch/merge.md": ["~/.claude/skills/spec-dispatch/merge.md"],
+    "skills/spec-dispatch/orchestrator-prompt.md": ["~/.claude/skills/spec-dispatch/orchestrator-prompt.md"],
+    "skills/spec-dispatch/preparation.md": ["~/.claude/skills/spec-dispatch/preparation.md"],
+    "skills/spec-dispatch/questions.md": ["~/.claude/skills/spec-dispatch/questions.md"],
+    "skills/spec-dispatch/report.md": ["~/.claude/skills/spec-dispatch/report.md"],
+    "skills/spec-next/acceptance.md": ["~/.agents/skills/spec-next/acceptance.md", "~/.codex/skills/spec-next/acceptance.md", "~/.claude/skills/spec-next/acceptance.md"],
+    "skills/spec-next/closing.md": ["~/.agents/skills/spec-next/closing.md", "~/.codex/skills/spec-next/closing.md", "~/.claude/skills/spec-next/closing.md"],
+    "skills/spec-plan/creation.md": ["~/.agents/skills/spec-plan/creation.md", "~/.codex/skills/spec-plan/creation.md", "~/.claude/skills/spec-plan/creation.md"],
+    "skills/spec-plan/plan-commit.md": ["~/.agents/skills/spec-plan/plan-commit.md", "~/.codex/skills/spec-plan/plan-commit.md", "~/.claude/skills/spec-plan/plan-commit.md"],
     "templates/**": ["~/.local/share/solo-sdd/templates/"]
   }
 }

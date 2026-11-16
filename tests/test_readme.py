@@ -290,8 +290,8 @@ def long_lines(name, text, limit=LIMIT):
 
 
 def tracked_docs(root=REPO):
-    """`README.md`, `ALGORITHM.md` and `skills/*/SKILL.md` that git tracks under root."""
-    run = subprocess.run(["git", "ls-files", "-z", "--", "README.md", "ALGORITHM.md", "skills/*/SKILL.md"],
+    """`README.md`, `ALGORITHM.md`, `skills/*/SKILL.md` and the step files `skills/*/*.md` that git tracks under root."""
+    run = subprocess.run(["git", "ls-files", "-z", "--", "README.md", "ALGORITHM.md", "skills/*/*.md"],
                          cwd=root, capture_output=True, check=True, stdin=subprocess.DEVNULL)
     return [f for f in run.stdout.decode("utf-8").split("\0") if f]
 
@@ -342,6 +342,17 @@ class LineLength(unittest.TestCase):
             self.assertEqual(tree_long_lines(root), [])
             run("git", "add", "skills/mine/SKILL.md")
             self.assertEqual(tree_long_lines(root), ["skills/mine/SKILL.md:1 (700)"])
+
+    def test_a_long_line_in_a_step_file(self):
+        with tempfile.TemporaryDirectory() as root:
+            run = lambda *a: subprocess.run(a, cwd=root, check=True, capture_output=True, stdin=subprocess.DEVNULL)
+            run("git", "init", "-q")
+            os.makedirs(os.path.join(root, "skills", "spec-dispatch"))
+            for name, body in (("SKILL.md", "short\n"), ("merge.md", "# Merge\n\n" + "x" * 700 + "\n")):
+                with open(os.path.join(root, "skills", "spec-dispatch", name), "w", encoding="utf-8") as f:
+                    f.write(body)
+            run("git", "add", "skills")
+            self.assertEqual(tree_long_lines(root), ["skills/spec-dispatch/merge.md:3 (700)"])
 
 
 if __name__ == "__main__":

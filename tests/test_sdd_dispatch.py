@@ -10,6 +10,7 @@ import time
 import unittest
 import marks
 import shared_repo
+import skill_text
 
 from hypothesis import given, settings, strategies as st
 
@@ -468,7 +469,7 @@ class LandTest(LandBase):
     def test_human_merge_in_the_skills(self):
         # Requirement: Waiting for a human merge, scenario Two changes: the report line and the exit from the waiting list
         skills = SCRIPT.parent.parent / "skills"
-        text = (skills / "spec-dispatch/SKILL.md").read_text(encoding="utf-8")
+        text = skill_text.read(skills / "spec-dispatch/SKILL.md")
         for want in ("Code 8 with `waits for human merge: <url>`", "the change is not failed, the report shows `waits for human merge` with the URL",
                      "the change leaves `--waiting` and is in no list", "land <MAIN> <WORKTREE> <url> --after-merge",
                      "`waits for human merge` with the PR URL"):

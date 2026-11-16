@@ -12,6 +12,7 @@ import time
 import unittest
 import marks
 import shared_repo
+import skill_text
 from unittest import mock
 
 from hypothesis import example, given, settings, strategies as st
@@ -160,7 +161,7 @@ class PlanTests(Base):
 
     def test_default_limit_in_skills(self):
         for skill in ("spec-dispatch", "project-init"):
-            body = (SCRIPT.parents[1] / "skills" / skill / "SKILL.md").read_text(encoding="utf-8")
+            body = skill_text.read(SCRIPT.parents[1] / "skills" / skill / "SKILL.md")
             self.assertEqual(set(re.findall(r"default (\d+)", body)), {dp.REGISTRY["dispatch.limit"][2]}, skill)
 
     def test_nothing_to_give(self):

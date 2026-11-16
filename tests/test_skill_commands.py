@@ -1,13 +1,16 @@
 """The skills, the algorithm and the global rules use solo-sdd's own commands and tree, never OpenSpec, and state the
 rules other tests here name by their Requirement (the light path, debugging, the test run budget).
 
-Every line of `skills/*/SKILL.md`, `ALGORITHM.md` and `global/AGENTS.md` that names OpenSpec (any case: a command,
+Every line of `skills/*/SKILL.md` with its step files, `ALGORITHM.md` and `global/AGENTS.md` that names OpenSpec (any case: a command,
 an `openspec/` path, the word) fails, except a line with the import hint `solo-sdd import openspec`."""
 import pathlib
 import re
+import subprocess
 import sys
 import tempfile
 import unittest
+
+import skill_text
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
 HINT = "solo-sdd import openspec"
@@ -15,7 +18,7 @@ LEGACY_SKILLS = ("spec-plan", "spec-next", "spec-analyze", "spec-dispatch")
 
 
 def texts(root=REPO):
-    return sorted(root.glob("skills/*/SKILL.md")) + [p for p in (root / "ALGORITHM.md", root / "global/AGENTS.md")
+    return sorted(root.glob("skills/*/*.md")) + [p for p in (root / "ALGORITHM.md", root / "global/AGENTS.md")
                                                       if p.is_file()]
 
 
@@ -58,12 +61,12 @@ class SkillCommandsTest(unittest.TestCase):
     def test_plan_committed_names_the_branch(self):
         """Requirement: Plan committed: under pr the plan commit goes on plan/<first id> in a temporary worktree and
         ship delivers it, under local it stays on the main branch; the Plan: line names the branch and the PR."""
-        self.assertEqual(plan_commit_misses((REPO / "skills/spec-plan/SKILL.md").read_text(encoding="utf-8")), [])
+        self.assertEqual(plan_commit_misses(skill_text.read(REPO / "skills/spec-plan/SKILL.md")), [])
 
     def test_ship_through_the_pr_tool(self):
         """Requirement: Ship through the PR tool: step 7 names sdd-pr.py open, wait and merge with codes 1, 5 and 8;
         gh pr create and gh pr merge only in a sentence about a repository without solo-sdd/."""
-        text = (REPO / "skills/ship/SKILL.md").read_text(encoding="utf-8")
+        text = skill_text.read(REPO / "skills/ship/SKILL.md")
         step = "7. **PR.**" + text.split("\n7. **PR.**", 1)[1].split("\n8. ", 1)[0]
         for w in ("sdd-pr.py open", "sdd-pr.py wait", "sdd-pr.py merge", "5 main moved ahead", "8 (`waits for human merge`",
                   "1: stop, not done", "`checklist <name>: …`"):
@@ -85,23 +88,23 @@ class SkillCommandsTest(unittest.TestCase):
             self.assertEqual(openspec_lines(root), ["skills/spec-next/SKILL.md:2: Run `openspec validate --all --strict`."])
 
     def test_no_deployment_from_spec_next(self):
-        text = (REPO / "skills/spec-next/SKILL.md").read_text(encoding="utf-8")
+        text = skill_text.read(REPO / "skills/spec-next/SKILL.md")
         for bad in ("openspec-after-update.py", "sync.py push"):
             self.assertNotIn(bad, text)
 
     def test_legacy_tree_stop(self):
-        missing = [s for s in LEGACY_SKILLS if not legacy_stop((REPO / "skills" / s / "SKILL.md").read_text(encoding="utf-8"))]
+        missing = [s for s in LEGACY_SKILLS if not legacy_stop(skill_text.read(REPO / "skills" / s / "SKILL.md"))]
         self.assertEqual(missing, [], "no stop line on a legacy openspec/ tree")
         self.assertFalse(legacy_stop("Only `openspec/`: go on.\n"))
 
     def test_writing_rules_in_spec_plan(self):
-        text = (REPO / "skills/spec-plan/SKILL.md").read_text(encoding="utf-8")
+        text = skill_text.read(REPO / "skills/spec-plan/SKILL.md")
         for rule in ("## Purpose", "MODIFIED", "Specs: none", "Acceptance", "Live Scenario", "Depends On", "property"):
             self.assertIn(rule, text)
 
     def test_light_path_texts(self):
         """Requirements: Light path bounds, record and count: one rule in the rules and the algorithm, the readers."""
-        read = lambda rel: (REPO / rel).read_text(encoding="utf-8")
+        read = lambda rel: skill_text.read(REPO / rel)
         for rel in ("global/AGENTS.md", "ALGORITHM.md"):
             self.assertEqual(sum("process.light-path.max-files" in l for l in read(rel).splitlines()), 1, rel)
         self.assertIn("solo-sdd config get process.light-path", read("global/AGENTS.md"))
@@ -116,7 +119,7 @@ class SkillCommandsTest(unittest.TestCase):
 
     def test_code_bug_path(self):
         """Requirement: Code bug path: the steps in order, no profile first, the description and the rules entry."""
-        text = (REPO / "skills/debug-profile/SKILL.md").read_text(encoding="utf-8")
+        text = skill_text.read(REPO / "skills/debug-profile/SKILL.md")
         path = text.split("## 3. A bug in code", 1)[1].split("\n## ", 1)[0]
         at = [path.find(s) for s in ("a failing test", "call chain", "working example", "One hypothesis", "Bug fix")]
         self.assertNotIn(-1, at)
@@ -131,7 +134,7 @@ class SkillCommandsTest(unittest.TestCase):
 
     def test_debugging_and_planning_by_own_skills(self):
         """Requirement: Debugging and planning by own skills: relay step 4, rules section 10, no plugin skill."""
-        read = lambda rel: (REPO / rel).read_text(encoding="utf-8")
+        read = lambda rel: skill_text.read(REPO / rel)
         step = read("skills/relay/SKILL.md").split("\n4. ", 1)[1].split("\n5. ", 1)[0]
         self.assertIn("`/debug-profile`", step)
         orch = read("global/AGENTS.md").split("## 10. Orchestration", 1)[1].split("\n## ", 1)[0]
@@ -144,7 +147,7 @@ class SkillCommandsTest(unittest.TestCase):
 
     def test_two_test_commands(self):
         """Requirement: Two test commands: project-init writes both rows, this repository holds them, readers take Tests."""
-        read = lambda rel: (REPO / rel).read_text(encoding="utf-8")
+        read = lambda rel: skill_text.read(REPO / rel)
         init = read("skills/project-init/SKILL.md")
         row = next(l for l in init.splitlines() if l.startswith("| Commands |"))
         for w in ("the `Tests` row", "the `Tests (one)` row"):
@@ -181,7 +184,7 @@ class SkillCommandsTest(unittest.TestCase):
 
     def test_suite_once_per_change(self):
         """Requirement: Suite once per change: spec-next step 6, the rework after Important, the rules and the algorithm."""
-        read = lambda rel: (REPO / rel).read_text(encoding="utf-8")
+        read = lambda rel: skill_text.read(REPO / rel)
         nxt = read("skills/spec-next/SKILL.md")
         step6 = nxt.split("\n6. **Checks**", 1)[1].split("\n7. ", 1)[0]
         rules = read("global/AGENTS.md").split("## 3. What", 1)[1].split("\n## ", 1)[0]
@@ -199,7 +202,7 @@ class SkillCommandsTest(unittest.TestCase):
 
     def test_reviewer_does_not_rerun_the_suite(self):
         """Requirement: Reviewer does not rerun the suite: step 7a hands the result line, single doubtful tests only."""
-        text = (REPO / "skills/spec-next/SKILL.md").read_text(encoding="utf-8")
+        text = skill_text.read(REPO / "skills/spec-next/SKILL.md")
         gets = text.split("\n7a. ", 1)[1].split("\n8. ", 1)[0]
         for w in ("the `Tests` command with its result line", "does not rerun the suite",
                   "only the single tests it doubts, by `Tests (one)`"):
@@ -209,7 +212,7 @@ class SkillCommandsTest(unittest.TestCase):
     def test_review_rounds_and_extra_round_for_fix_findings(self):
         """Requirement: Review rounds (default 5, the fallback 5) and Requirement: Extra round for fix findings (only
         after the second or later round, only for findings in the lines of the last rework, no second one, reported)."""
-        read = lambda rel: self.flat((REPO / rel).read_text(encoding="utf-8"))
+        read = lambda rel: self.flat(skill_text.read(REPO / rel))
         nxt = read("skills/spec-next/SKILL.md")
         rounds = nxt.split("- Rounds. ", 1)[1].split(" - ", 1)[0]
         self.assertIn("`solo-sdd config get process.review-rounds` in the project (default 5; no `solo-sdd` command: 5)",
@@ -241,7 +244,7 @@ class SkillCommandsTest(unittest.TestCase):
     def test_checks_point_in_spec_next_a_gate_fail_holds_the_step(self):
         """Requirement: Checks point in spec-next: step 6 runs check after the Tests run, a gate FAIL holds the step
         like a red test, the call runs again after the fix, and the agent keeps the Integrations lines of Result."""
-        nxt = (REPO / "skills/spec-next/SKILL.md").read_text(encoding="utf-8")
+        nxt = skill_text.read(REPO / "skills/spec-next/SKILL.md")
         step6 = self.flat(nxt.split("\n6. **Checks**", 1)[1].split("\n7. ", 1)[0])
         item = step6.split("- Integrations:", 1)[1]
         for w in ("`solo-sdd config get integrations` is not empty", "after the `Tests` run",
@@ -256,7 +259,7 @@ class SkillCommandsTest(unittest.TestCase):
     def test_reviewer_gets_the_integration_lines_advice_reaches_the_reviewer(self):
         """Requirement: Reviewer gets the integration lines: step 7a hands the printed lines of the last check,
         advice included, as data, and forbids rerunning them."""
-        nxt = (REPO / "skills/spec-next/SKILL.md").read_text(encoding="utf-8")
+        nxt = skill_text.read(REPO / "skills/spec-next/SKILL.md")
         gets = self.flat(nxt.split("\n7a. ", 1)[1].split("\n8. ", 1)[0])
         for w in ("Also gets the printed lines of the last `solo-sdd check` run of step 6, `advice` lines included, as "
                   "input data", "does not rerun `solo-sdd check` or any integration",
@@ -278,7 +281,7 @@ class SkillCommandsTest(unittest.TestCase):
     def test_ship_point_a_gate_fail_before_the_commit(self):
         """Requirement: Ship point: check --point ship after the inventory and before the commits, a gate FAIL stops
         before the commit and the report names the integration, a recorded tree is reused."""
-        text = (REPO / "skills/ship/SKILL.md").read_text(encoding="utf-8")
+        text = skill_text.read(REPO / "skills/ship/SKILL.md")
         before = self.flat(text.split("\n3. **Inventory.**", 1)[1].split("\n5. **Commits.**", 1)[0])
         for w in ("`solo-sdd config get integrations` is not empty, then `solo-sdd check --point ship`",
                   "Code 1 (a `gate` FAIL) stops before the commit", "the report names the integration of each "
@@ -289,6 +292,46 @@ class SkillCommandsTest(unittest.TestCase):
         algo = self.flat((REPO / "ALGORITHM.md").read_text(encoding="utf-8").split("### 8. Delivery", 1)[1]
                          .split("\n### ", 1)[0])
         self.assertIn("`solo-sdd check --point ship` runs before the commits; a `gate` FAIL stops before the commit", algo)
+
+
+class SkillSizeBudget(unittest.TestCase):
+    """Requirement: Skill size budget: every tracked skills/*/SKILL.md is at most 16,000 bytes."""
+
+    def test_the_tree(self):
+        self.assertEqual(skill_text.over_budget(), [])
+
+    def test_skill_size_budget_rows(self):
+        with tempfile.TemporaryDirectory() as root:
+            git = lambda *a: subprocess.run(("git",) + a, cwd=root, check=True, capture_output=True,
+                                            stdin=subprocess.DEVNULL)
+            git("init", "-q")
+            for name, size in (("over", 16001), ("at", 16000), ("mine", 40000)):
+                (pathlib.Path(root) / "skills" / name).mkdir(parents=True)
+                (pathlib.Path(root) / "skills" / name / "SKILL.md").write_bytes(b"x" * size)
+            git("add", "skills/over/SKILL.md", "skills/at/SKILL.md")
+            self.assertEqual(skill_text.over_budget(root), ["skills/over/SKILL.md 16001 bytes"])
+
+
+class StepFiles(unittest.TestCase):
+    """Requirement: Step files: a named step file exists and every other .md file of a skill folder is named."""
+
+    def test_the_tree(self):
+        self.assertEqual(skill_text.step_errors(), [])
+
+    def test_step_files_rows(self):
+        line = "7. **Merge.** Read `%s` each time this step starts, also after compaction.\n"
+        with tempfile.TemporaryDirectory() as root:
+            skills = pathlib.Path(root) / "skills"
+            for name in ("spec-dispatch", "spec-next"):
+                (skills / name).mkdir(parents=True)
+            (skills / "spec-dispatch" / "SKILL.md").write_text("# d\n" + line % "merge.md", encoding="utf-8")
+            (skills / "spec-next" / "SKILL.md").write_text("# n\n" + line % "closing.md" + "Read `tasks.md`.\n",
+                                                           encoding="utf-8")
+            (skills / "spec-next" / "closing.md").write_text("9. **Closing.** Archive.\n", encoding="utf-8")
+            (skills / "spec-next" / "old-step.md").write_text("old\n", encoding="utf-8")
+            self.assertEqual(skill_text.step_errors(root),
+                             ["skills/spec-dispatch: missing merge.md", "skills/spec-next: orphan old-step.md"])
+            self.assertEqual(skill_text.skill("spec-next", root), "# n\n9. **Closing.** Archive.\nRead `tasks.md`.\n")
 
 
 if __name__ == "__main__":
