@@ -35,7 +35,7 @@ def legacy_stop(text):
 
 
 PLAN_PR = ("`delivery.mode` `pr`", "`plan/<first id>`", "temporary worktree", "`git fetch origin`",
-           "`git diff --quiet HEAD origin/<main branch> -- <folder>` exits 1) stops the step before any move",
+           "`git diff --quiet HEAD...origin/<main branch> -- <folder>` exits 1) stops the step here",
            "`git worktree add -b plan/<first id> ${TMPDIR:-/tmp}/plan-<first id> origin/<main branch>`",
            "`mkdir -p <worktree>/solo-sdd/changes`", "`rm -rf <worktree>/<folder>`", "`mv <folder> <worktree>/<folder>`",
            "`git restore --source=HEAD --staged --worktree -- <folder>`", "`ship`", "`sdd-pr.py`",
