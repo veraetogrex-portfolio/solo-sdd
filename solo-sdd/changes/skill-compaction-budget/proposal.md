@@ -35,11 +35,12 @@ Superpowers 7.0.1 (21.10.2026) met the same limit with a test that fails when a 
 - The other skills: all under 13,100 bytes; the size test keeps them there.
 - A hook that re-injects the active change after compaction: the SessionStart `context` hook has no matcher and already runs on `source: compact` with the open changes and git state.
 - `permissions.denyInsteadOfPrompting` for background orchestrators and the Claude Code 2.1.323 worktree limits in a sandbox: not checked against a failure here; the sandbox is off on this machine.
+- Step 9 of `spec-plan` committing the plan on the checked-out branch: `plan-commit-branch-fix`.
 - A retell step in `spec-analyze` (the Elephant-Goldfish idea): a separate decision, not a compaction defect.
 
 ## Depends On
 
-dispatch-run-decisions, review-rounds-five
+dispatch-run-decisions, review-rounds-five, plan-commit-branch-fix
 
 ## Source
 
