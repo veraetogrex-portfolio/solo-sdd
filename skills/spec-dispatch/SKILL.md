@@ -31,6 +31,12 @@ Runs on the session's main model; the dispatcher's work is mechanical, so start 
    - the first command is empty (the file is ignored by git or untracked): append the section to the end of `<MAIN>/AGENTS.md`, worktrees get it through `setup` and `refresh`;
    - the file is under git, the second is empty, mode `local`: append it and before the first merge commit only it into the local main branch: `git -C <MAIN> commit -qm "AGENTS.md: Delivery section" -- AGENTS.md`;
    - the file is under git, mode `pr` or the second command is not empty (someone else's uncommitted edits): do not touch the file or the main branch, the ready section text goes into "Needs from you" of the report.
+
+   **Run decisions file.** The owner's answers of the run (step 9) live in a file, not only in the context, which a summary drops.
+
+   It is `<MAIN>/docs/waiting.md` when `git -C <MAIN> ls-files docs/waiting.md` is empty and the file exists or `git -C <MAIN> check-ignore -q docs/waiting.md` succeeds: an untracked file keeps the main folder clean for `land-local`, and a new one is made only where git ignores it (a branch that commits it would stop the merge on an untracked copy). Otherwise `solo-sdd/run-decisions.md` of the git common folder, `git -C <MAIN> rev-parse --path-format=absolute --git-common-dir` (git never tracks it); below, `<decisions file>`.
+
+   A missing ignored `docs/waiting.md` is created from `~/.local/share/solo-sdd/templates/docs/waiting.md`; a missing common folder file is created empty, with its `solo-sdd/` folder (`mkdir -p`). Once step 1 lets the run go on, before the first plan, append `## Run decisions <date> <start time of the run>` (for example `## Run decisions 2026-11-15 14:02`) to the end of the file (in `docs/waiting.md`, after the table): the run's section is always the last `## Run decisions` section of the file.
 1. **Subagent depth.** `echo "${CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH-unset}"`. Treat an empty or non-numeric value as set below 2. If it is unset or below 2, an orchestrator cannot launch the reviewer and search: launch nobody, create no worktree, and in the report under "Needs from you" write:
    - unset: once per computer run `solo-sdd install --hooks` and restart the session;
    - set below 2: name the current value and ask to raise it to 2 where the user set it (Claude Code settings or the environment): the script does not change a set value, do not suggest it.
@@ -47,7 +53,11 @@ Runs on the session's main model; the dispatcher's work is mechanical, so start 
 
    A line `Artifacts outside git: <paths>` means these paths reach a worktree only as a copy by `sdd-worktree.py`: carry it into the report and continue. If there are `CLAIM abandoned: …` reasons and there has been no question about markers in this run yet, before the launch ask one question about all such markers by step 9. One question per run: markers abandoned after it stay in `waiting:`.
 
-   The `--ignore-dep` and `--shared` keys accumulated from the user's answers (step 9) are passed in every recalculation until the end of the run. If there are `unknown dependency: …` reasons for changes not asked about yet, before the launch ask by step 9 in one window with the other questions of this plan (abandoned markers); a change answered "Keep" is not asked again.
+   The `--ignore-dep` and `--shared` keys of the user's answers (step 9) are passed in every recalculation until the end of the run.
+
+   After a context summary, before the next recalculation, reread the last `## Run decisions` section of `<decisions file>` (step 0), from its heading to the end of the file: pass every key it holds and keep every decision without a key (a kept marker or dependency is not asked again). Earlier sections are not read: they are earlier runs' decisions.
+
+   If there are `unknown dependency: …` reasons for changes not asked about yet, before the launch ask by step 9 in one window with the other questions of this plan (abandoned markers); a change answered "Keep" is not asked again.
 3. **What to launch.** Exactly the changes from the `launch:` line, in its order.
 
    The `waiting:` line holds the waiting reasons (`CLAIM`, `CLAIM abandoned`, `WAITING`, `unknown dependency`, `depends on`, `conflict with`, `not merged: branch`, `not committed`, `limit`): they launch on the next recalculation; those not launched by the end of the work go into the report with the reason (a `not merged: branch` of a change already reported as `waits for human merge` is reported only that way; for `unknown dependency`, with the name), "not merged" with the branch and worktree, "not committed" with a request to commit the change folder: a worktree from a commit will not see it.
@@ -140,6 +150,11 @@ Runs on the session's main model; the dispatcher's work is mechanical, so start 
    The return for a build failure is one per change on all paths: if a `refresh` code 4 already happened in the return for a conflict, this failure is a repeated one.
 8. **The pipeline runs** while there are running orchestrators, changes waiting for merge (`--waiting`) or changes in `launch:`; after every event, recalculate (step 2). In `local` mode a change whose status was accepted before merge is in `--running`: acceptance and merge go on this machine, it takes a slot. Merged changes in the archive unblock their dependants.
 9. **Questions to the user.** A decision needed from the user goes at once into an `AskUserQuestion` window (deferred: load it through `ToolSearch`) with options, the recommended one first. The orchestrators work in the background; their statuses, merges and launches come after the answer. No window (a `claude -p` session): the question goes as the first line of the message marked "Needs from you", the other changes continue without waiting.
+
+   Every answer that changes the plan of the run (a shared path, an ignored dependency, a kept or removed marker, a kept dependency, the orchestrator limit, the order, taking or dropping changes, a delivery mode step 0 could not record) is written at once, before the next recalculation, as one line appended to `<decisions file>` (step 0), under the run's heading: `- <time> <change or path>: <decision> — <the key it gives the planner>`, `no key` when the planner takes none.
+
+   For example `- 14:05 package-lock.json: shared — --shared package-lock.json`, `- 14:07 fix-pin: marker kept — no key`, `- 14:07 fix-pin: ignore cli-participants — --ignore-dep fix-pin:cli-participants`.
+
    Abandoned markers: the options `Remove and launch` (recommended) and `Keep`, the question text holds the ids and reasons from `waiting:`.
    - "Remove and launch": recalculate by step 2, `rm <MAIN>/solo-sdd/changes/<id>/CLAIM` only for those named in the question whose reason is still `CLAIM abandoned` (do not touch live markers), recalculate again.
    - "Keep": the markers stay, the change stays in `waiting:` until the end of the run and in the report with the reason, the question is not repeated.
@@ -214,6 +229,7 @@ Lesson…: <above the NOTES limit: the Lesson lines of the spec-next report, one
 | "I will run the tests once more before merge" | No: CI or the check after merge checks them |
 | "I will merge everything into the local main, PR later" | In `pr` mode, a PR right after acceptance |
 | "I will glue the PR steps into one command" | No, only `ship` and `land` |
+| "The context was summarised, I remember the keys" | No. Before the next recalculation reread the last `## Run decisions` section of the decisions file (step 0) and pass its keys |
 
 ## Report (in the user's language, in this form)
 
@@ -227,6 +243,7 @@ Not transported: <id — the `not transported:` line from `transport`> | none
 Returned to orchestrators: <id — reason: status, conflict, checks, CI, CodeQL> | none
 Hook blocks: <text and what was done> | none
 Lessons: <id — the `Lesson` line from the status> | none
+Run decisions: <file> — <lines of the run's section> | none
 Open PRs of the run: <links> | none
 Delivery mode: local|pr (source: `solo-sdd/config` | the "Delivery" section | `mode: team` | no remote | the user's answer); N in the local branch, M on the remote
 Delivery: <by ship> | push not done: no remote | waits for deploy consent: <what and where>
