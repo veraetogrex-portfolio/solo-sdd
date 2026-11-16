@@ -129,6 +129,8 @@ pip install -U solo-sdd
 solo-sdd update
 ```
 
+The home menu (`solo-sdd` in a terminal) and `solo-sdd doctor` check for a newer version at most once a day; after you confirm, the menu's Update entry runs the upgrade and `solo-sdd install`, then asks before `solo-sdd init` in a project with older rules. `SOLO_SDD_NO_UPDATE_CHECK=1` turns the check off ([Update check](https://github.com/veraetogrex-portfolio/solo-sdd/blob/main/docs/cli.md#update-check)).
+
 `solo-sdd init` in a project refreshes its rules block. `solo-sdd doctor` checks the environment when something does not work. To remove the copies and hooks from your home folder (`--purge` also removes solo-sdd's data folder; the projects keep their `solo-sdd/` trees):
 
 ```bash

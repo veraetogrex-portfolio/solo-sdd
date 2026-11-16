@@ -1,8 +1,9 @@
-## Purpose
+# update-check Specification
 
+## Purpose
 Tells a person that a newer solo-sdd exists and updates it, with its layout and the current project's rules, from the home menu on their confirmation, without the network in ordinary commands and hooks.
 
-## ADDED Requirements
+## Requirements
 
 ### Requirement: Version check
 The home menu, without delaying its drawing, and `doctor` SHALL ask the registry of the install method (npm for an npm install, PyPI otherwise) for the latest version at most once in 24 hours with a 2 second timeout, caching the answer and its time. A clone SHALL not be checked. Only a newer stable version SHALL be a notice; a failure SHALL show none in the menu and keep the cached answer.

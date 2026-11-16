@@ -39,6 +39,7 @@ PULL_HINT = "python3 sync.py pull"
 HOME = os.path.expanduser("~")
 DATA = os.path.join(HOME, ".local", "share", "solo-sdd")
 STATE = os.path.join(DATA, "state.json")
+UPDATE_CHECK = "update-check.json"  # in DATA: the version check cache of solo_sdd/update_check.py
 # Copies an earlier version laid out and this one no longer has a source for.
 RETIRED = ("~/.local/bin/openspec-after-update.py", "~/.local/bin/test_openspec_after_update.py",
            "~/.local/share/solo-sdd/templates/openspec/config.yaml", "~/.local/share/solo-sdd/templates/openspec/analyze.md")
@@ -680,7 +681,8 @@ def uninstall(purge=False):
 def purge_data(items):
     """Deletes in DATA only the top-level entries solo-sdd writes there: those holding a copy of items, the state, the
     backups and the checks cache. A link or any other entry is the owner's: kept and named. DATA goes once empty."""
-    own = [t for _, _, t, _ in items] + [STATE, backup_root(), os.path.join(HOME, integration_run.CHECKS_DIR)]
+    own = [t for _, _, t, _ in items] + [STATE, backup_root(), os.path.join(HOME, integration_run.CHECKS_DIR),
+                                         os.path.join(DATA, UPDATE_CHECK)]
     names = {os.path.relpath(p, DATA).split(os.sep)[0] for p in own if p.startswith(DATA + os.sep)}
     try:
         entries = sorted(os.listdir(DATA))
