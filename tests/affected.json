@@ -229,6 +229,9 @@
    "tests/test_sdd_worktree.py",
    "tests/test_shared_repo.py"
   ],
+  "tests/fixtures/codex-rollout.jsonl": [
+   "tests/test_work_hooks.py"
+  ],
   "tests/stands/": [],
   "tests/stands/map-stand/": [
    "tests/test_map_check.py"

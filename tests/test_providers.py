@@ -3,9 +3,12 @@
 import json, os, re, shutil, subprocess, sys, tempfile, unittest
 from unittest import mock
 
+from hypothesis import Phase, given, settings as hsettings, strategies as st
+
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO)
-from solo_sdd import layout, providers, settings  # noqa: E402
+from solo_sdd import hooks, layout, providers, settings  # noqa: E402
+import marks  # noqa: E402
 
 
 def cli(args, home, cwd, path):
@@ -93,7 +96,7 @@ class Placement(Temp):
         with open(os.path.join(repo, "targets.json"), "w") as f:
             json.dump({"needs": {"spec-dispatch": ["subagents", "hooks"]},
                        "skills": {"spec-dispatch": ["other", "codex", "claude"]}, "files": {}}, f)
-        with mock.patch.object(layout, "REPO", repo):
+        with mock.patch.object(layout, "REPO", repo), mock.patch.dict(providers.PROVIDERS["codex"]["caps"], {"hooks": "unverified"}):
             places = [t for _, _, t, _ in layout.pairs(providers.ALL)]
             self.assertEqual(places, [os.path.join(layout.expand("~/.claude/skills"), "spec-dispatch", "SKILL.md")])
             with mock.patch.dict(providers.PROVIDERS["codex"]["caps"], {"hooks": "1.0.0"}):
@@ -146,7 +149,7 @@ class Doctor(Temp):
         self.assertEqual(cli(["install", "--agents", "claude,codex"], self.home, REPO, self.bin)[0], 0)
         out = self.doctor()
         self.assertIn("ok agent claude: hooks (2.1.312), subagents (2.1.312)", out)
-        self.assertIn("warn agent codex: no hooks: CLAIM guard, secret guard and stop check not enforced", out)
+        self.assertIn("ok agent codex: hooks (0.159.2), subagents (0.159.2)", out)  # Codex hook probe, 2026-11-16
         self.assertRegex(out, r"(?m)^warn agent other: no hooks: .*; no subagents: ")
         self.assertEqual(len(re.findall(r"(?m)^\w+ agent ", out)), 3)
 
@@ -198,6 +201,27 @@ class AgentsSetting(Temp):
 
 class Probe(Temp):
     """Requirement: Probe without side effects, scenario No Cursor."""
+
+    def test_codex_hook_probe_without_codex(self):
+        """Requirement: Codex hook probe, scenario The hook did not run: no codex command, nothing run."""
+        p = subprocess.run([sys.executable, os.path.join(REPO, "tests", "stands", "provider-probe.py"), "codex"],
+                           cwd=self.tmp, capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=60,
+                           env=dict(os.environ, HOME=self.home, PATH=self.bin))
+        self.assertIn("codex - hooks: unverified — codex not in PATH;", p.stdout)
+        self.assertEqual(os.listdir(self.home), [])
+
+    def test_codex_hook_probe_hook_did_not_run(self):
+        """Requirement: Codex hook probe, scenario The hook did not run: a codex that runs no hook and lists none."""
+        with open(os.path.join(self.bin, "codex"), "w") as f:
+            f.write('#!/bin/sh\ncase "$1" in --version) echo "codex-cli 9.9.9";; features) echo "multi_agent stable true";; esac\n')
+        os.chmod(os.path.join(self.bin, "codex"), 0o755)
+        p = subprocess.run([sys.executable, os.path.join(REPO, "tests", "stands", "provider-probe.py"), "codex"],
+                           cwd=self.tmp, capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=60,
+                           env=dict(os.environ, HOME=self.home, PATH=self.bin + os.pathsep + "/usr/bin:/bin"))
+        self.assertEqual(p.returncode, 0 if providers.PROVIDERS["codex"]["caps"]["hooks"] == "unverified" else 1, p.stderr)
+        self.assertIn("codex 9.9.9 hooks: unverified — no-op hook ran: none (codex app-server hooks/list gave no answer)",
+                      p.stdout)
+        self.assertEqual(os.listdir(self.home), [])
 
     def test_no_cursor(self):
         p = subprocess.run([sys.executable, os.path.join(REPO, "tests", "stands", "provider-probe.py"), "cursor"],
@@ -326,6 +350,184 @@ class Readme(unittest.TestCase):
         with open(os.path.join(REPO, "docs", "agents.md"), encoding="utf-8") as f:
             body = f.read()
         self.assertIn("\n" + providers.table(), body)
+
+
+def unverified_cli(home, *args):
+    """`solo-sdd <args>` with the Codex `hooks` capability set back to unverified, as before the probe confirmed it."""
+    code = ("import sys; from solo_sdd import cli, providers; providers.PROVIDERS['codex']['caps']['hooks'] = 'unverified'; "
+            "sys.exit(cli.main(sys.argv[1:]))")
+    p = subprocess.run([sys.executable, "-c", code, *args], capture_output=True, text=True, stdin=subprocess.DEVNULL,
+                       timeout=120, env=dict(os.environ, HOME=home, PATH=os.path.join(home, "no-bin"), PYTHONPATH=REPO))
+    return p.returncode, p.stdout
+
+
+class InstallForChosenAgents(Temp):
+    """Requirement: Install for chosen agents, scenario Hooks without Claude."""
+
+    def test_hooks_without_claude_unverified_codex(self):
+        before = tree(self.home)
+        code, out = unverified_cli(self.home, "install", "--agents", "codex", "--hooks")
+        self.assertEqual(code, 1, out)
+        self.assertIn("hooks need claude or a confirmed codex among the agents", out)
+        self.assertEqual(tree(self.home), before)
+
+    def test_hooks_without_claude_while_connected(self):
+        self.assertEqual(unverified_cli(self.home, "install", "--agents", "claude,codex", "--hooks")[0], 0)
+        self.assertFalse(os.path.exists(os.path.join(self.home, ".codex", "hooks.json")), "no codex entries while unverified")
+        self.assertFalse(os.path.exists(os.path.join(self.home, ".codex", "hooks")), "no codex hook copies while unverified")
+        before = tree(self.home)
+        code, out = unverified_cli(self.home, "install", "--agents", "codex")
+        self.assertEqual(code, 1, out)
+        self.assertIn("hooks need claude or a confirmed codex among the agents", out)
+        self.assertEqual(tree(self.home), before)
+
+    def test_confirmed_codex_alone(self):
+        self.assertTrue(providers.has("codex", "hooks"))
+        code, out = cli(["install", "--agents", "codex", "--hooks"], self.home, self.tmp, self.bin)
+        self.assertEqual(code, 0, out)
+        self.assertFalse(os.path.exists(os.path.join(self.home, ".claude")), "no Claude settings without claude")
+        with open(os.path.join(self.home, ".codex", "hooks.json")) as f, mock.patch.object(layout, "HOME", self.home):
+            self.assertEqual(json.load(f)["hooks"], hooks.codex_need())
+
+
+FOREIGN = {"matcher": "Bash", "hooks": [{"type": "command", "command": "other-tool check"}]}
+
+
+class CodexHookLayout(Temp):
+    """Requirement: Codex hook layout."""
+
+    def setUp(self):
+        super().setUp()
+        self.codex = os.path.join(self.home, ".codex")
+        os.makedirs(self.codex)
+        self.json = os.path.join(self.codex, "hooks.json")
+        self.hook = os.path.join(self.codex, "hooks", "work_hooks.py")
+
+    def install(self, *args):
+        return cli(["install", *args], self.home, self.tmp, self.bin)
+
+    def entries(self):
+        with open(self.json) as f:
+            return json.load(f)["hooks"]
+
+    def test_a_clean_codex_home(self):
+        code, out = self.install("--agents", "claude,codex", "--hooks")
+        self.assertEqual(code, 0, out)
+        with open(os.path.join(REPO, "global", "work_hooks.py"), "rb") as a, open(self.hook, "rb") as b:
+            self.assertEqual(a.read(), b.read())
+        with open(os.path.join(REPO, "global", "model-policy.json"), "rb") as a, open(os.path.join(self.codex, "hooks", "model-policy.json"), "rb") as b:
+            self.assertEqual(a.read(), b.read())
+        h = self.entries()
+        self.assertEqual(sorted(h), ["PreToolUse", "SessionEnd", "SessionStart", "Stop"])
+        for event, sub in (("PreToolUse", "guard"), ("SessionStart", "context"), ("SessionEnd", "end"), ("Stop", "stop")):
+            self.assertEqual(len(h[event]), 1, event)
+            self.assertTrue(h[event][0]["hooks"][0]["command"].endswith('"$f" ' + sub), h[event])
+        self.assertEqual(h["PreToolUse"][0]["matcher"], "Bash|Write|Edit|MultiEdit|NotebookEdit|Agent")
+        before = tree(self.home)
+        self.assertEqual(self.install("--agents", "claude,codex", "--hooks")[0], 0)
+        self.assertEqual(tree(self.home), before, "a second run changes no file")
+        code, out = cli(["doctor"], self.home, self.tmp, self.bin)
+        self.assertIn("ok codex hooks", out)
+        self.assertRegex(out, r"ok +agent codex")
+
+    def test_the_hand_copy(self):
+        os.makedirs(os.path.dirname(self.hook))
+        with open(self.hook, "w") as f:
+            f.write("# a hand copy\n")
+        code, out = self.install("--agents", "claude,codex", "--hooks")
+        self.assertEqual(code, 1, out)
+        self.assertIn("foreign ~/.codex/hooks/work_hooks.py: kept", out)
+        self.assertEqual(open(self.hook).read(), "# a hand copy\n")
+        code, out = self.install("--agents", "claude,codex", "--hooks", "--replace-foreign")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(open(self.hook).read(), open(os.path.join(REPO, "global", "work_hooks.py")).read())
+        backups = [os.path.join(d, f) for d, _, fs in os.walk(os.path.join(self.home, ".local/share/solo-sdd/backup"))
+                   for f in fs if f == "work_hooks.py"]
+        self.assertEqual([open(b).read() for b in backups], ["# a hand copy\n"])
+
+    def test_a_foreign_entry_kept(self):
+        with open(self.json, "w") as f:
+            json.dump({"hooks": {"PreToolUse": [FOREIGN]}}, f)
+        self.assertEqual(self.install("--agents", "claude,codex", "--hooks")[0], 0)
+        h = self.entries()
+        self.assertEqual(h["PreToolUse"][0], FOREIGN)
+        self.assertEqual(len(h["PreToolUse"]), 2)
+        self.assertTrue(any(n.startswith("hooks.json.bak-") for n in os.listdir(self.codex)), "backed up before the rewrite")
+
+    def test_a_broken_hooks_file(self):
+        with open(self.json, "w") as f:
+            f.write("{broken")
+        before = tree(self.codex)
+        code, out = self.install("--agents", "claude,codex", "--hooks")
+        self.assertEqual(code, 1, out)
+        self.assertIn("~/.codex/hooks.json", out)
+        self.assertEqual(tree(self.codex), before)
+
+    def test_codex_dropped_from_the_choice(self):
+        with open(self.json, "w") as f:
+            json.dump({"hooks": {"PreToolUse": [FOREIGN]}}, f)
+        self.assertEqual(self.install("--agents", "claude,codex", "--hooks")[0], 0)
+        self.assertEqual(len(self.entries()["Stop"]), 1)
+        self.assertTrue(os.path.exists(self.hook))
+        code, out = self.install("--agents", "claude", "--hooks")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.entries(), {"PreToolUse": [FOREIGN]})
+        self.assertFalse(os.path.exists(self.hook))
+        self.assertFalse(os.path.exists(os.path.join(self.codex, "hooks", "model-policy.json")))
+
+
+EVENTS = ("PreToolUse", "SessionStart", "SessionEnd", "Stop", "PostToolUse")
+OURS = [g for gs in hooks.codex_need().values() for g in gs]
+STALE = {"hooks": [{"type": "command", "command": "exec /usr/bin/python3 ~/.codex/hooks/work_hooks.py stop", "timeout": 5}]}
+MIXED = {"matcher": "Bash", "hooks": [{"type": "command", "command": "other-tool mixed"}] + OURS[0]["hooks"]}
+GROUPS = st.one_of(st.sampled_from(OURS + [STALE, MIXED]), st.builds(
+    lambda m, c: {"matcher": m, "hooks": [{"type": "command", "command": "other-tool %s" % c}]},
+    st.sampled_from(["Bash", "*", "Edit"]), st.text("abc", max_size=3)))
+DOCS = st.dictionaries(st.sampled_from(EVENTS), st.lists(GROUPS, max_size=4)).map(lambda h: {"hooks": h})
+
+
+def check_writer(apply, phases=tuple(Phase)):
+    """Requirement Codex hook layout as a property of the writer: twice equals once, one solo-sdd entry per event,
+    foreign handlers kept and in order (a foreign handler sharing an entry with ours included), entries already in
+    place not moved."""
+    need = hooks.codex_need()
+
+    @hsettings(max_examples=marks.examples(200, 100), deadline=None, database=None, phases=phases)
+    @given(DOCS)
+    def prop(doc):
+        once = apply(doc, True)
+        assert apply(once, True) == once, doc
+        for e in set(need) | set(doc["hooks"]):
+            got = once["hooks"].get(e, [])
+            assert [g for g in got if hooks._codex_ours(g)] == need.get(e, []), (doc, e)
+            foreign = [g for g in map(hooks._strip, doc["hooks"].get(e, [])) if g is not None]
+            assert [g for g in got if not hooks._codex_ours(g)] == foreign, (doc, e)
+            if [g for g in doc["hooks"].get(e, []) if hooks._codex_ours(g)] == need.get(e, []) and e in doc["hooks"]:
+                assert got == doc["hooks"][e], ("an entry in place moved", doc, e)
+        off = apply(once, False)
+        assert not any(hooks._codex_ours(g) for gs in off["hooks"].values() for g in gs), doc
+        for e, gs in off["hooks"].items():
+            assert gs == [g for g in map(hooks._strip, once["hooks"].get(e, [])) if g is not None], (doc, e)
+    prop()
+
+
+def appending(doc, on):
+    """Mutant: appends the entries without removing the old ones."""
+    s = json.loads(json.dumps(doc))
+    for e, gs in (hooks.codex_need() if on else {}).items():
+        s["hooks"].setdefault(e, []).extend(gs)
+    return s
+
+
+class CodexHookWriter(unittest.TestCase):
+    """Requirement: Codex hook layout, the writer of ~/.codex/hooks.json as a property; the appending mutant fails it."""
+
+    def test_writing_twice_equals_writing_once(self):
+        check_writer(hooks.codex_apply)
+
+    def test_mutant_appends_without_removing(self):
+        with self.assertRaises(AssertionError):
+            check_writer(appending, (Phase.explicit, Phase.generate))
 
 
 if __name__ == "__main__":

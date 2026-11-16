@@ -359,7 +359,8 @@ class Screen:
         except (layout.BrokenState, layout.BadTargets, OSError, ValueError) as e:
             self.machine, self.want = {"error": shown(str(e))}, None
             return
-        self.machine = {"agents": chosen, "hooks": bool(state.get("_hooks")), "rules": rules, "counts": counts,
+        self.machine = {"agents": chosen, "hooks": bool(state.get("_hooks") or state.get("_codex_hooks")),
+                        "claude_hooks": bool(state.get("_hooks")), "rules": rules, "counts": counts,
                         "source": state.get("_source"), "version": state.get("_version"), "doctor": checks,
                         "detected": providers.detected(self.home), "error": None}
         self.want = {"agents": set(chosen), "hooks": self.machine["hooks"], "rules": rules}
@@ -410,9 +411,12 @@ class Screen:
                 self.message = "cannot plan the commands: %s" % shown(str(e))
                 return None
             self.refusal = None
-            if self.want["hooks"] and "claude" not in self.want["agents"]:  # install's own check, before any step
-                self.refusal = ("hooks need claude among the agents: tick claude or turn the hooks off; "
-                                "nothing ran and no file changed")
+            from solo_sdd import cli
+            # install's own check, before any step: hooks kept on stay connected while install runs
+            why = cli.hooks_refusal(self.want["agents"], self.want["hooks"],
+                                    {"_hooks": self.machine["claude_hooks"]} if self.want["hooks"] else {})
+            if why:
+                self.refusal = why + "; tick an agent or turn the hooks off: nothing ran and no file changed"
             self.mode, self.scroll = "apply", 0
         elif key == "esc" and self.text is not None:
             self.mode = "list"
@@ -430,16 +434,18 @@ class Screen:
         rule_files = sorted(layout.opt_in_keys())
         plan = []
         if m["hooks"] and not w["hooks"]:
-            plan.append(("solo-sdd uninstall --hooks", ["~/.claude/settings.json", STATE], cli.uninstall_hooks))
+            plan.append(("solo-sdd uninstall --hooks", ["~/.claude/settings.json", "~/.codex/hooks.json", STATE], cli.uninstall_hooks))
         if m["rules"] and not w["rules"]:
             plan.append(("solo-sdd uninstall --global-rules", rule_files + [STATE], layout.uninstall_rules))
-        hooks_on, rules_on = w["hooks"] and not m["hooks"], w["rules"] and not m["rules"]
+        # hooks on: newly, or for a chosen claude whose hooks are not connected while the codex hooks are
+        hooks_on = w["hooks"] and (not m["hooks"] or "claude" in w["agents"] and not m.get("claude_hooks"))
+        rules_on = w["rules"] and not m["rules"]
         if w["agents"] != set(m["agents"]) or hooks_on or rules_on:
             names = [n for n in providers.ALL if n in w["agents"]]
             command = "solo-sdd install --agents %s%s%s" % (",".join(names), " --hooks" if hooks_on else "",
                                                            " --global-rules" if rules_on else "")
             folders = [f for n in sorted(w["agents"] ^ set(m["agents"])) for f in providers.PROVIDERS[n]["owns"]]
-            folders += (["~/.claude/settings.json"] if hooks_on else []) + (rule_files if rules_on else []) + [STATE]
+            folders += (["~/.claude/settings.json", "~/.codex/hooks.json"] if hooks_on else []) + (rule_files if rules_on else []) + [STATE]
             plan.append((command, folders, lambda: cli.install(hooks_on, ",".join(names), rules_on)))
         return plan
 

@@ -20,8 +20,8 @@ PROVIDERS = {
         "rules": "~/.codex/AGENTS.md",
         "project_rules": "AGENTS.md",
         "owns": ("~/.codex/",),
-        # 0.159.2 lists the `hooks` feature, but a no-op hook in a temporary CODEX_HOME did not run
-        "caps": {"hooks": "unverified", "subagents": "0.159.2"},
+        # hooks: the no-op hook ran once trusted in config.toml as Codex records a reviewed hook (provider-probe.py codex)
+        "caps": {"hooks": "0.159.2", "subagents": "0.159.2"},
     },
     "cursor": {
         # not probed: no Cursor was available (2026-11-09); skills, rules and capabilities wait for

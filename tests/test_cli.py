@@ -363,13 +363,6 @@ class Agents(unittest.TestCase):
         self.assertIn("~/.claude/skills/ship/SKILL.md", self.state())
         self.assertNotIn("~/.claude/skills/spec-next/SKILL.md", self.state())
 
-    def test_hooks_without_claude(self):
-        before = self.tree()
-        code, out, _ = self.cli("install", "--agents", "codex", "--hooks")
-        self.assertEqual(code, 1)
-        self.assertIn("hooks need claude", out)
-        self.assertEqual(self.tree(), before)
-
     def test_narrowing_with_connected_hooks(self):
         self.assertEqual(self.cli("install", "--agents", "claude,codex", "--hooks")[0], 0)
         before = self.tree()

@@ -4,15 +4,18 @@
 subagents: `claude --help` names `--agents`; `codex features list` shows `multi_agent` stable and on.
 hooks: a no-op hook (`touch <marker>`) on session start and prompt submit, in a temporary home, with the model
 endpoint pointing at a closed local port, so no request reaches a paid model: the hook counts only if the marker appears.
-Prints one line per agent and capability: `<agent> <version> <capability>: yes | no | not installed — <evidence>`,
-and whether the registry agrees. Run from the repository root: python3 tests/stands/provider-probe.py.
+Codex runs only the hooks recorded as trusted: the probe asks the Codex app server (`hooks/list`) for each hook's
+`currentHash` and writes `[hooks.state."<key>"] trusted_hash = <hash>` into the temporary config.toml, as Codex records
+a hook the owner reviewed.
+Prints one line per agent and capability: `<agent> <version> <capability>: <version> | unverified — <evidence>`,
+and whether the registry agrees. Run from the repository root: python3 tests/stands/provider-probe.py [codex].
 The temporary folder is removed; the last line is the summary.
 
 `provider-probe.py cursor`: one line per Cursor capability (rules, skills, hooks, subagents):
 `cursor <version> <capability>: confirmed | absent | not run — <evidence>; registry <value>`. It installs nothing and
 runs `cursor-agent` only with a temporary home and project. The steps that would confirm a capability are not written:
 no Cursor was available to run them on (docs/waiting.md), so every line is `not run` and the exit code is 0."""
-import json, os, pathlib, shutil, subprocess, sys, tempfile
+import json, os, pathlib, shutil, subprocess, sys, tempfile, threading
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
@@ -42,7 +45,49 @@ def hooks_claude(tmp):
     os.makedirs(home)
     env = dict(os.environ, HOME=home, ANTHROPIC_API_KEY="probe-invalid", ANTHROPIC_BASE_URL=DEAD)
     call(["claude", "-p", "probe", "--settings", json.dumps(h)], env=env, cwd=tmp)
-    return [os.path.basename(m) for m in marks if os.path.exists(m)]
+    return [os.path.basename(m) for m in marks if os.path.exists(m)], None
+
+
+def trust_codex(env, cwd):
+    """Records every hook Codex lists as untrusted as trusted, the way Codex records a reviewed hook; returns the reason
+    when the app server gave no list, else None."""
+    p = subprocess.Popen(["codex", "app-server"], env=env, cwd=cwd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                         stderr=subprocess.DEVNULL, text=True)
+    timer = threading.Timer(60, p.kill)  # only this child: an app server that never answers is stopped
+    timer.start()
+    try:
+        answer = None
+        try:
+            for msg in ({"id": 1, "method": "initialize", "params": {"clientInfo": {"name": "provider-probe", "version": "0"}}},
+                        {"method": "initialized"}, {"id": 2, "method": "hooks/list", "params": {"cwds": [cwd]}}):
+                p.stdin.write(json.dumps(dict(msg, jsonrpc="2.0")) + "\n")
+            p.stdin.flush()
+        except OSError:  # the app server ended before reading: no list
+            pass
+        for line in p.stdout:
+            try:
+                d = json.loads(line)
+            except ValueError:
+                continue
+            if d.get("id") == 2:
+                answer = d
+                break
+    finally:
+        timer.cancel()
+        try:
+            p.stdin.close()
+        except OSError:
+            pass
+        p.kill()
+        p.wait()
+    if not answer or "result" not in answer:
+        return "codex app-server hooks/list gave %s" % (json.dumps((answer or {}).get("error")) if answer else "no answer")
+    found = [h for c in answer["result"].get("data", []) for h in c.get("hooks", [])]
+    with open(os.path.join(env["CODEX_HOME"], "config.toml"), "a") as f:
+        for h in found:
+            if h.get("trustStatus") != "trusted":
+                f.write('[hooks.state.%s]\ntrusted_hash = %s\n' % (json.dumps(h["key"]), json.dumps(h["currentHash"])))
+    return None if found else "codex app-server listed no hook"
 
 
 def hooks_codex(tmp):
@@ -57,8 +102,9 @@ def hooks_codex(tmp):
                 'wire_api = "responses"\nrequest_max_retries = 0\nstream_max_retries = 0\n'
                 '[projects."%s"]\ntrust_level = "trusted"\n' % (DEAD, tmp))
     env = dict(os.environ, HOME=tmp, CODEX_HOME=home)
+    why = trust_codex(env, tmp)
     call(["codex", "exec", "--skip-git-repo-check", "probe"], env=env, cwd=tmp)
-    return [os.path.basename(m) for m in marks if os.path.exists(m)]
+    return [os.path.basename(m) for m in marks if os.path.exists(m)], why
 
 
 def subagents(name):
@@ -92,22 +138,31 @@ def cursor():
 def main():
     if sys.argv[1:] == ["cursor"]:
         return cursor()
+    names = sys.argv[1:] or ["claude", "codex"]
+    if any(n not in ("claude", "codex") for n in names):
+        print("usage: provider-probe.py [claude | codex | cursor]")
+        return 2
     tmp = os.path.realpath(tempfile.mkdtemp(prefix="provider-probe-"))
     agree = True
     try:
         for name, probe in (("claude", hooks_claude), ("codex", hooks_codex)):
+            if name not in names:
+                continue
             if shutil.which(name) is None:
-                print("%s - hooks: not installed\n%s - subagents: not installed" % (name, name))
+                for cap in ("hooks", "subagents"):
+                    print("%s - %s: unverified — %s not in PATH; registry %s" % (
+                        name, cap, name, providers.PROVIDERS[name]["caps"].get(cap, "absent")))
                 continue
             v = version(name)
-            fired = probe(tmp)
-            found = {"hooks": (bool(fired), "no-op hook ran: %s" % (", ".join(fired) or "none")), "subagents": subagents(name)}
+            fired, why = probe(tmp)
+            ran = "no-op hook ran: %s" % (", ".join(fired) or "none") + ("" if fired or not why else " (%s)" % why)
+            found = {"hooks": (bool(fired), ran), "subagents": subagents(name)}
             for cap, (good, evidence) in found.items():
                 kept = providers.PROVIDERS[name]["caps"].get(cap, "absent")
                 want = v if good else "unverified"
                 same = kept == want
                 agree &= same
-                print("%s %s %s: %s — %s; registry %s%s" % (name, v, cap, "yes" if good else "no", evidence, kept,
+                print("%s %s %s: %s — %s; registry %s%s" % (name, v, cap, want, evidence, kept,
                                                              "" if same else " (differs: %s)" % want))
     finally:
         shutil.rmtree(tmp, True)

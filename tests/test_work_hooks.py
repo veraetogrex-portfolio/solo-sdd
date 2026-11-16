@@ -850,6 +850,7 @@ class Stop(HookCase):
         os.remove(elog)
 
 
+CODEX_ROLLOUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "codex-rollout.jsonl")
 RU_TRANSLATE = "\u041f\u0435\u0440\u0435\u0432\u0435\u0434\u0438 \u043d\u0430 \u0430\u043d\u0433\u043b\u0438\u0439\u0441\u043a\u0438\u0439"
 RU_QUESTION = "\u0410 \u0447\u0442\u043e \u0441 \u0442\u0435\u0441\u0442\u0430\u043c\u0438?"
 EN_400 = ("The change rolls the hooks out to every agent folder on this computer and the tests pass on both runners. " * 4)[:400]
@@ -928,6 +929,29 @@ class RequestedTranslation(HookCase):
         assert o and "Rewrite it in Russian" in o["reason"], ("a question typed after the request, while the agent worked", o)
         o = self.stop(human(RU_TRANSLATE), said(EN_400), human([{"type": "image", "source": {}}]))
         assert o and "Rewrite it in Russian" in o["reason"], ("an image-only message is the last user message", o)
+
+    def codex_stop(self, *extra):
+        """The Stop hook on a Codex rollout transcript: tests/fixtures/codex-rollout.jsonl (the shapes of a real Codex
+        0.159.2 rollout, owner values replaced) ends with the Russian request to translate, then the extra entries."""
+        self.n += 1
+        tr = os.path.join(H, "rollout-%d.jsonl" % self.n)
+        with open(CODEX_ROLLOUT) as f:
+            open(tr, "w").write(f.read() + "".join(json.dumps(e) + "\n" for e in extra))
+        return run("stop", {"session_id": "S-cx-%d" % self.n, "turn_id": "t2", "cwd": REPO, "transcript_path": tr,
+                            "hook_event_name": "Stop", "stop_hook_active": False, "last_assistant_message": EN_400})
+
+    def test_codex_hook_layout_a_translation_in_codex(self):
+        assert self.codex_stop() is None, "the request read from the Codex rollout"
+        typed = lambda text: {"type": "event_msg", "payload": {"type": "item_completed", "item": {
+            "type": "UserMessage", "content": [{"type": "text", "text": text}]}}}
+        o = self.codex_stop(typed(RU_QUESTION))
+        assert o and "Rewrite it in Russian" in o["reason"], ("a Russian question after the request", o)
+        older = {"type": "event_msg", "payload": {"type": "user_message", "message": RU_TRANSLATE}}
+        assert self.codex_stop(typed(RU_QUESTION), older) is None, "the older rollout form of a user message"
+        injected = {"type": "response_item", "payload": {"type": "message", "role": "user", "content": [
+            {"type": "input_text", "text": "# AGENTS.md instructions: translate"}]}}
+        o = self.codex_stop(typed(RU_QUESTION), injected)
+        assert o and "Rewrite it in Russian" in o["reason"], ("text Codex injects as a user item is not the user", o)
 
 
 EN_WINDOW = [{"question": "Roll out the change to the agent folders now?", "header": "Rollout", "multiSelect": False,

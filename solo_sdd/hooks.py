@@ -295,3 +295,100 @@ def load_bytes(raw):
     except ValueError:
         return {}
     return s if isinstance(s, dict) else {}
+
+
+# ---------- Codex: ~/.codex/hooks.json ----------
+# The entries copy the hand-made ~/.codex/hooks.json Codex already ran on the owner's computer (2026-10-15): the same
+# command text, matcher and timeouts give the same hash, so a trust Codex recorded for them in config.toml still holds.
+CODEX = "~/.codex/hooks.json"
+CODEX_HOOK = "~/.codex/hooks/work_hooks.py"
+CODEX_MATCHER = "Bash|Write|Edit|MultiEdit|NotebookEdit|Agent"
+
+
+def codex_path():
+    return layout.expand(CODEX)
+
+
+def _codex_cmd(sub, timeout):
+    f = layout.expand(CODEX_HOOK).replace("'", "'\\''")
+    return {"type": "command", "command": "f='%s'; [ -f \"$f\" ] || exit 0; exec /usr/bin/python3 \"$f\" %s" % (f, sub), "timeout": timeout}
+
+
+def codex_need():
+    return {"PreToolUse": [{"matcher": CODEX_MATCHER, "hooks": [_codex_cmd("guard", 10)]}],
+            "SessionStart": [{"hooks": [_codex_cmd("context", 15)]}],
+            "SessionEnd": [{"hooks": [_codex_cmd("end", 10)]}],
+            "Stop": [{"hooks": [_codex_cmd("stop", 30)]}]}
+
+
+def _codex_ours(g):
+    return ".codex/hooks/work_hooks.py" in json.dumps(g)
+
+
+def _strip(g):
+    """g without its handlers that run ~/.codex/hooks/work_hooks.py; None when nothing of it is left."""
+    if not _codex_ours(g):
+        return g
+    hs = g.get("hooks") if isinstance(g, dict) else None
+    rest = [x for x in hs if not _codex_ours(x)] if isinstance(hs, list) else []
+    return dict(g, hooks=rest) if rest else None
+
+
+def codex_apply(doc, on):
+    """doc with one solo-sdd entry per event (on) or none (off). An event whose solo-sdd entries are already exactly the
+    wanted ones is left as it is, so no entry moves and Codex keeps every trust (its key holds the entry's index).
+    Otherwise every handler running ~/.codex/hooks/work_hooks.py is dropped, a foreign handler sharing its entry
+    included in the rest of that entry, the foreign entries stay in order and the wanted ones go after them; an event
+    left empty is removed. doc is not changed."""
+    s = copy.deepcopy(doc)
+    h = s.setdefault("hooks", {})
+    want = codex_need() if on else {}
+    for e in list(want) + [e for e in h if e not in want]:
+        cur = h.get(e, [])
+        if [g for g in cur if _codex_ours(g)] == want.get(e, []):
+            continue
+        lst = [g for g in map(_strip, cur) if g is not None] + want.get(e, [])
+        if lst:
+            h[e] = lst
+        else:
+            h.pop(e, None)
+    return s
+
+
+def codex_check():
+    """Reads ~/.codex/hooks.json before anything is written: ValueError names the file and the reason."""
+    try:
+        return load(codex_path())
+    except ValueError as e:
+        raise ValueError("%s: %s" % (CODEX, e))
+
+
+def codex_write(on):
+    """Writes (on) or removes (off) the solo-sdd entries of ~/.codex/hooks.json, backing the file up first; a file left
+    without entries is removed (its backup stays). The printed line, or None when nothing changed; ValueError: unusable
+    file, nothing written."""
+    p = codex_path()
+    s, raw = codex_check()
+    if s is None and not on:
+        return None
+    new = codex_apply(s or {}, on)
+    if s is not None and new == s:
+        return None
+    if raw is not None:
+        _bak(p, raw)
+    if new == {"hooks": {}}:
+        os.remove(p)
+    else:
+        _put(p, _dump(new))
+    return ("ok: codex hooks written in %s; Codex runs them once trusted: at its next start choose "
+            "Review hooks or Trust all and continue" % CODEX if on
+            else "ok: codex hooks removed from %s" % CODEX)
+
+
+def codex_placed():
+    """The solo-sdd entries of ~/.codex/hooks.json are all in place."""
+    try:
+        s = codex_check()[0]
+    except ValueError:
+        return False
+    return s is not None and codex_apply(s, True) == s

@@ -11,7 +11,8 @@ COMMANDS = """solo-sdd commands:
   status                             state of every copy
   install [--agents a,b] [--hooks] [--global-rules] [--replace-foreign]
                                      lay out skills, scripts and templates for the agents (default: the last choice, else
-                                     the detected ones; other always); --hooks connects the hooks in settings.json;
+                                     the detected ones; other always); --hooks connects the hooks in
+                                     ~/.claude/settings.json and, for codex, ~/.codex/hooks.json;
                                      --global-rules also writes the rules block into ~/AGENTS.md, ~/.codex/AGENTS.md and
                                      ~/.claude/CLAUDE.md (a home that has the block from an earlier version keeps it);
                                      a file solo-sdd did not lay out is kept, --replace-foreign replaces it with a backup
@@ -66,6 +67,18 @@ def upgrade_hint(prefix, root):
     return "python3 -m pip install --upgrade solo-sdd"
 
 
+def hooks_refusal(chosen, with_hooks, state):
+    """Why install refuses the hooks for the chosen agents, else None: hooks need claude or a codex whose `hooks`
+    capability the probe confirmed, and connected Claude hooks need claude kept."""
+    on = with_hooks or state.get("_hooks") or state.get("_codex_hooks")
+    if on and "claude" not in chosen and not ("codex" in chosen and providers.has("codex", "hooks")):
+        return ("hooks need claude or a confirmed codex among the agents: solo-sdd install --agents claude,... --hooks"
+                + ("; the connected hooks go with solo-sdd uninstall" if state.get("_hooks") or state.get("_codex_hooks") else ""))
+    if state.get("_hooks") and "claude" not in chosen:
+        return "hooks need claude among the agents while its hooks are connected: solo-sdd uninstall --hooks removes them"
+    return None
+
+
 def install(with_hooks=False, agents=None, rules=False, replace_foreign=False):
     if agents is not None:
         try:
@@ -74,16 +87,46 @@ def install(with_hooks=False, agents=None, rules=False, replace_foreign=False):
             print(e)
             return 1
     state = layout.load_state()
-    if "claude" not in (agents or layout.chosen(state)) and (with_hooks or state.get("_hooks")):
-        print("hooks need claude among the agents: solo-sdd install --agents claude,... --hooks"
-              + ("; the connected hooks go with solo-sdd uninstall" if state.get("_hooks") else ""))
+    chosen = agents or layout.chosen(state)
+    refusal = hooks_refusal(chosen, with_hooks, state)
+    if refusal:
+        print(refusal)
         return 1
+    codex_on = "codex" in chosen and providers.has("codex", "hooks") and bool(
+        with_hooks or state.get("_hooks") or state.get("_codex_hooks"))
+    if codex_on or state.get("_codex_hooks"):
+        try:
+            hooks.codex_check()  # a broken file stops before any copy is written
+        except (ValueError, OSError) as e:
+            print("fail %s" % e)
+            return 1
     problems = layout.push(agents=agents, rules=rules, replace_foreign=replace_foreign)
-    for name in agents or layout.chosen(layout.load_state()):
+    for name in chosen:
         if not providers.probed(name):
             print("%s: %s" % (name, providers.unprobed()))
-    connected = hooks.setup() if with_hooks else 0
+    connected = hooks.setup() if with_hooks and "claude" in chosen else 0
+    if codex_on or state.get("_codex_hooks"):
+        connected = codex_hooks(codex_on) or connected
     return 1 if problems or connected else 0
+
+
+def codex_hooks(on):
+    """Writes or removes the solo-sdd entries of ~/.codex/hooks.json and records it in the state; 1 on an unusable file."""
+    try:
+        line = hooks.codex_write(on)
+    except (ValueError, OSError) as e:
+        print("fail %s" % e)
+        return 1
+    if line:
+        print(line)
+    state = layout.load_state()
+    if on != bool(state.get("_codex_hooks")):
+        if on:
+            state["_codex_hooks"] = True
+        else:
+            state.pop("_codex_hooks")
+        layout.save_state(state)
+    return 0
 
 
 def uninstall(purge=False):
@@ -94,14 +137,21 @@ def uninstall(purge=False):
         state = layout.load_state()
         if state.pop("_hooks", None) is not None:
             layout.save_state(state)
+    if layout.load_state().get("_codex_hooks"):
+        code = codex_hooks(False) or code
     return 1 if layout.uninstall(purge) or code else 0
 
 
 def uninstall_hooks():
     """Disconnects only what install --hooks recorded; the copies, the rules block and a person's entries stay."""
-    steps = layout.load_state().get("_hooks")
-    if not steps:
+    state = layout.load_state()
+    steps = state.get("_hooks")
+    if not steps and not state.get("_codex_hooks"):
         print("hooks are not connected; nothing changed")
+        return 0
+    if state.get("_codex_hooks") and codex_hooks(False):
+        return 1
+    if not steps:
         return 0
     if hooks.restore(steps):
         return 1

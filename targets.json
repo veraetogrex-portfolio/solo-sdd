@@ -1,5 +1,5 @@
 {
-  "needs": {"spec-dispatch": ["subagents", "hooks"]},
+  "needs": {"spec-dispatch": ["subagents", "hooks"], "global/work_hooks.py": ["hooks"], "global/model-policy.json": ["hooks"]},
   "skills": {
     "spec-plan": ["other", "cursor", "codex", "claude"],
     "spec-analyze": ["other", "cursor", "codex", "claude"],
@@ -24,13 +24,13 @@
   },
   "files": {
     "global/process-guard.py": ["~/.claude/hooks/process-guard.py"],
-    "global/work_hooks.py": ["~/.claude/hooks/work_hooks.py"],
+    "global/work_hooks.py": ["~/.claude/hooks/work_hooks.py", "~/.codex/hooks/work_hooks.py"],
     "global/sdd_worktree.py": ["~/.local/bin/sdd-worktree.py"],
     "global/sdd_dispatch_plan.py": ["~/.local/bin/sdd-dispatch-plan.py"],
     "global/sdd_pr.py": ["~/.local/bin/sdd-pr.py"],
     "global/sdd_dispatch.py": ["~/.local/bin/sdd-dispatch.py"],
     "global/sdd_eval.py": ["~/.local/bin/sdd-eval.py"],
-    "global/model-policy.json": ["~/.claude/hooks/model-policy.json"],
+    "global/model-policy.json": ["~/.claude/hooks/model-policy.json", "~/.codex/hooks/model-policy.json"],
     "global/AGENTS.md": {"mode": "block", "opt_in": "global-rules", "copies": ["~/AGENTS.md", "~/.codex/AGENTS.md", "~/.claude/CLAUDE.md"]},
     "ALGORITHM.md": ["~/.local/share/solo-sdd/ALGORITHM.md"],
     "integrations/antislop/antislop.md": {"skills": {"ui-check": "antislop/core.md", "copy-check": "antislop/core.md"}},

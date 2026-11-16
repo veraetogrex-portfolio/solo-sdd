@@ -46,8 +46,13 @@ def _layout(state):
 
 
 def _hooks(state):
+    if state.get("_codex_hooks"):
+        if hooks.codex_placed():
+            yield "ok", "codex hooks", "in place in %s" % hooks.CODEX
+        else:
+            yield "fail", "codex hooks", "entries not in place in %s; run solo-sdd install --hooks" % hooks.CODEX
     if not state.get("_hooks"):
-        yield "ok", "hooks", "not connected"
+        yield "ok", "hooks", "claude hooks not connected" if state.get("_codex_hooks") else "not connected"
         return
     try:
         s, _ = hooks.load(hooks.path())
