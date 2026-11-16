@@ -35,7 +35,7 @@ The README leads with what solo-sdd is, its quick start and its own features, st
 - **THEN** `SOURCES.md` has one section per copy that names its folder, the version from its `VERSION` and its license, and names no other project
 
 ### Requirement: Line length
-No line of `README.md`, `ALGORITHM.md` and the `skills/*/SKILL.md` files git tracks SHALL be longer than 600 characters (code points) outside fenced code blocks; a table row is a line too. A test SHALL name each longer line by file and line number.
+No line of `README.md`, `ALGORITHM.md`, the `skills/*/SKILL.md` files and the step files `skills/*/*.md` git tracks SHALL be longer than 600 characters (code points) outside fenced code blocks; a table row is a line too. A test SHALL name each longer line by file and line number.
 
 #### Scenario: A long paragraph
 - **WHEN** a skill gets a paragraph line of 700 characters
@@ -52,6 +52,10 @@ No line of `README.md`, `ALGORITHM.md` and the `skills/*/SKILL.md` files git tra
 #### Scenario: An untracked skill
 - **WHEN** a working copy skill that git does not track has a 700-character line
 - **THEN** the test passes
+
+#### Scenario: A long line in a step file
+- **WHEN** the step file `skills/spec-dispatch/merge.md` gets a paragraph line of 700 characters
+- **THEN** the test fails naming `skills/spec-dispatch/merge.md` and the line number
 
 ### Requirement: Short README
 `README.md` SHALL be at most 12 000 bytes and hold the sections "Update and uninstall", "Docs", "Contributing" and "License". "Docs" SHALL link by an absolute address every `docs/*.md` file git tracks; a reference section moved out of the README keeps its text in the docs file it moved to.
