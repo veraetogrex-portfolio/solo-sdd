@@ -1477,6 +1477,70 @@ class Doctor(unittest.TestCase):
         self.assertIn("ok hook errors: none", self.go("doctor")[1].splitlines())
 
 
+    def test_project_rules(self):
+        # Requirement: Stale project rules named (rules-scope)
+        from solo_sdd import init
+        source = os.path.join(REPO, RULES)
+
+        def older(text):  # a line of the rules replaced and its digest recorded: what an older init left
+            before, body, after = rules_block.parse(text)
+            body = body.replace("\n", "\nan older rule line\n", 1)
+            with open(os.path.join(d, "solo-sdd/rules-block"), "w") as f:
+                f.write(digest(body) + "\n")
+            return before + rules_block.block(body) + after
+
+        def global_(text):
+            self.assertEqual(run([sys.executable, "-m", "solo_sdd", "config", "set", "rules.scope", "global"],
+                                 self.home, cwd=d, extra={"PYTHONPATH": REPO})[0], 0)
+            return text
+
+        def outside(text):
+            shutil.rmtree(os.path.join(d, "solo-sdd"))
+            return text
+
+        rows = (  # (name, change of the AGENTS.md text, expected line or None, text it must hold, text it must not)
+            ("current", lambda t: t, "ok project-rules: ", None, None),
+            ("older", older, "warn project-rules: ", "solo-sdd init", None),
+            ("edited", lambda t: t.replace("\n", "\nmy own line\n", 2), "warn project-rules: ",
+             "edited in place", "solo-sdd init"),
+            ("broken", lambda t: t.replace(rules_block.END, ""), "warn project-rules: ", "broken solo-sdd markers", None),
+            ("erased", lambda t: t.replace(rules_block.BEGIN, "").replace(rules_block.END, ""), "warn project-rules: ",
+             "markers were erased", None),
+            ("global", global_, None, None, None),
+            ("outside", outside, None, None, None),
+        )
+        for name, change, line, holds, lacks in rows:
+            with self.subTest(name):
+                d = os.path.join(self.tmp, name)
+                os.makedirs(os.path.join(d, "solo-sdd/specs"))
+                os.makedirs(os.path.join(d, ".git"))
+                with contextlib.redirect_stdout(io.StringIO()):
+                    self.assertEqual(init.project_rules(d, "project"), 0)
+                agents = os.path.join(d, "AGENTS.md")
+                with open(agents, encoding="utf-8") as f:
+                    text = change(f.read())
+                with open(agents, "w", encoding="utf-8") as f:
+                    f.write(text)
+                with open(agents, "rb") as f:
+                    before = f.read()
+                out = run([sys.executable, "-m", "solo_sdd", "doctor"], self.home, cwd=d, path=self.bin,
+                          extra={"PYTHONPATH": REPO})[1]
+                found = [l for l in out.splitlines() if " project-rules: " in l]
+                if line is None:
+                    self.assertEqual(found, [], out)
+                else:
+                    self.assertEqual(len(found), 1, out)
+                    self.assertTrue(found[0].startswith(line), found[0])
+                    if holds:
+                        self.assertIn(holds, found[0])
+                    if lacks:
+                        self.assertNotIn(lacks, found[0])
+                    if name not in ("current", "older"):
+                        self.assertIn(source, found[0])
+                with open(agents, "rb") as f:
+                    self.assertEqual(f.read(), before, "doctor wrote AGENTS.md")
+
+
 class RulesSize(unittest.TestCase):
     """Doctor rules size: bytes Codex loads as instructions against project_doc_max_bytes."""
 

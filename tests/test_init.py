@@ -403,6 +403,16 @@ class RepeatAndReconfigure(unittest.TestCase):
             self.assertIn("solo-sdd/config:1", out)
             self.assertNotIn("created", out)
 
+    def test_config_not_utf8(self):
+        # bug: a refactor lost the catch of a non-UTF-8 config around the integration sections
+        with Env() as e:
+            e.write("solo-sdd/project.md", "x\n")
+            with open(os.path.join(e.proj, CONFIG), "wb") as f:
+                f.write(b"mode: solo\n# caf\xe9\n")
+            code, out = e.init()
+            self.assertEqual(code, 1)
+            self.assertIn("the rules block is not written", out)
+
     FLAGS = (["--solo"], ["--team"], ["--yes"], ["--agents", "claude"], ["--delivery", "pr"],
              ["--set", "dispatch.limit=5"], ["--set", "delivery.mode=cloud"], ["--set", "reply.language=en"])
     LINE = st.one_of(st.sampled_from(["mode: solo", "mode: team", "delivery.mode: pr", "dispatch.limit: 7",
