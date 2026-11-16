@@ -646,5 +646,62 @@ class Machine(unittest.TestCase):
         self.assertEqual(press(s, "q"), "exit")
 
 
+class HomeMenu(unittest.TestCase):
+    """Requirement: Home menu: the cases the stand tests/stands/cli-menu.py does not walk."""
+
+    def text(self, menu, width=120, height=40):
+        return " ".join(" ".join(menu.draw(width, height)[0]).split())
+
+    def entry(self, menu, name):
+        while menu.entries[menu.pos] != name:
+            menu.handle("down")
+        return menu.handle("enter")
+
+    def project(self):
+        d = project("")
+        self.addCleanup(shutil.rmtree, d, True)
+        return d
+
+    def test_esc_and_unsaved_edits(self):
+        d = self.project()
+        for name, keys in (("Project settings", ["esc"]), ("Integrations and checklists", ["esc"]),
+                           ("Integrations and checklists", ["c", "esc"])):
+            menu = settings_ui.Home(d)
+            self.entry(menu, name)
+            press(menu, *keys)
+            self.assertIn("Enter open", self.text(menu), (name, keys))
+        menu = settings_ui.Home(d)
+        self.entry(menu, "Project settings")
+        select(menu.sub, "dispatch.limit")
+        press(menu, "enter", "backspace", "4", "enter", "q")
+        self.assertIn("Unsaved edits", self.text(menu), "unsaved edits ask before the menu")
+        press(menu, "b", "esc")
+        self.assertIn("Unsaved edits", self.text(menu), "Esc on the list asks again")
+        press(menu, "d")
+        self.assertIn("Enter open", self.text(menu))
+        self.assertEqual(config(d), "")
+
+    def test_both_sections_of_the_entry(self):
+        menu = settings_ui.Home(self.project())
+        self.entry(menu, "Integrations and checklists")
+        self.assertIn("c checklists", self.text(menu))
+        press(menu, "c")  # the stand walks c; i goes back
+        press(menu, "i")
+        self.assertIn("Integrations:", self.text(menu))
+
+    def test_long_folder_at_40x12(self):
+        base = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, base, True)
+        d = os.path.join(base, *["a-rather-long-folder-name"] * 12)
+        os.makedirs(os.path.join(d, "openspec"))
+        menu = settings_ui.Home(d)
+        lines, marked = menu.draw(40, 12)
+        text = " ".join(" ".join(lines).split())
+        self.assertLessEqual(len(lines), 12)
+        for part in ("solo-sdd import openspec", "> Machine", "Quit", "q quit", "a-rather-long-folder-name"):
+            self.assertIn(part, text)
+        self.assertTrue(all(i < len(lines) and lines[i].startswith("> ") for i in marked), marked)
+
+
 if __name__ == "__main__":
     unittest.main()
