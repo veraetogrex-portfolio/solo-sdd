@@ -36,8 +36,8 @@ The package SHALL hold one entry per supported agent with its name, detection, s
 - **THEN** the unchanged copies under `~/.claude` are removed, a copy edited in place is kept and named
 
 #### Scenario: Hooks without Claude
-- **WHEN** `install --agents codex --hooks` runs, or `install --agents codex` while the hooks are connected
-- **THEN** exit 1 naming that hooks need `claude`, no file changes
+- **WHEN** the Codex `hooks` capability is `unverified`, and `install --agents codex --hooks` runs, or `install --agents codex` while the hooks are connected
+- **THEN** exit 1 naming that hooks need `claude` or a confirmed `codex`, no file changes
 
 ### Requirement: Capability gaps named
 `solo-sdd doctor` SHALL print one line per chosen agent: `ok agent <name>: <capabilities>` when it has hooks and subagents, otherwise `warn agent <name>: no <capability>: <what is not enforced>`; for an agent whose skill root no probe has recorded, the gaps SHALL follow `unverified: skills, project rules: <where they come from>`. A skill that needs capabilities (`spec-dispatch`: subagents and hooks) SHALL be deployed only to providers that have them.
@@ -105,3 +105,41 @@ A `targets.json["files"]` entry for a file laid out into skill folders SHALL nam
 #### Scenario: An unknown skill
 - **WHEN** an entry names the skill `no-such-skill` and `python3 sync.py status` runs
 - **THEN** code 1, the output names the entry and `no-such-skill`, no file in the home changed
+
+### Requirement: Codex hook probe
+`tests/stands/provider-probe.py codex` SHALL run a no-op hook in a temporary `CODEX_HOME`, trusted the way the probed Codex version records trusted hooks, and record that version as the Codex `hooks` capability only when the hook ran; otherwise the capability SHALL stay `unverified` and the probe SHALL print the reason.
+
+#### Scenario: The hook ran
+- **WHEN** the no-op hook of the probe writes its marker file during the Codex run
+- **THEN** the probe prints the Codex version for `hooks`, and the registry entry is updated with it
+
+#### Scenario: The hook did not run
+- **WHEN** the Codex run ends and the marker file is missing
+- **THEN** the probe prints `hooks: unverified` with the reason, and the registry keeps `unverified`
+
+### Requirement: Codex hook layout
+With the Codex `hooks` capability confirmed, `solo-sdd install --hooks` for a choice with `codex` SHALL lay out `global/work_hooks.py` and `global/model-policy.json` into `~/.codex/hooks/` and write the `guard`, `context`, `stop` and `end` entries into `~/.codex/hooks.json` once, keeping every foreign entry and backing the file up before a rewrite. A differing file already there SHALL be a foreign copy (requirement Foreign copy kept).
+
+#### Scenario: A clean Codex home
+- **WHEN** `install --agents claude,codex --hooks` runs on a home with `~/.codex` and no `~/.codex/hooks.json`
+- **THEN** `~/.codex/hooks/work_hooks.py` equals `global/work_hooks.py`, `hooks.json` has one entry per event, and a second run changes no file
+
+#### Scenario: The hand copy
+- **WHEN** `~/.codex/hooks/work_hooks.py` holds an older text with no state entry
+- **THEN** `install` prints `foreign` for it, keeps it byte for byte and exits 1; with `--replace-foreign` it is replaced and its old text is in a backup folder
+
+#### Scenario: A foreign entry kept
+- **WHEN** `~/.codex/hooks.json` holds a `PreToolUse` entry of another tool
+- **THEN** after `install` that entry is unchanged and the solo-sdd entries are added beside it
+
+#### Scenario: A broken hooks file
+- **WHEN** `~/.codex/hooks.json` is not valid JSON
+- **THEN** `install --hooks` exits 1 naming the file, and no file under `~/.codex` is written
+
+#### Scenario: Codex dropped from the choice
+- **WHEN** `install --agents claude,codex --hooks` ran and then `install --agents claude --hooks` runs
+- **THEN** the solo-sdd entries leave `~/.codex/hooks.json`, its foreign entries stay, and the unchanged hook copies under `~/.codex/hooks/` are removed
+
+#### Scenario: A translation in Codex
+- **WHEN** the laid-out hook gets a Codex `Stop` input whose transcript ends with the Russian request "translate into English", the reply is in English and the reply language is `ru`
+- **THEN** the hook does not block the stop
