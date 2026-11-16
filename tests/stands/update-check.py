@@ -48,7 +48,8 @@ class Registry:
         os.mkfifo(self.pipe)
         self.address = "file://" + root
         self.body, self.delay, self.stopped, self.log, self.running = b"", 0, False, [], True
-        threading.Thread(target=self.serve, daemon=True).start()
+        self.thread = threading.Thread(target=self.serve, daemon=True)
+        self.thread.start()
 
     def writer(self):
         """A write end when a reader has the pipe open, else None (ENXIO: no reader)."""
@@ -221,7 +222,7 @@ def menu_rows(base, registry, rows, cols, extra, tag):
 
     def notice_after_draw():
         registry.answer("0.3.0")
-        registry.delay, registry.log[:] = 1.5, []
+        registry.delay, registry.log[:] = 1, []  # within the 2 second limit with room for a loaded machine
         s = Menu(place, rows, cols, extra)
         try:
             t = flat(s.term.text())
@@ -427,6 +428,8 @@ def main():
         for rows, cols, extra in ((40, 120, {"NO_COLOR": "1"}), (12, 40, {}), (12, 40, {"NO_COLOR": "1"})):
             menu_rows(base, registry, rows, cols, extra, "")
     finally:
+        if not registry.thread.is_alive():  # a dead registry would let every "no request" row pass
+            row("the local registry served every row", lambda: need(False, "its thread ended"))
         registry.close()
         shutil.rmtree(base, True)
     if all(results):

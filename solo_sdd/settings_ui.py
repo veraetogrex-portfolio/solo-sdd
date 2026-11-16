@@ -518,13 +518,14 @@ class Screen:
         body = head + ["Machine: changes every project's agents" if compact else
                        "Machine: these change every project's agents, through install and uninstall"] + gap
         whole = (info[self.mpos - len(items)] if self.mpos >= len(items) else
-                 "Space switches it at once: the home menu and doctor ask for a newer solo-sdd at most once a day, "
-                 "or never" + ("; %s is set, so the check stays off" % update_check.OFF if update_check.env_off() else "")
+                 "Space switches it at once" + (": %s keeps it off" % update_check.OFF if update_check.env_off() else "")
                  if items[self.mpos][0] == "updates" else
                  "Space switches it; a applies the switches through install and uninstall")
         fits, wrapped = max(1, self.room - len(body) - len(gap) - 1), self.wrap(whole)
-        if len(wrapped) > fits:  # Enter shows the rest
+        if len(wrapped) > fits and self.mpos >= len(items):  # Enter shows the rest of a layout or doctor row
             wrapped = wrapped[:fits - 1] + [fit(wrapped[fits - 1], self.width - 22) + " ... Enter shows all"]
+        elif len(wrapped) > fits:  # a switch's hint: Enter does nothing there, so the cut names no key
+            wrapped = wrapped[:fits - 1] + [fit(wrapped[fits - 1], self.width - 5) + " ..."]
         detail = gap + wrapped
         room = max(1, self.room - len(body) - len(detail))
         top = min(max(0, self.mpos - room // 2), max(0, len(rows) - room))

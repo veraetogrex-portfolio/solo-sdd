@@ -376,6 +376,8 @@ class UpdateFromMenu(Base):
             with mock.patch.dict(os.environ, {uc.OFF: "1"}):
                 lines = s.draw(40, 12)[0]
             self.assertIn("> [ ] update check (off by env)", lines, "the whole row fits 40 columns")
+            self.assertIn("Space switches it at once: SOLO_SDD_NO_UPDATE_CHECK keeps it off",
+                          " ".join(" ".join(lines).split()), "the hint reads whole, no Enter it does not act on")
 
 
 if __name__ == "__main__":
