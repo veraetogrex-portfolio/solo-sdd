@@ -11,7 +11,7 @@ import sys
 import textwrap
 import unicodedata
 
-from solo_sdd import init, integrations, process_format as pf, settings, setup_detect
+from solo_sdd import __version__, init, integrations, process_format as pf, settings, setup_detect
 
 MIN_W, MIN_H = 40, 12
 STATE = "~/.local/share/solo-sdd"  # every install and uninstall writes its state and backups here
@@ -23,8 +23,8 @@ FOOTER = {
     "refused": "Esc back",
     "whole": "Up/Down scroll  Esc back",
     "applied": "Up/Down scroll  Esc back  q quit",
-    "integrations": "Up/Down move  Space switch on or off  Esc back",
-    "checklists": "Up/Down move  a add  Enter edit  d remove  Esc back",
+    "integrations": "Up/Down move  Space switch on or off  c checklists  Esc back",
+    "checklists": "Up/Down move  a add  Enter edit  d remove  i integrations  Esc back",
     "pick": "Up/Down choose  Enter set  Esc back",
     "check": "Up/Down move  Space tick  Enter set  Esc back",
     "entry": "Type a value  Enter set (empty: reset)  Esc back",
@@ -297,6 +297,8 @@ class Screen:
                 self.toggles[e["name"]] = e["name"] not in self.enabled
             else:
                 del self.toggles[e["name"]]
+        elif key == "c":
+            self.mode = "checklists"
         elif key == "esc":
             self.mode = "list"
 
@@ -332,6 +334,8 @@ class Screen:
             for part in ("paths", "file"):
                 self.keep(None, "checklist.%s.%s" % (name, part))
             self.cpos = 0
+        elif key == "i":
+            self.mode = "integrations"
         elif key == "esc":
             self.mode = "list"
 
@@ -746,6 +750,158 @@ class Screen:
         return ["Unsaved edits: %s" % ", ".join(list(self.edits) + ["integration " + n for n in self.toggles])], set()
 
 
+PROJECT = ["Project settings", "Integrations and checklists", "Machine", "Changes", "Doctor", "Commands", "Quit"]
+PREPARE = "Prepare this folder"
+MENU_FOOTER = "Up/Down move  Enter open  q quit"
+VIEW_FOOTER = "Up/Down scroll  q back"
+
+
+class Home:
+    """The menu bare `solo-sdd` opens on a terminal: a header of the folder and the entries that open the settings
+    screens (a Screen it hands the keys to until it exits) or a read-only text (changes, doctor, the command list)."""
+
+    def __init__(self, folder, home=None):
+        self.folder, self.home = os.path.abspath(folder), home
+        self.pos, self.sub, self.start, self.view, self.scroll, self.message = 0, None, None, None, 0, ""
+        self.refresh()
+
+    def refresh(self):
+        """The header and the entries of the folder as it is now: after a screen or `init` it may have changed."""
+        self.tree = pf.find_tree(self.folder)
+        self.root = str(self.tree.parent) if self.tree else self.folder
+        if self.tree:
+            try:
+                mode = settings.read_settings(self.root)["mode"][0]
+            except (OSError, UnicodeDecodeError, ValueError) as e:
+                mode = "unreadable: " + str(e)
+            n = len(pf.open_changes(self.tree))
+            # the count first: a long unreadable-mode reason is what a cut to two lines drops
+            self.status, self.entries = "%d open change%s, mode %s" % (n, "" if n == 1 else "s", mode), PROJECT
+        elif os.path.isdir(os.path.join(self.folder, "openspec")) and not os.path.lexists(
+                os.path.join(self.folder, "solo-sdd")):  # init's own test: it creates nothing here
+            self.status = "openspec/ found: solo-sdd import openspec converts it"
+            self.entries = PROJECT[2:3] + PROJECT[4:]
+        else:
+            self.status, self.entries = "no solo-sdd/ here", [PREPARE] + PROJECT[2:3] + PROJECT[4:]
+        self.pos = min(self.pos, len(self.entries) - 1)
+
+    def handle(self, key):
+        """One key by name; "exit" ends, "init" asks the caller to run the `init` questions off the full screen."""
+        if key == "resize":
+            return None
+        if self.sub:
+            return self.on_sub(key)
+        if self.view:
+            if key in ("up", "down"):
+                self.scroll = max(0, self.scroll + (1 if key == "down" else -1))
+            elif key in ("q", "esc"):
+                self.view = None
+            return None
+        self.message = ""
+        if key in ("up", "down"):
+            self.pos = (self.pos + (1 if key == "down" else -1)) % len(self.entries)
+        elif key == "q":
+            return "exit"
+        elif key == "enter":
+            return self.open(self.entries[self.pos])
+        return None
+
+    def open(self, entry):
+        if entry == "Quit":
+            return "exit"
+        if entry == PREPARE:
+            if os.path.exists(os.path.join(self.folder, ".git")):
+                return "init"
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                init.run(self.folder)  # refuses outside a git repository before any write
+            self.message = " ".join(out.getvalue().split())
+            return None
+        if entry in ("Changes", "Doctor", "Commands"):
+            self.view, self.scroll = (entry, self.text_of(entry)), 0
+            return None
+        sub = Screen.load(self.root, home=self.home) if self.tree else Screen(None, None, home=self.home,
+                                                                                folder=self.folder)
+        if entry == "Machine":
+            sub.open_machine()
+        elif entry == "Integrations and checklists" and sub.mode == "list":
+            sub.mode = "integrations"
+        # Esc here returns to the menu: where the entry opened, its sibling section, and the list a quit question's
+        # b leads to, where Esc does nothing in the screen itself
+        self.sub, self.start = sub, {sub.mode, "list"} | ({"checklists"} if sub.mode == "integrations" else set())
+        return None
+
+    def text_of(self, entry):
+        from solo_sdd import cli, doctor, layout, process_cli
+        out = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(out):
+                if entry == "Changes":
+                    process_cli.list_cmd(self.tree, False, False)
+                elif entry == "Doctor":
+                    doctor.run()
+                else:
+                    print(cli.COMMANDS)
+        except (layout.BrokenState, layout.BadTargets, OSError, ValueError) as e:  # what cli.main catches
+            out.write("fail %s\n" % e)
+        return out.getvalue().splitlines()
+
+    def on_sub(self, key):
+        """Keys go to the screen; q or Esc where it opened returns to the menu, unsaved edits asked about first."""
+        sub = self.sub
+        if key == "esc" and sub.mode in self.start:
+            key = "q"
+        got = sub.on_list("q") if key == "q" and sub.mode in ("integrations", "checklists") else sub.handle(key)
+        if got == "exit":
+            self.sub = None
+            self.refresh()
+        return None
+
+    def draw(self, width, height):
+        if self.sub:
+            return self.sub.draw(width, height)
+        if width < MIN_W or height < MIN_H:
+            return ["Terminal too small: needs %dx%d, now %dx%d" % (MIN_W, MIN_H, width, height)], set()
+        wrap = lambda text: textwrap.wrap(text, width - 1) or [""]  # noqa: E731
+        folder = shown(self.folder)
+        if fit(folder, width - 1) != folder:  # one line whatever the path, by columns: its end names the folder
+            folder = "..." + fit(folder[::-1], width - 4)[::-1]
+        head = ["solo-sdd " + __version__] + wrap(shown(self.status))[:2] + [folder, ""]
+        message = wrap(shown(self.message))[:2] if self.message else []
+        footer = wrap(VIEW_FOOTER if self.view else MENU_FOOTER)
+        room = max(2, height - len(head) - len(message) - len(footer))
+        if self.view:
+            title, text = self.view
+            lines = [w for ln in text for w in wrap(shown(ln))]
+            self.scroll = min(self.scroll, max(0, len(lines) - room + 1))
+            shown_to = min(len(lines), self.scroll + room - 1)
+            body = ["%s: %d-%d of %d lines" % (title + (", read-only" if title == "Changes" else ""),
+                                               self.scroll + 1 if lines else 0, shown_to, len(lines))]
+            body, marked = body + lines[self.scroll:shown_to], set()
+        else:
+            top = max(0, self.pos - room + 1)
+            body = [("> " if i == self.pos else "  ") + e for i, e in enumerate(self.entries)][top:top + room]
+            marked = {len(head) + self.pos - top}
+        lines = head + body + [""] * (room - len(body)) + message + footer
+        return [fit(ln, width - 1) for ln in lines[:height]], marked
+
+
+def home(folder="."):
+    """Bare `solo-sdd` on a terminal: the menu; Prepare this folder runs the `init` questions off the full screen."""
+    menu = Home(folder)
+    try:
+        while run_curses(menu) == "init":
+            init.run(menu.folder)
+            try:
+                input("Enter returns to the menu ")
+            except EOFError:
+                pass
+            menu.refresh()
+    except KeyboardInterrupt:
+        return 130
+    return 0
+
+
 CURSES_KEYS = {"KEY_UP": "up", "KEY_DOWN": "down", "KEY_ENTER": "enter", "\n": "enter", "\r": "enter", "\x1b": "esc",
                " ": "space", "KEY_BACKSPACE": "backspace", "\x7f": "backspace", "\b": "backspace",
                "KEY_RESIZE": "resize"}
@@ -779,9 +935,10 @@ def run_curses(screen):
             win.refresh()
             ch = win.get_wch()
             name = curses.keyname(ch).decode() if isinstance(ch, int) else ch
-            if screen.handle(CURSES_KEYS.get(name, name if isinstance(ch, str) else "")) == "exit":
-                return
-    curses.wrapper(loop)
+            got = screen.handle(CURSES_KEYS.get(name, name if isinstance(ch, str) else ""))
+            if got:  # "exit", or what the caller runs off the full screen
+                return got
+    return curses.wrapper(loop)
 
 
 def can_draw():
