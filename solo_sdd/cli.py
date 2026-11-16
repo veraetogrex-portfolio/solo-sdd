@@ -161,6 +161,8 @@ def main(argv=None):
 
 def _main(argv=None):
     argv = sys.argv[1:] if argv is None else list(argv)
+    if not argv and settings_ui.can_draw():
+        return settings_ui.home()
     if argv == ["--version"]:
         print(__version__)
         return 0

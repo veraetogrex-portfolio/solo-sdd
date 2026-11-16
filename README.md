@@ -15,7 +15,7 @@ cd ~/code/my-project
 solo-sdd init
 ```
 
-`solo-sdd install` puts the skills into the agent folders of your home; `--hooks` connects the Claude Code hooks that enforce the rules (with Codex alone, run it without `--hooks`). `solo-sdd init` sets up the process in the project's git repository: three questions, Enter accepts each proposal. Then, inside the project, in the agent:
+`solo-sdd` alone, in a terminal, opens a menu: the project and machine settings, the open changes, `doctor`, the command list, and Prepare this folder in a repository not prepared yet. `solo-sdd install` puts the skills into the agent folders of your home; `--hooks` connects the Claude Code hooks that enforce the rules (with Codex alone, run it without `--hooks`). `solo-sdd init` sets up the process in the project's git repository: three questions, Enter accepts each proposal. Then, inside the project, in the agent:
 
 1. `/project-init`: the project rules in `AGENTS.md` and `.env.example`.
 2. `/spec-plan` with a plan, a bug list or an idea: a queue of small changes in `solo-sdd/changes/`.
