@@ -54,6 +54,18 @@ A broken `model-policy.json` lets through only the checks that read it (models, 
 
 `install`, `update` and `sync.py push` keep an edited copy: they print `skipped    global/model-policy.json               ~/.claude/hooks/model-policy.json — edited in place: ...` and `sync.py status` shows it as `drift`. While it is `drift`, a newer shipped model list is not taken. To take it from a clone, `python3 sync.py push --force` overwrites the copy and prints `updated ... (saved: ~/.local/share/solo-sdd/backup/<run>/.claude/hooks/model-policy.json)`; from the package, move the copy aside, run `solo-sdd update` (it prints `created` for the shipped copy) and carry your edits over.
 
+## Codex hooks
+
+Codex 0.159.2 runs the same `global/work_hooks.py` (`tests/stands/provider-probe.py codex` confirmed it). With `codex` among the agents, `install` and `sync.py push` lay out `work_hooks.py` and `model-policy.json` into `~/.codex/hooks/`, and `solo-sdd install --hooks` writes four entries into `~/.codex/hooks.json`, one per event: `guard` on `PreToolUse` (matcher `Bash|Write|Edit|MultiEdit|NotebookEdit|Agent`), `context` on `SessionStart`, `end` on `SessionEnd`, `stop` on `Stop`. Each command is `f='<home>/.codex/hooks/work_hooks.py'; [ -f "$f" ] || exit 0; exec /usr/bin/python3 "$f" <subcommand>`, the text of the entries made by hand before solo-sdd laid them out, so their trust stays.
+
+- Every entry that runs `~/.codex/hooks/work_hooks.py` counts as solo-sdd's: an old or doubled one is replaced, the others stay in their order and solo-sdd's go after them. The file is backed up next to itself (`hooks.json.bak-<time>`) before a rewrite; a second `install` changes nothing.
+- A `hooks.json` that is not valid JSON, or whose `hooks` is not an object of lists, stops `install` with code 1 naming it before any file is written.
+- A `work_hooks.py` already in `~/.codex/hooks/` that solo-sdd did not lay out is `foreign`: kept until `install --replace-foreign`, which saves it into the backup folder first.
+- `install` without `codex` among the agents, `uninstall` and `uninstall --hooks` remove the solo-sdd entries; a file left with no entry is removed (its backup stays).
+- Codex runs a hook only once it is trusted: at the next start Codex shows "Hooks need review"; choose Review hooks or Trust all and continue. It records the trust as `[hooks.state."<file>:<event>:<group>:<handler>"] trusted_hash` in `~/.codex/config.toml`, and a changed entry needs the review again.
+- In Codex the `stop` check reads the last message the user typed from the rollout file Codex passes as `transcript_path` (`event_msg` entries of type `user_message`, or `item_completed` of a `UserMessage`); the instructions Codex injects as user items are not the user.
+- `doctor` prints `ok codex hooks: in place in ~/.codex/hooks.json`, or `fail` when an entry is missing.
+
 ## Claude Code process protection
 
 `sync.py push` puts the hook `global/process-guard.py` into `~/.claude/hooks/`. `solo-sdd install --hooks` (and `work_hooks_settings.py`) connects it in `~/.claude/settings.json`: a PreToolUse hook on `Bash|Monitor` and `permissions.deny` rules `Bash(<name> *)` for `pkill`, `killall`, `kill`, `osascript`, `launchctl`, `shutdown`, and `Read(**/.env)`, which keeps the `Read` tool off `.env` when the `guard` hook fails open (it claims nothing about `Grep` or Bash); an entry or a rule already there, connected by hand, is kept and not recorded, and `uninstall` removes only what install added; `uninstall --hooks` does the same and keeps the copies.

@@ -2342,7 +2342,8 @@ def last_text(inp):
 
 
 def user_turn(d):
-    """(origin kind or None, content) of a user entry or of a message queued while the agent worked; else None."""
+    """(origin kind or None, content) of a user entry or of a message queued while the agent worked, or of a message the
+    user typed in Codex (an `event_msg` of type `user_message`, or `item_completed` of a `UserMessage`); else None."""
     if d.get("type") == "user" and not (d.get("isMeta") or d.get("isCompactSummary") or d.get("toolUseResult")):
         origin, m = d.get("origin"), d.get("message")
         return (origin.get("kind") if isinstance(origin, dict) else d.get("turnOrigin"),
@@ -2351,6 +2352,13 @@ def user_turn(d):
     if d.get("type") == "attachment" and isinstance(a, dict) and a.get("type") == "queued_command":
         origin = a.get("origin")
         return origin.get("kind") if isinstance(origin, dict) else None, a.get("prompt")
+    p = d.get("payload")
+    if d.get("type") == "event_msg" and isinstance(p, dict):  # a Codex rollout: what the user typed, not the injected items
+        if p.get("type") == "user_message":
+            return None, p.get("message")
+        item = p.get("item")
+        if p.get("type") == "item_completed" and isinstance(item, dict) and item.get("type") == "UserMessage":
+            return None, item.get("content")
     return None
 
 

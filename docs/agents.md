@@ -4,15 +4,15 @@
 | Agent | Detected by | Skills | Global rules | Project rules | Hooks | Subagents |
 |---|---|---|---|---|---|---|
 | `claude` | `claude` in PATH or `~/.claude` | `~/.claude/skills` | `~/.claude/CLAUDE.md` | `CLAUDE.md` | 2.1.312 | 2.1.312 |
-| `codex` | `codex` in PATH or `~/.codex` | `~/.codex/skills` | `~/.codex/AGENTS.md` | `AGENTS.md` | unverified | 0.159.2 |
+| `codex` | `codex` in PATH or `~/.codex` | `~/.codex/skills` | `~/.codex/AGENTS.md` | `AGENTS.md` | 0.159.2 | 0.159.2 |
 | `cursor` | `cursor-agent` in PATH or `~/.cursor` | unverified | unverified | unverified | unverified | unverified |
 | `other` | always | `~/.agents/skills` | `~/AGENTS.md` | `AGENTS.md` | unverified | unverified |
 
 `install --agents claude,codex` deploys for the named agents plus `other`; without `--agents` it keeps the choice of the last install, and a first install takes the detected agents plus `other`. A deployment from a version without the choice counts as `claude`, `codex`, `other`. The choice is kept in `~/.local/share/solo-sdd/state.json`; `status`, `update`, `sync.py push` and `doctor` follow it, `uninstall` removes the copies of every agent.
 
-Dropping an agent from the choice removes its unchanged copies; an edited copy is kept and named. An unknown name exits with code 1 and the known names, no file changes; so does a choice without `claude` with `--hooks` or while the hooks are connected (`uninstall` removes them). A skill that needs capabilities gets deployed only where they are present: `spec-dispatch` needs subagents and hooks (`needs` in `targets.json`).
+Dropping an agent from the choice removes its unchanged copies; an edited copy is kept and named. An unknown name exits with code 1 and the known names, no file changes; so does a choice with neither `claude` nor a `codex` whose hooks the probe confirmed, with `--hooks` or while the hooks are connected, and a choice without `claude` while the Claude hooks are connected (`uninstall` removes them). A skill or a file that needs capabilities gets deployed only where they are present (`needs` in `targets.json`): `spec-dispatch` needs subagents and hooks, the hook copies `global/work_hooks.py` and `global/model-policy.json` go into an agent's folder only when its hooks are confirmed.
 
-`doctor` prints `ok agent <name>` when hooks and subagents are both present, else `warn agent <name>: no <capability>: <what is not enforced>`. The versions are those `tests/stands/provider-probe.py` ran: subagents from `claude --help` and `codex features list`, hooks from a no-op hook in a temporary home; `unverified` means the probe did not see it work.
+`doctor` prints `ok agent <name>` when hooks and subagents are both present, else `warn agent <name>: no <capability>: <what is not enforced>`. The versions are those `tests/stands/provider-probe.py` ran: subagents from `claude --help` and `codex features list`, hooks from a no-op hook in a temporary home (for Codex trusted first as Codex records a reviewed hook: `[hooks.state."<key>"] trusted_hash` in `config.toml`, the hash from the app server's `hooks/list`); `unverified` means the probe did not see it work, and the probe line names why. `tests/stands/provider-probe.py codex` probes Codex alone. The Codex hooks themselves: [Claude Code hooks](hooks.md#codex-hooks).
 
 `cursor` has not been probed: no Cursor was available, so `install --agents cursor` deploys only the `other` files, says that project rules come from `solo-sdd init`, `doctor` prints `warn agent cursor: unverified: skills, project rules: …` before the `no hooks` and `no subagents` gaps, and `tests/stands/provider-probe.py cursor` prints `not run` for each capability, installing nothing.
 

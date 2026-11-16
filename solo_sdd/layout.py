@@ -204,7 +204,8 @@ def pairs(agents=None, rules=None):
         if isinstance(copies, dict) and copies.get("opt_in") and not rules:
             continue
         for place in copies["copies"] if isinstance(copies, dict) else copies:
-            if providers.owner(place) in (None, *agents):
+            who = providers.owner(place)  # a copy in an agent folder needs that agent's capabilities named in `needs`
+            if who is None or who in agents and all(providers.has(who, c) for c in needs.get(rel, ())):
                 out.append((rel, os.path.join(REPO, rel), expand(place), block))
     return out
 
@@ -659,7 +660,7 @@ def uninstall(purge=False):
     if kept & opt_in_keys():
         state["_global_rules"] = False  # a kept edited block is not an earlier deployment to lay out again
     save_state(state)
-    if purge and "_hooks" in state:
+    if purge and ("_hooks" in state or "_codex_hooks" in state):
         print("fail purge: hooks not removed, schema and data kept")
         code = 1
     elif purge:
