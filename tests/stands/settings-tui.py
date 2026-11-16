@@ -330,7 +330,7 @@ def run_size(base, rows, cols, env, tag):
             to(s, "process.review-rounds")
             t = s.send("r")
             if big:
-                need(any("process.review-rounds" in ln and " 3 " in ln and "[default]" in ln for ln in t.splitlines()),
+                need(any("process.review-rounds" in ln and " 5 " in ln and "[default]" in ln for ln in t.splitlines()),
                      "reset to the default", t)
             t = s.send("s")
             need("Write these 4 keys" in flat(t) and "dispatch.limit: 2 -> 3" in t and "y write" in flat(t),
@@ -343,7 +343,7 @@ def run_size(base, rows, cols, env, tag):
                  "only the edited lines differ: %s" % sorted(changed))
             listed = sdd(d, "config", "list")[1].splitlines()
             need({"delivery.mode pr file", "dispatch.limit 3 file", "agents claude, other file",
-                  "process.review-rounds 3 default"} <= set(listed), "config list: %s" % listed)
+                  "process.review-rounds 5 default"} <= set(listed), "config list: %s" % listed)
             need(s.send("q") is not None and s.wait() == 0, "q leaves with code 0 after save")
         finally:
             s.close()

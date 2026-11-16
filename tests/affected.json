@@ -29,7 +29,8 @@
   ],
   "README.md": [
    "tests/test_cli.py",
-   "tests/test_demo.py"
+   "tests/test_demo.py",
+   "tests/test_skill_commands.py"
   ],
   "SOURCES.md": [],
   "bin/": [],
@@ -39,6 +40,9 @@
   ],
   "docs/settings.md": [
    "tests/test_settings.py"
+  ],
+  "docs/stop-conditions.md": [
+   "tests/test_skill_commands.py"
   ],
   "examples/": [
    "tests/test_demo.py"

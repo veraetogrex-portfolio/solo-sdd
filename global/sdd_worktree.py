@@ -132,7 +132,7 @@ REGISTRY = {
     "delivery.base": ("choice", None, "", None),  # "": the remote's default branch
     "delivery.promote": ("list", None, "", None),  # branches after the base in order; `release/*`: the newest by version
     "dispatch.limit": ("int", None, "2", None),
-    "process.review-rounds": ("int", None, "3", None),
+    "process.review-rounds": ("int", None, "5", None),
     "process.light-path": ("choice", ("on", "off"), "on", None),  # off: every code edit goes through a change
     "process.light-path.max-files": ("int", None, "3", None),
     "reply.language": ("choice", ("ru", "en", "off"), "off", None),

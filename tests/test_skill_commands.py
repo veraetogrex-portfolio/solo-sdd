@@ -206,6 +206,34 @@ class SkillCommandsTest(unittest.TestCase):
             self.assertIn(w, gets)
 
 
+    def test_review_rounds_and_extra_round_for_fix_findings(self):
+        """Requirement: Review rounds (default 5, the fallback 5) and Requirement: Extra round for fix findings (only
+        after the second or later round, only for findings in the lines of the last rework, no second one, reported)."""
+        read = lambda rel: self.flat((REPO / rel).read_text(encoding="utf-8"))
+        nxt = read("skills/spec-next/SKILL.md")
+        rounds = nxt.split("- Rounds. ", 1)[1].split(" - ", 1)[0]
+        self.assertIn("`solo-sdd config get process.review-rounds` in the project (default 5; no `solo-sdd` command: 5)",
+                      rounds)
+        extra = nxt.split("- Extra round. ", 1)[1].split(" - ", 1)[0]
+        for w in ("the last round is the second or later", "every `Important` open after it has all its places in "
+                  "lines the rework before that round changed", "`git diff` of that rework", "without asking the owner",
+                  "a limit of 1, gives no extra round", "There is no second extra round",
+                  "say whether the extra round ran"):
+            self.assertIn(w, extra)
+        self.assertIn("| \"One more review round, maybe it finds something\" | At most `process.review-rounds` rounds "
+                      "(default 5), plus one extra round only after the second or later round when every open `Important` lies "
+                      "only in the lines of the last rework;", nxt)
+        self.assertIn("Independent acceptance: rounds <k>; extra round: ran | did not run;", nxt)
+        self.assertIn("the number of rounds, whether the extra round ran,", nxt)
+        algo = read("ALGORITHM.md")
+        for w in ("default 5", "one extra round runs without asking the owner", "no second extra round"):
+            self.assertIn(w, algo)
+        stop = next(l for l in (REPO / "docs/stop-conditions.md").read_text(encoding="utf-8").splitlines()
+                    if l.startswith("| Review: "))
+        for w in ("`process.review-rounds`, default 5", "one extra round", "lines of the last rework"):
+            self.assertIn(w, stop)
+        self.assertIn("at most `process.review-rounds` review rounds (default 5)", read("README.md"))
+
     @staticmethod
     def flat(text):
         return re.sub(r"\s+", " ", text)

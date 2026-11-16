@@ -39,7 +39,8 @@ Argument (optional): the name or number of a change. Without an argument, choose
    - Task: for every requirement and scenario, `done | partial | no`, the `file:line` of the implementation and the test that checks it; edits in the diff that no requirement requires; tests that check the shape ("the field exists"), not the behaviour; tests that repeat a scenario a higher-level test covers, except the required tests the `Important` item names.
    - Findings carry a label. `Important`: a requirement, behaviour or data is violated, plus every "no" and "partial" and a test that repeats a scenario a higher-level test already covers (a stand, a scenario test), except a property test `spec-analyze` pass 3a requires and a bug fix's test of the bug scenario; blocks the archive. `Nit`: style, names, minor cleanup; at most five, the rest as a count. `Pre-existing`: the error is also on the base branch; does not block the archive, a line in the report. A finding names the error class and all its places in the diff, not one line.
    - Every finding is closed: fixed or dropped with a reason in `Decisions Without Owner`; `Nit` above five goes as one line into `Decisions Without Owner`. Only `Important` gives rework by step 5 and a new round; the rework runs the tests of the edited module first and the suite once more after the last edit (step 6). An unneeded edit is rolled back or gets a line in `Decisions Without Owner`.
-   - Rounds. The first is the whole change diff. Every later one is only the diff since the last round and the places of open findings, plus the list of findings already given: the reviewer does not repeat them. The round limit is `solo-sdd config get process.review-rounds` in the project (default 3; no `solo-sdd` command: 3): an open `Important` after the last round means the findings and "reconsider the approach" in `Not Verified`, and by step 9 the change is not archived.
+   - Rounds. The first is the whole change diff. Every later one is only the diff since the last round and the places of open findings, plus the list of findings already given: the reviewer does not repeat them. The round limit is `solo-sdd config get process.review-rounds` in the project (default 5; no `solo-sdd` command: 5): an open `Important` after the last round means the findings and "reconsider the approach" in `Not Verified`, and by step 9 the change is not archived.
+   - Extra round. When the last round is the second or later and every `Important` open after it has all its places in lines the rework before that round changed (by `git diff` of that rework: the edits between the previous round and the last one), one more round runs without asking the owner. A finding with any place outside those lines, or a limit of 1, gives no extra round. There is no second extra round: an `Important` open after it means the same as after the last round. The report and the `REVIEW` field say whether the extra round ran.
    - A reviewer failure (an error, an empty answer, no verdict on some requirement) means acceptance is not passed, not passed successfully. In each round one rerun with the same task, which does not count as a round; a second failure in the same round puts the requirements without a verdict into `Not Verified`, no archive, the report names the reviewer failure.
    - Acceptance is not skipped even when you made a one- or two-line edit yourself: in that case it is the only outside view.
 8. **Blockers.** Items that wait for external access or a person's decision: into `verification.md` (the "Not Verified" section) and a line in `docs/waiting.md`. A new change only for work beyond the specification's boundaries. If the project rules require otherwise, they apply.
@@ -76,7 +77,7 @@ The mode turns on when the prompt names "Under the dispatcher" and passes `MAIN`
   A Live Scenario of several steps, with fixtures (including those described only in prose of `verification.md`, which the dispatcher does not run) or a walk through an application window: write a stand: a script in the repository that prepares and removes its data itself (for a window, opens the window and prints the summary of the checks), and put its call into `LIVE`.
 - Step 10: do not merge into the main branch and do not run `/ship`. Commit everything into `BRANCH`, then delete `<MAIN>/solo-sdd/changes/<id>/CLAIM`. The dispatcher does the delivery.
 - Step 11: do not start the next change.
-- Instead of the report, as the last message hand back only the status block in the format from the dispatcher prompt (capability `orchestrator-status`); the number of rounds, `Pre-existing` and a reviewer failure go into the findings line of the `REVIEW` field. The report's `Lesson` lines (global rules, section Lessons) go right under `NOTES`, above its line limit; no lesson, no line.
+- Instead of the report, as the last message hand back only the status block in the format from the dispatcher prompt (capability `orchestrator-status`); the number of rounds, whether the extra round ran, `Pre-existing` and a reviewer failure go into the findings line of the `REVIEW` field. The report's `Lesson` lines (global rules, section Lessons) go right under `NOTES`, above its line limit; no lesson, no line.
 
   The change did not reach the archive (the live scenario failed, a blocker, an open `Important`): `STATUS: not_ready` or `blocked`, the reason in `NOTES`. The handback hook rejects `archived` if the commit, the archive or the removed `CLAIM` do not match the fields: remove the mismatch or hand back `not_ready`.
 
@@ -95,7 +96,7 @@ Decide yourself and record the decision in the report. The only allowed question
 | "The validation error is expected" | Fix the call or the artifact |
 | "The user will commit and merge themselves" | Delivery is part of closing, go through `/ship` |
 | "The subagent works in the background, I will hand back the status, it will catch up" | No, wait for it |
-| "One more review round, maybe it finds something" | At most `process.review-rounds` rounds (default 3); after the last with an open `Important`: "not done" |
+| "One more review round, maybe it finds something" | At most `process.review-rounds` rounds (default 5), plus one extra round only after the second or later round when every open `Important` lies only in the lines of the last rework; after that with an open `Important`: "not done" |
 
 ## Report (in the user's language, in this form)
 
@@ -105,7 +106,7 @@ Status: closed and archived | archived, external acceptance not ready — <groun
 Checks: <command — result>
 Suite: <before> (<change>) -> <after> | n/a -> <after>
 Live test: <what was run, what was got> | not done — <reason>
-Independent acceptance: rounds <k>; done <n> of <m>; findings: <Important and Pre-existing as a list, Nit as a count>; reviewer failure: <round and what was not got> | no remarks
+Independent acceptance: rounds <k>; extra round: ran | did not run; done <n> of <m>; findings: <Important and Pre-existing as a list, Nit as a count>; reviewer failure: <round and what was not got> | no remarks
 Decisions made without you: <list>
 Moved to a new change: <id> | none
 Lesson: <line written or refined in ## Lessons> -> <path of that AGENTS.md>, one line each | none

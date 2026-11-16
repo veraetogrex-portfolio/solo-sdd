@@ -17,7 +17,7 @@ A line that is not `key: value`, an unknown key or a wrong value makes the comma
 | `delivery.base` | a branch name | the remote's default branch | | `sdd-worktree.py setup` (the worktree start), `sdd-pr.py open`, `ship`, `land` (the PR target and the update), `spec-dispatch`, `ship` |
 | `delivery.promote` | branch names in order; release/* means the newest release/ branch by version | none | | the `promotion:` line of `sdd-pr.py land`, `spec-dispatch` and `ship` after a merge into the base: the next branch and its `sdd-pr.py promote` command |
 | `dispatch.limit` | a whole number from 1 | `2` | | `sdd-dispatch-plan.py` (the `limit:` line); the `Orchestrators:` item of the `AGENTS.md` section "Working copy" |
-| `process.review-rounds` | a whole number from 1 | `3` | | `spec-next`: the most independent acceptance rounds |
+| `process.review-rounds` | a whole number from 1 | `5` | | `spec-next`: the most independent acceptance rounds, plus one extra round after the second or later when every open `Important` lies only in the lines of the last rework |
 | `process.light-path` | `on`, `off` | `on` | | the global rules and `spec-plan`: `off` sends every code edit through a change |
 | `process.light-path.max-files` | a whole number from 1 | `3` | | the global rules and `spec-plan`: the most files a light path edit changes |
 | `reply.language` | `ru`, `en`, `off` | `off` | | the `stop` hook: the language of the final reply, `off` checks none; the `SOLO_SDD_REPLY_LANG` variable |

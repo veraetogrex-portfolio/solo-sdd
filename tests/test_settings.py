@@ -216,6 +216,7 @@ class Command(unittest.TestCase):
         self.assertIn("dispatch.limit 4 file", lines)
         self.assertIn("delivery.merge squash default", lines)
         self.assertEqual(self.cli("get", "delivery.mode"), (0, "pr\n"))
+        self.assertIn("process.review-rounds 5 default", lines, "Requirement: Review rounds: default 5")
 
     def test_delivery_section_kept(self):
         """Requirement: Defaults by mode, scenario Delivery section kept; Config command, scenario Get names the source."""
