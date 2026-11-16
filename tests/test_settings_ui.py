@@ -575,18 +575,19 @@ class Machine(unittest.TestCase):
     def test_everything_reachable_at_40x12(self):
         s = self.screen()
         flat = lambda lines: " ".join(" ".join(lines).split())  # noqa: E731
+        solid = lambda lines: "".join("".join(lines).split())  # noqa: E731 a long word wraps mid-word: no spaces at all
         info, items = s.machine_info(), s.machine_items()
         for i, whole in enumerate(info):  # each layout and doctor row reads whole on the drawn screen, Enter scrolling it
             s.mode, s.mpos = "machine", len(items) + i
             lines = s.draw(40, 12)[0]
-            if flat([whole]) not in flat(lines):
+            if solid([whole]) not in solid(lines):
                 self.assertIn("Enter shows all", flat(lines), whole)
                 press(s, "enter")
                 for _ in range(12):
                     lines += s.draw(40, 12)[0]
                     press(s, "down")
                 press(s, "esc")
-            self.assertIn(flat([whole]), flat(ln for ln in lines if not ln.endswith("Up/Down scrolls")), whole)
+            self.assertIn(solid([whole]), solid(ln for ln in lines if not ln.endswith("Up/Down scrolls")), whole)
         self.assertIn("0.2", flat([info[0]]), "the version is in the layout row")
         self.item(s, "agent", "codex")
         press(s, "space")
