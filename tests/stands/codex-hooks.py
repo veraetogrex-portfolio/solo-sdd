@@ -11,7 +11,7 @@ import json, os, pathlib, shutil, subprocess, tempfile
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 PY = "/usr/bin/python3"
 FIXTURE = ROOT / "tests" / "fixtures" / "codex-rollout.jsonl"
-RU_QUESTION = "А что с тестами?"
+RU_QUESTION = "\u0410 \u0447\u0442\u043e \u0441 \u0442\u0435\u0441\u0442\u0430\u043c\u0438?"
 EN_400 = ("The change rolls the hooks out to every agent folder on this computer and the tests pass on both runners. " * 4)[:400]
 FOREIGN = {"matcher": "Bash", "hooks": [{"type": "command", "command": "other-tool check"}]}
 results = []

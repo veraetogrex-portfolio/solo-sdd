@@ -437,7 +437,9 @@ class Screen:
             plan.append(("solo-sdd uninstall --hooks", ["~/.claude/settings.json", "~/.codex/hooks.json", STATE], cli.uninstall_hooks))
         if m["rules"] and not w["rules"]:
             plan.append(("solo-sdd uninstall --global-rules", rule_files + [STATE], layout.uninstall_rules))
-        hooks_on, rules_on = w["hooks"] and not m["hooks"], w["rules"] and not m["rules"]
+        # hooks on: newly, or for a newly ticked claude while only the codex hooks were connected
+        hooks_on = w["hooks"] and (not m["hooks"] or "claude" in w["agents"] and not m.get("claude_hooks"))
+        rules_on = w["rules"] and not m["rules"]
         if w["agents"] != set(m["agents"]) or hooks_on or rules_on:
             names = [n for n in providers.ALL if n in w["agents"]]
             command = "solo-sdd install --agents %s%s%s" % (",".join(names), " --hooks" if hooks_on else "",

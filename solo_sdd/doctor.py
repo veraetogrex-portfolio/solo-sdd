@@ -52,7 +52,7 @@ def _hooks(state):
         else:
             yield "fail", "codex hooks", "entries not in place in %s; run solo-sdd install --hooks" % hooks.CODEX
     if not state.get("_hooks"):
-        yield "ok", "hooks", "not connected"
+        yield "ok", "hooks", "claude hooks not connected" if state.get("_codex_hooks") else "not connected"
         return
     try:
         s, _ = hooks.load(hooks.path())

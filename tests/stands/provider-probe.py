@@ -56,11 +56,14 @@ def trust_codex(env, cwd):
     timer = threading.Timer(60, p.kill)  # only this child: an app server that never answers is stopped
     timer.start()
     try:
-        for msg in ({"id": 1, "method": "initialize", "params": {"clientInfo": {"name": "provider-probe", "version": "0"}}},
-                    {"method": "initialized"}, {"id": 2, "method": "hooks/list", "params": {"cwds": [cwd]}}):
-            p.stdin.write(json.dumps(dict(msg, jsonrpc="2.0")) + "\n")
-        p.stdin.flush()
         answer = None
+        try:
+            for msg in ({"id": 1, "method": "initialize", "params": {"clientInfo": {"name": "provider-probe", "version": "0"}}},
+                        {"method": "initialized"}, {"id": 2, "method": "hooks/list", "params": {"cwds": [cwd]}}):
+                p.stdin.write(json.dumps(dict(msg, jsonrpc="2.0")) + "\n")
+            p.stdin.flush()
+        except OSError:  # the app server ended before reading: no list
+            pass
         for line in p.stdout:
             try:
                 d = json.loads(line)
@@ -71,7 +74,10 @@ def trust_codex(env, cwd):
                 break
     finally:
         timer.cancel()
-        p.stdin.close()
+        try:
+            p.stdin.close()
+        except OSError:
+            pass
         p.kill()
         p.wait()
     if not answer or "result" not in answer:

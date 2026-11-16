@@ -210,6 +210,19 @@ class Probe(Temp):
         self.assertIn("codex - hooks: unverified — codex not in PATH;", p.stdout)
         self.assertEqual(os.listdir(self.home), [])
 
+    def test_codex_hook_probe_hook_did_not_run(self):
+        """Requirement: Codex hook probe, scenario The hook did not run: a codex that runs no hook and lists none."""
+        with open(os.path.join(self.bin, "codex"), "w") as f:
+            f.write('#!/bin/sh\ncase "$1" in --version) echo "codex-cli 9.9.9";; features) echo "multi_agent stable true";; esac\n')
+        os.chmod(os.path.join(self.bin, "codex"), 0o755)
+        p = subprocess.run([sys.executable, os.path.join(REPO, "tests", "stands", "provider-probe.py"), "codex"],
+                           cwd=self.tmp, capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=60,
+                           env=dict(os.environ, HOME=self.home, PATH=self.bin + os.pathsep + "/usr/bin:/bin"))
+        self.assertEqual(p.returncode, 0 if providers.PROVIDERS["codex"]["caps"]["hooks"] == "unverified" else 1, p.stderr)
+        self.assertIn("codex 9.9.9 hooks: unverified — no-op hook ran: none (codex app-server hooks/list gave no answer)",
+                      p.stdout)
+        self.assertEqual(os.listdir(self.home), [])
+
     def test_no_cursor(self):
         p = subprocess.run([sys.executable, os.path.join(REPO, "tests", "stands", "provider-probe.py"), "cursor"],
                            cwd=self.tmp, capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=60,
@@ -339,10 +352,6 @@ class Readme(unittest.TestCase):
         self.assertIn("\n" + providers.table(), body)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 def unverified_cli(home, *args):
     """`solo-sdd <args>` with the Codex `hooks` capability set back to unverified, as before the probe confirmed it."""
     code = ("import sys; from solo_sdd import cli, providers; providers.PROVIDERS['codex']['caps']['hooks'] = 'unverified'; "
@@ -377,7 +386,8 @@ class InstallForChosenAgents(Temp):
         code, out = cli(["install", "--agents", "codex", "--hooks"], self.home, self.tmp, self.bin)
         self.assertEqual(code, 0, out)
         self.assertFalse(os.path.exists(os.path.join(self.home, ".claude")), "no Claude settings without claude")
-        self.assertTrue(os.path.exists(os.path.join(self.home, ".codex", "hooks.json")))
+        self.assertEqual(sorted(json.load(open(os.path.join(self.home, ".codex", "hooks.json")))["hooks"]),
+                         ["PreToolUse", "SessionEnd", "SessionStart", "Stop"])
 
 
 FOREIGN = {"matcher": "Bash", "hooks": [{"type": "command", "command": "other-tool check"}]}
@@ -405,7 +415,8 @@ class CodexHookLayout(Temp):
         self.assertEqual(code, 0, out)
         with open(os.path.join(REPO, "global", "work_hooks.py"), "rb") as a, open(self.hook, "rb") as b:
             self.assertEqual(a.read(), b.read())
-        self.assertTrue(os.path.exists(os.path.join(self.codex, "hooks", "model-policy.json")))
+        with open(os.path.join(REPO, "global", "model-policy.json"), "rb") as a, open(os.path.join(self.codex, "hooks", "model-policy.json"), "rb") as b:
+            self.assertEqual(a.read(), b.read())
         h = self.entries()
         self.assertEqual(sorted(h), ["PreToolUse", "SessionEnd", "SessionStart", "Stop"])
         for event, sub in (("PreToolUse", "guard"), ("SessionStart", "context"), ("SessionEnd", "end"), ("Stop", "stop")):
@@ -468,7 +479,8 @@ class CodexHookLayout(Temp):
 EVENTS = ("PreToolUse", "SessionStart", "SessionEnd", "Stop", "PostToolUse")
 OURS = [g for gs in hooks.codex_need().values() for g in gs]
 STALE = {"hooks": [{"type": "command", "command": "exec /usr/bin/python3 ~/.codex/hooks/work_hooks.py stop", "timeout": 5}]}
-GROUPS = st.one_of(st.sampled_from(OURS + [STALE]), st.builds(
+MIXED = {"matcher": "Bash", "hooks": [{"type": "command", "command": "other-tool mixed"}] + OURS[0]["hooks"]}
+GROUPS = st.one_of(st.sampled_from(OURS + [STALE, MIXED]), st.builds(
     lambda m, c: {"matcher": m, "hooks": [{"type": "command", "command": "other-tool %s" % c}]},
     st.sampled_from(["Bash", "*", "Edit"]), st.text("abc", max_size=3)))
 DOCS = st.dictionaries(st.sampled_from(EVENTS), st.lists(GROUPS, max_size=4)).map(lambda h: {"hooks": h})
@@ -476,7 +488,8 @@ DOCS = st.dictionaries(st.sampled_from(EVENTS), st.lists(GROUPS, max_size=4)).ma
 
 def check_writer(apply, phases=tuple(Phase)):
     """Requirement Codex hook layout as a property of the writer: twice equals once, one solo-sdd entry per event,
-    foreign entries unchanged and in order."""
+    foreign handlers kept and in order (a foreign handler sharing an entry with ours included), entries already in
+    place not moved."""
     need = hooks.codex_need()
 
     @hsettings(max_examples=marks.examples(200, 100), deadline=None, database=None, phases=phases)
@@ -487,9 +500,14 @@ def check_writer(apply, phases=tuple(Phase)):
         for e in set(need) | set(doc["hooks"]):
             got = once["hooks"].get(e, [])
             assert [g for g in got if hooks._codex_ours(g)] == need.get(e, []), (doc, e)
-            assert [g for g in got if not hooks._codex_ours(g)] == [g for g in doc["hooks"].get(e, []) if not hooks._codex_ours(g)]
+            foreign = [g for g in map(hooks._strip, doc["hooks"].get(e, [])) if g is not None]
+            assert [g for g in got if not hooks._codex_ours(g)] == foreign, (doc, e)
+            if [g for g in doc["hooks"].get(e, []) if hooks._codex_ours(g)] == need.get(e, []) and e in doc["hooks"]:
+                assert got == doc["hooks"][e], ("an entry in place moved", doc, e)
         off = apply(once, False)
         assert not any(hooks._codex_ours(g) for gs in off["hooks"].values() for g in gs), doc
+        for e, gs in off["hooks"].items():
+            assert gs == [g for g in map(hooks._strip, once["hooks"].get(e, [])) if g is not None], (doc, e)
     prop()
 
 
@@ -510,3 +528,7 @@ class CodexHookWriter(unittest.TestCase):
     def test_mutant_appends_without_removing(self):
         with self.assertRaises(AssertionError):
             check_writer(appending, (Phase.explicit, Phase.generate))
+
+
+if __name__ == "__main__":
+    unittest.main()

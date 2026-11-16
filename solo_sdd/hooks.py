@@ -325,14 +325,29 @@ def _codex_ours(g):
     return ".codex/hooks/work_hooks.py" in json.dumps(g)
 
 
+def _strip(g):
+    """g without its handlers that run ~/.codex/hooks/work_hooks.py; None when nothing of it is left."""
+    if not _codex_ours(g):
+        return g
+    hs = g.get("hooks") if isinstance(g, dict) else None
+    rest = [x for x in hs if not _codex_ours(x)] if isinstance(hs, list) else []
+    return dict(g, hooks=rest) if rest else None
+
+
 def codex_apply(doc, on):
-    """doc with one solo-sdd entry per event (on) or none (off): every entry running ~/.codex/hooks/work_hooks.py is
-    dropped, the foreign ones stay in order, ours go after them; an event left empty is removed. doc is not changed."""
+    """doc with one solo-sdd entry per event (on) or none (off). An event whose solo-sdd entries are already exactly the
+    wanted ones is left as it is, so no entry moves and Codex keeps every trust (its key holds the entry's index).
+    Otherwise every handler running ~/.codex/hooks/work_hooks.py is dropped, a foreign handler sharing its entry
+    included in the rest of that entry, the foreign entries stay in order and the wanted ones go after them; an event
+    left empty is removed. doc is not changed."""
     s = copy.deepcopy(doc)
     h = s.setdefault("hooks", {})
     want = codex_need() if on else {}
     for e in list(want) + [e for e in h if e not in want]:
-        lst = [g for g in h.get(e, []) if not _codex_ours(g)] + want.get(e, [])
+        cur = h.get(e, [])
+        if [g for g in cur if _codex_ours(g)] == want.get(e, []):
+            continue
+        lst = [g for g in map(_strip, cur) if g is not None] + want.get(e, [])
         if lst:
             h[e] = lst
         else:
