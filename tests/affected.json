@@ -198,9 +198,6 @@
   "tests/eval/": [
    "tests/test_sdd_eval.py"
   ],
-  "tests/fixtures/codex-rollout.jsonl": [
-   "tests/test_work_hooks.py"
-  ],
   "tests/marks.py": [
    "tests/test_cli.py",
    "tests/test_demo.py",
@@ -237,6 +234,9 @@
    "tests/test_sdd_pr.py",
    "tests/test_sdd_worktree.py",
    "tests/test_shared_repo.py"
+  ],
+  "tests/fixtures/codex-rollout.jsonl": [
+   "tests/test_work_hooks.py"
   ],
   "tests/skill_text.py": [
    "tests/test_integrations.py",

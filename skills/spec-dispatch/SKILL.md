@@ -19,7 +19,7 @@ Runs on the session's main model; the dispatcher's work is mechanical, so start 
 
 ## Order
 
-0. **Preparation.** Read `preparation.md` each time this step starts, also after compaction: the legacy tree stop, the delivery mode and merge method with their sources, the check commands, the run decisions file and the waiting file; a legacy tree means launch nobody.
+0. **Preparation.** Read `preparation.md` each time this step starts, also after compaction: the legacy tree stop, the delivery mode and merge method with their sources, the check commands and the run decisions file (`docs/waiting.md` or a common folder file); a legacy tree means launch nobody.
 1. **Subagent depth.** `echo "${CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH-unset}"`. Treat an empty or non-numeric value as set below 2. If it is unset or below 2, an orchestrator cannot launch the reviewer and search: launch nobody, create no worktree, and in the report under "Needs from you" write:
    - unset: once per computer run `solo-sdd install --hooks` and restart the session;
    - set below 2: name the current value and ask to raise it to 2 where the user set it (Claude Code settings or the environment): the script does not change a set value, do not suggest it.
@@ -73,7 +73,7 @@ Runs on the session's main model; the dispatcher's work is mechanical, so start 
    - Lines starting with `Lesson` under `NOTES` of a status of any kind go into the report line `Lessons:` with the change name.
 7. **Merge one at a time**, in acceptance order: read `merge.md` each time this step starts, also after compaction: the `local` merge by `sdd-dispatch.py land-local` and its codes, the `pr` mode by `sdd-pr.py ship` and `land`, the return on conflict and the build failure after update; a change is merged only by these commands, and you do not fix "not merged" yourself.
 8. **The pipeline runs** while there are running orchestrators, changes waiting for merge (`--waiting`) or changes in `launch:`; after every event, recalculate (step 2). In `local` mode a change whose status was accepted before merge is in `--running`: acceptance and merge go on this machine, it takes a slot. Merged changes in the archive unblock their dependants.
-9. **Questions to the user.** Read `questions.md` each time this step starts, also after compaction: a decision needed from the user goes at once into an `AskUserQuestion` window with options, the recommended one first, and the answer into the run decisions file.
+9. **Questions to the user.** Read `questions.md` each time this step starts, also after compaction: a decision needed from the user goes at once into an `AskUserQuestion` window with options, the recommended one first; an answer that changes the plan of the run goes into the decisions file.
 10. **Delivery** of the main branch by the `ship` skill, only in `local` mode (its `Promotion:` line, step 10 of `ship`, goes once into "Needs from you", the same as the `promotion:` line of `land` in `pr`); in `pr` everything is already on the remote, at the end `git -C <MAIN> rev-parse <main>` equals `origin/<main>`. No remote: delivery ends with the local branch, the report says "push not done: no remote". Push or merge triggers a prod deploy: stop before this action and ask the user, naming what rolls out and where.
 11. **Report.** In status messages and in the report: "changes merged in this run: N in the local branch, M on the remote" (`local`: 0 on the remote until `ship`; `pr`: both numbers equal the number of merged PRs); do not write "all merged" if the remote has fewer.
 

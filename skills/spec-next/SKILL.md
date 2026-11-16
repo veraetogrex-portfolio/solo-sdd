@@ -30,7 +30,7 @@ Argument (optional): the name or number of a change. Without an argument, choose
 7. **Live test** of the affected scenario on real input or a stand. Paid calls to the product model in it go to the cheapest product model and with the user's consent.
 7a. **Independent acceptance.** Read `acceptance.md` each time this step starts, also after compaction: a `Review:` reviewer who did not write the code, what it gets and does not get, its task, the finding labels and the rounds; an open `Important` blocks the archive.
 8. **Blockers.** Items that wait for external access or a person's decision: into `verification.md` (the "Not Verified" section) and a line in `docs/waiting.md`. A new change only for work beyond the specification's boundaries. If the project rules require otherwise, they apply.
-9. **Closing.** Read `closing.md` each time this step starts, also after compaction: no archive without the mandatory tasks, the live scenario and closed `Important` findings; then `solo-sdd validate <id>`, `solo-sdd archive <id> --yes` and `solo-sdd validate --all`.
+9. **Closing.** Read `closing.md` each time this step starts, also after compaction: the archive conditions (the mandatory tasks, the live scenario or a fallback the rules allow, no open `Important`) and an allowed external remainder; then `solo-sdd validate <id>`, `solo-sdd archive <id> --yes` and `solo-sdd validate --all`.
 10. **Delivery.** Delete `CLAIM`. Go through `/ship` up to a merged main branch, unless the project rules explicitly forbid it. The exception: push or merge triggers a prod deploy (`/ship`, the "Deploy" step): stop before this action and ask, naming what rolls out and where.
 11. **Stop.** Do not start the next change.
 
