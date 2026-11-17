@@ -213,6 +213,30 @@ class Guidance(Base):
         self.assertEqual((s.values()["delivery.mode"][0], s.message), ("pr", ""))
 
 
+class PrefixGuardOnTheScreen(Base):
+    """Requirement: Prefix change guard: the screen refuses what `config set` refuses."""
+
+    def test_leftover_branch_and_equal_prefixes(self):
+        from test_settings import GIT
+        s = self.open("")
+        os.makedirs(os.path.join(s.root, "solo-sdd", "changes", "a"))
+        for args in (("init", "-q"), ("commit", "-q", "--allow-empty", "-m", "x"), ("branch", "change/a")):
+            subprocess.run(GIT + ("-C", s.root) + args, check=True, capture_output=True, stdin=subprocess.DEVNULL)
+        select(s, "delivery.branch-prefix")
+        press(s, "enter", *["backspace"] * 7, *"feat/", "enter")
+        self.assertEqual((s.values()["delivery.branch-prefix"], s.unsaved), (("change/", "default"), False))
+        self.assertIn("change/a", s.message)
+        select(s, "delivery.plan-prefix")
+        press(s, "enter", *["backspace"] * 5, *"change/", "enter")
+        self.assertEqual((s.values()["delivery.plan-prefix"], s.unsaved), (("plan/", "default"), False))
+        self.assertIn("delivery.branch-prefix", s.message)
+        subprocess.run(GIT + ("-C", s.root, "branch", "-D", "change/a"), check=True, capture_output=True,
+                       stdin=subprocess.DEVNULL)
+        select(s, "delivery.branch-prefix")
+        press(s, "enter", *["backspace"] * 7, *"feat/", "enter")
+        self.assertEqual(s.values()["delivery.branch-prefix"], ("feat/", "file"))
+
+
 class BrokenAndSafeDisplay(Base):
     """Requirements: Broken config read-only; Safe display: the cases the stand does not walk."""
 

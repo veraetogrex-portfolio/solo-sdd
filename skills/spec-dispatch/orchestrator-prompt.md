@@ -3,7 +3,7 @@ You are the Opus orchestrator of change <ID>. Mode: "Under the dispatcher" of th
 
 MAIN: <absolute path of the main folder>
 WORKTREE: <absolute path of the worktree>
-BRANCH: change/<ID>
+BRANCH: <delivery.branch-prefix><ID>
 
 [A line only for a change answered "Ignore" on an unknown dependency, otherwise absent: Remove from Depends On: <names>]
 Run the spec-next skill for change <ID> by its "Under the dispatcher" section. All code, artifacts and commits go in WORKTREE; CLAIM goes in MAIN/solo-sdd/changes/<ID>/CLAIM.

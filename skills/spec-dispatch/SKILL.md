@@ -46,11 +46,11 @@ Runs on the session's main model; the dispatcher's work is mechanical, so start 
    The `waiting:` line holds the waiting reasons (`CLAIM`, `CLAIM abandoned`, `WAITING`, `unknown dependency`, `depends on`, `conflict with`, `not merged: branch`, `not committed`, `limit`): they launch on the next recalculation; those not launched by the end of the work go into the report with the reason (a `not merged: branch` of a change already reported as `waits for human merge` is reported only that way; for `unknown dependency`, with the name), "not merged" with the branch and worktree, "not committed" with a request to commit the change folder: a worktree from a commit will not see it.
 
    `launch: none` and no running or waiting-for-merge changes: go to the report.
-4. **Launch.** For every issued change, a branch and a worktree in a temporary folder, in two calls: `mktemp -d "${TMPDIR:-/tmp}/sdd-XXXXXX"` prints a folder `<D>` (an own folder per worktree, since a shared `${TMPDIR}/wt-<id>` is taken by leftovers of other projects), then `git worktree add -b change/<id> <D>/wt-<id>` with `MAIN` as the working folder and `<D>` written out literally: the `guard` hook lets through only this plain form (no `git -C`, `-q`, substitution or `cd` before a relative path).
+4. **Launch.** For every issued change, a branch and a worktree in a temporary folder, in two calls: `mktemp -d "${TMPDIR:-/tmp}/sdd-XXXXXX"` prints a folder `<D>` (an own folder per worktree, since a shared `${TMPDIR}/wt-<id>` is taken by leftovers of other projects), then `git worktree add -b change/<id> <D>/wt-<id>` (`change/` here and below: `solo-sdd config get delivery.branch-prefix`) with `MAIN` as the working folder and `<D>` written out literally: the `guard` hook lets through only this plain form (no `git -C`, `-q`, substitution or `cd` before a relative path).
 
-   In `pr` mode before that `git -C <MAIN> fetch -q`, and `worktree add` is `git worktree add -b change/<id> <D>/wt-<id> origin/<main>`.
+   In `pr` mode before that `git -C <MAIN> fetch -q`, and `worktree add` is `git worktree add -b change/<id> <D>/wt-<id> origin/<main>` (`delivery.branch-prefix`).
 
-   An error: `git -C <MAIN> branch -D change/<id>` (git creates the branch even on failure, and it would block the change), the report says "not launched: worktree" with the error. `WORKTREE` is the absolute path from `git -C <MAIN> worktree list | grep "wt-<id>"`.
+   An error: `git -C <MAIN> branch -D change/<id>` (`delivery.branch-prefix`; git creates the branch even on failure, and it would block the change), the report says "not launched: worktree" with the error. `WORKTREE` is the absolute path from `git -C <MAIN> worktree list | grep "wt-<id>"`.
 
    Right after: `python3 ~/.local/bin/sdd-worktree.py setup <MAIN> <WORKTREE>`: it copies the git-ignored `solo-sdd/`, `AGENTS.md`, the paths of the "Working copy" section and individually ignored project documents (`.md`, `.txt`, `.rst`, `.adoc` up to 1 MiB, not `.env*`), links `node_modules` and `.venv`, runs the prepare command.
 
@@ -94,7 +94,7 @@ Read `orchestrator-prompt.md` each time step 4 launches an orchestrator, also af
 | "I will do the merge in separate steps myself" | No. In `local`, one command `sdd-dispatch.py land-local` |
 | "I will check the status myself: run the commands and `tail`" | No. `sdd-dispatch.py accept` |
 | "I will launch everything ready at once" | Only what the script issued |
-| "I will restart the orchestrator on the same change" | No. The branch `change/<id>` remains, the change waits for the user |
+| "I will restart the orchestrator on the same change" | No. The branch `change/<id>` (`delivery.branch-prefix`) remains, the change waits for the user |
 | "I will also launch the dependant, it is almost ready" | Only after the merge and archive of the dependency |
 | "`isolation: worktree` is simpler" | Not for the dispatcher. The worktree is prepared by `setup` (`sdd-worktree.py`): a built-in one would lack the git-ignored artifacts |
 | "I will rerun CI once more" | Once and only for `infra` |

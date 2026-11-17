@@ -546,6 +546,35 @@ def main():
                 s.close()
         row("Local merge method: the key, a pick, save", local_merge_key)
 
+        def branch_prefix_keys():
+            d = project(base)
+            os.makedirs(os.path.join(d, "solo-sdd", "changes", "a"), exist_ok=True)
+            for args in (("commit", "-q", "--allow-empty", "-m", "x"), ("branch", "change/a")):
+                subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false",
+                                "-C", d] + list(args), check=True, capture_output=True, stdin=subprocess.DEVNULL)
+            s = Session(d, 60, 120)
+            try:
+                t = s.term.text()
+                need(all(k in t for k in ("delivery.branch-prefix", "delivery.plan-prefix", "commit.light-prefix")),
+                     "the three prefix keys listed", t)
+                to(s, "delivery.branch-prefix")
+                s.send("enter", *["backspace"] * len("change/"), *"feat/")
+                t = s.send("enter")
+                need("change/a" in flat(t) and "unsaved" not in t, "the leftover branch named, nothing edited", t)
+                subprocess.run(["git", "-C", d, "branch", "-D", "change/a"], check=True, capture_output=True,
+                               stdin=subprocess.DEVNULL)
+                s.send("enter", *["backspace"] * len("change/"), *"feat/", "enter")
+                s.send(*["up"] * settings_ui.KEYS.index("delivery.branch-prefix"))
+                to(s, "commit.light-prefix")
+                s.send("enter", *["backspace"] * len("light:"), *"[quick]", "enter", "s", "y", "q")
+                need(s.wait() == 0, "saved and quit")
+                listed = sdd(d, "config", "list")[1].splitlines()
+                need({"delivery.branch-prefix feat/ file", "commit.light-prefix [quick] file",
+                      "delivery.plan-prefix plan/ default"} <= set(listed), "config list: %s" % listed)
+            finally:
+                s.close()
+        row("Branch and commit prefixes: the guard names the branch, then an entry and save", branch_prefix_keys)
+
         def agent_model_keys():
             d = project(base)
             s = Session(d, 60, 120)

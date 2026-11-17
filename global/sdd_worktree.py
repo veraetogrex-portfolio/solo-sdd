@@ -142,10 +142,13 @@ REGISTRY = {
     "delivery.code-scanning": ("choice", ("gate", "warn", "off"), "gate", None),  # open alerts: code 8, a warning, not asked
     "delivery.delete-branch": ("choice", ("on", "off"), "on", None),  # off: a merged PR keeps its branch
     "delivery.draft": ("choice", ("on", "off"), "off", None),  # on: a PR opens as a draft, marked ready before the merge
+    "delivery.branch-prefix": ("choice", None, "change/", None),  # a change branch is <prefix><id>
+    "delivery.plan-prefix": ("choice", None, "plan/", None),  # the spec-plan branch is <prefix><first id>
     "dispatch.limit": ("int", None, "2", None),
     "process.review-rounds": ("int", None, "5", None),
     "process.light-path": ("choice", ("on", "off"), "on", None),  # off: every code edit goes through a change
     "process.light-path.max-files": ("int", None, "3", None),
+    "commit.light-prefix": ("text", None, "light:", None),  # a light commit subject starts with it, as plain text
     "reply.language": ("choice", ("ru", "en", "off"), "off", None),
     "agents": ("list", ("claude", "codex", "cursor", "other"), "claude, codex, other", None),
     "rules.scope": ("choice", ("project", "global"), "project", None),  # project: init writes the rules block into AGENTS.md

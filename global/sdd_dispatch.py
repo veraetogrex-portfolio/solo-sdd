@@ -467,7 +467,6 @@ def merge_branch(main, wt, branch, how, prev):
 
 def land_local(main, wt, cid, checks):
     main, wt = os.path.abspath(main), os.path.abspath(wt)
-    branch = "change/" + cid
     r = git(main, "status", "--porcelain", "--untracked-files=no")
     if r.returncode:
         print("not merged: status: " + r.stderr.strip())
@@ -483,6 +482,7 @@ def land_local(main, wt, cid, checks):
     try:
         values = pr.read_settings(main)
         human, how = values["delivery.merge-by"][0] == "human", values["delivery.local-merge"][0]
+        branch = values["delivery.branch-prefix"][0] + cid
     except (OSError, ValueError, KeyError) as e:  # KeyError: an older sdd-pr.py next to the script
         print("not merged: settings: %s" % e)
         return 1

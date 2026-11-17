@@ -132,10 +132,13 @@ REGISTRY = {
     "delivery.code-scanning": ("choice", ("gate", "warn", "off"), "gate", None),  # open alerts: code 8, a warning, not asked
     "delivery.delete-branch": ("choice", ("on", "off"), "on", None),  # off: a merged PR keeps its branch
     "delivery.draft": ("choice", ("on", "off"), "off", None),  # on: a PR opens as a draft, marked ready before the merge
+    "delivery.branch-prefix": ("choice", None, "change/", None),  # a change branch is <prefix><id>
+    "delivery.plan-prefix": ("choice", None, "plan/", None),  # the spec-plan branch is <prefix><first id>
     "dispatch.limit": ("int", None, "2", None),
     "process.review-rounds": ("int", None, "5", None),
     "process.light-path": ("choice", ("on", "off"), "on", None),  # off: every code edit goes through a change
     "process.light-path.max-files": ("int", None, "3", None),
+    "commit.light-prefix": ("text", None, "light:", None),  # a light commit subject starts with it, as plain text
     "reply.language": ("choice", ("ru", "en", "off"), "off", None),
     "agents": ("list", ("claude", "codex", "cursor", "other"), "claude, codex, other", None),
     "rules.scope": ("choice", ("project", "global"), "project", None),  # project: init writes the rules block into AGENTS.md
@@ -947,7 +950,8 @@ def cmd_ship(main, wt, base, title):
 
 def cmd_land(main, wt, url, how):
     base, promote = delivery(main)
-    keep = pr_settings(main)["delivery.delete-branch"][0] == "off"  # read before the merge: a broken file merges nothing
+    s = pr_settings(main)  # read before the merge: a broken file merges nothing
+    keep, prefix = s["delivery.delete-branch"][0] == "off", s["delivery.branch-prefix"][0]
     n, v = number(url), view(url)
     if v["state"] != "MERGED" and (how == AFTER or merge_by(main) == "human"):  # before Land after green: nothing merges
         print(f"PR #{n} {HUMAN}: {url}")
@@ -990,7 +994,7 @@ def cmd_land(main, wt, url, how):
             if sub == "transport":
                 print(p.stdout, end="")  # the dispatcher reads the «not transported: …» line
     branch = v["headRefName"]
-    if not keep and branch.startswith("change/") and sh("git", "-C", main, "show-ref", "--verify", "--quiet",
+    if not keep and branch.startswith(prefix) and sh("git", "-C", main, "show-ref", "--verify", "--quiet",
                                            "refs/heads/" + branch).returncode == 0:
         p = sh("git", "-C", main, "branch", "-D", branch)
         if p.returncode:

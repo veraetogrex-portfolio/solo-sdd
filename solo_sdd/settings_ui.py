@@ -107,12 +107,20 @@ class Screen:
         return settings.effective(settings.parse_settings(self.edited_text()), agents=self.agents)
 
     def keep(self, value, key=None):
-        """Record an edit of a key (the selected one by default); one that leaves the file as it is drops the edit."""
+        """Record an edit of a key (the selected one by default); one that leaves the file as it is drops the edit.
+        A branch prefix `config set` would refuse is not recorded: the message says why. True if recorded."""
         key = key or self.key
+        after = settings.effective(settings.parse_settings(settings.set_text(self.edited_text(), key, value)),
+                                   agents=self.agents)
+        why = settings.prefix_refusal(self.root, self.base, after)
+        if why:
+            self.message = why
+            return False
         if settings.set_text(self.text, key, value) == self.text:
             self.edits.pop(key, None)
         else:
             self.edits[key] = value
+        return True
 
     @property
     def key(self):
@@ -272,7 +280,8 @@ class Screen:
         except settings.SettingsError as e:  # a value the file could not hold, e.g. a line separator
             self.message = str(e)
             return False
-        self.keep(value, key)
+        if not self.keep(value, key):
+            return False
         if key == "delivery.mode" and value == "pr" and not self.ci:
             self.message = init.NO_CI
         return True

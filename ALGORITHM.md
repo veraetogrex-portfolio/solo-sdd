@@ -47,7 +47,8 @@ Only when the plan cannot be written without it: choosing a technology, a servic
 
 ### Light path: no change
 
-A code edit takes the light path when it changes no behaviour a main spec describes, adds no dependency, touches no data, migration or deploy, and changes at most `process.light-path.max-files` files (default 3); `process.light-path: off` forbids it. The edit, the project's tests, a live check of the edited place and one commit `light: <the request>` are the whole record; `spec-plan` coverage names such an item with its commit, `work-status` and `report` count these commits apart from changes. Anything outside the bounds, and a bug in behaviour a spec describes, goes through a change.
+A code edit takes the light path when it changes no behaviour a main spec describes, adds no dependency, touches no data, migration or deploy, and changes at most `process.light-path.max-files` files (default 3); `process.light-path: off` forbids it. The edit, the project's tests, a live check of the edited place and one commit `light: <the request>` are the whole record, `light:` being the plain-text `commit.light-prefix` setting;
+`spec-plan` coverage names such an item with its commit, `work-status` and `report` count these commits apart from changes. Anything outside the bounds, and a bug in behaviour a spec describes, goes through a change.
 
 ### 3. Plan: `spec-plan`
 
@@ -63,7 +64,7 @@ Input: a plan, a bug list, the result of a discussion. Output: a queue of small 
 
 **Gate G1:** `solo-sdd validate --all`; then `spec-analyze` on every created change (stage 4); full coverage of the input.
 
-After G1 the folders of created and changed changes go in one commit `change: <id>, …`, without other edits; under `delivery.mode` `pr` it goes on a new branch `plan/<first id>` in a temporary worktree and reaches the main branch through `ship`. If `solo-sdd/changes` is ignored, there is no commit, and the report says "plan outside git".
+After G1 the folders of created and changed changes go in one commit `change: <id>, …`, without other edits; under `delivery.mode` `pr` it goes on a new branch `plan/<first id>` (`plan/`: the `delivery.plan-prefix` setting) in a temporary worktree and reaches the main branch through `ship`. If `solo-sdd/changes` is ignored, there is no commit, and the report says "plan outside git".
 
 ### 4. Check before code: `spec-analyze`
 

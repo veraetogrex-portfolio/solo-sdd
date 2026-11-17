@@ -363,8 +363,8 @@ class LandBase(Base):
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(text, encoding="utf-8")
 
-    def make_change(self, cid="c", rel="feature.txt", text="new\n"):
-        g(self.main, "worktree", "add", "-q", "-b", "change/" + cid, self.wt)
+    def make_change(self, cid="c", rel="feature.txt", text="new\n", prefix="change/"):
+        g(self.main, "worktree", "add", "-q", "-b", prefix + cid, self.wt)
         subprocess.run([sys.executable, str(WORKTREE), "setup", self.main, self.wt], capture_output=True,
                        stdin=subprocess.DEVNULL, check=True)
         self.put(self.wt, rel, text)
@@ -531,6 +531,15 @@ class LandTest(LandBase):
         self.assertTrue(os.path.exists(os.path.join(self.main, "feature.txt")))
         self.assertFalse(os.path.exists(self.wt))
         self.assertEqual(g(self.main, "branch", "--list", "change/c"), "")
+
+    def test_team_prefix_lands(self):
+        # Requirement: Branch and commit prefixes: land-local merges and deletes <delivery.branch-prefix><id>
+        self.put(self.main, "solo-sdd/config", "delivery.branch-prefix: feat/\n")
+        self.make_change(prefix="feat/")
+        r = self.land()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertTrue(os.path.exists(os.path.join(self.main, "feature.txt")))
+        self.assertEqual(g(self.main, "branch", "--list", "feat/c"), "")
 
     def test_merge_conflict(self):
         self.make_change(rel="README.md", text="change\n")
