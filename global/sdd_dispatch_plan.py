@@ -53,7 +53,7 @@ LOOPBACK_TIMEOUT = 1.0
 # settings:begin
 # solo-sdd/config: one `key: value` per line, lines starting with # are comments, list values are separated by commas.
 SETTINGS_FILE = "solo-sdd/config"
-# key -> (type: choice | int | list | names | paths | text, allowed values (None: any), default, default under `mode: team` (None: the same));
+# key -> (type: choice | int | list | model | names | paths | text, allowed values (None: any), default, default under `mode: team` (None: the same));
 # a key with the default "" takes an empty value, read as "not set"
 REGISTRY = {
     "mode": ("choice", ("solo", "team"), "solo", None),
@@ -80,6 +80,12 @@ REGISTRY = {
     "reply.language": ("choice", ("ru", "en", "off"), "off", None),
     "agents": ("list", ("claude", "codex", "cursor", "other"), "claude, codex, other", None),
     "rules.scope": ("choice", ("project", "global"), "project", None),  # project: init writes the rules block into AGENTS.md
+    "agents.orchestrator-model": ("model", None, "opus", None),  # spec-dispatch; work_hooks.py keeps it in the main list
+    "agents.review-model": ("model", None, "", None),  # "": the session's main model; work_hooks.py: the main list
+    "agents.lookup-model": ("model", None, "haiku", None),  # work_hooks.py: the cheap list
+    "agents.test-model": ("model", None, "haiku", None),  # paid product calls in tests; the Test model allowlist bounds it
+    "agents.dispatcher-effort": ("choice", ("low", "medium", "high"), "low", None),
+    "agents.executor": ("choice", ("self", "codex"), "self", None),  # codex: as if the owner named codex-orchestration
     "integrations": ("names", None, "", None),  # the enabled integrations, by folder name (solo_sdd/integrations.py)
     "integrations.off": ("names", None, "", None),  # the bundled integrations switched off, by folder name
 }
@@ -89,6 +95,7 @@ PATTERNS = {
     "checklist.<name>.file": ("path", None, "", None),  # a markdown file of `- [ ]` items, from the repository root
 }
 NAME_CHARS = "abcdefghijklmnopqrstuvwxyz0123456789-"
+MODEL_CHARS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-_[]"
 TEXT_MAX = 200
 # the Delivery items of AGENTS.md read as the old source of a text or paths key: item -> key
 DELIVERY_ITEMS = (("PR title:", "delivery.pr-title"), ("Deploy:", "delivery.deploy"), ("Owner only:", "delivery.owner-only"))
@@ -134,6 +141,10 @@ def check_value(key, value, registry=REGISTRY):
             raise SettingsError("%s takes one line of printable characters, at most %d characters, not %r"
                                 % (key, TEXT_MAX, v if len(v) <= 60 else v[:60] + "..."))
         return v
+    if kind == "model":
+        if v and all(c in MODEL_CHARS for c in v) or not v and default == "":
+            return v
+        raise SettingsError("%s takes one model name of ASCII letters, digits, ., -, _, [ and ], not %r" % (key, v))
     if kind == "int":
         if not (v.isascii() and v.isdigit()) or int(v) < 1:
             raise SettingsError("%s takes a whole number from 1, not %r" % (key, v))

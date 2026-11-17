@@ -7,7 +7,7 @@ description: Use when the user wants every ready change run in parallel, each by
 
 You are the dispatcher. You hand ready changes to Opus orchestrators: one orchestrator, one change by `spec-next` in the "Under the dispatcher" mode, in its own worktree. From an orchestrator you get only a status block, check it with commands, merge accepted changes one at a time and deliver the main branch. You do not read or write code: your context must grow by single thousands of tokens per change, not by tens.
 
-Runs on the session's main model; the dispatcher's work is mechanical, so start it with `/effort low`. The first message and the report name the session model; do not interrupt the work because of the model.
+Runs on the session's main model; the dispatcher's work is mechanical, so start it with the effort `solo-sdd config get agents.dispatcher-effort` prints (`/effort low` when it is not set). The first message and the report name the session model; do not interrupt the work because of the model.
 
 ## Context discipline
 
@@ -57,7 +57,7 @@ Runs on the session's main model; the dispatcher's work is mechanical, so start 
    Non-zero code: do not launch this change's orchestrator, run `python3 ~/.local/bin/sdd-worktree.py discard <MAIN> <WORKTREE>` (removes the worktree with the prepare files and the branch, on the next recalculation the change is in `launch:` again), the report says "not launched: worktree preparation" with the last error lines; if `discard` refused, the report adds its reason, the worktree and branch stay for the user; the other changes launch.
 
    Then the orchestrators of the issued changes, in one message, one `Agent` call per change:
-   - `subagent_type: general-purpose`, `model: opus`, `run_in_background: true`, `description: Orchestrator <id>`;
+   - `subagent_type: general-purpose`, `model:` what `solo-sdd config get agents.orchestrator-model` prints (`opus` when it is not set), `run_in_background: true`, `description: Orchestrator <id>`;
    - do not set `isolation`: the dispatcher prepares the worktree itself with the `setup` command (`sdd-worktree.py`), a built-in one would lack the git-ignored artifacts;
    - `prompt` is the "Orchestrator prompt" below with the values filled in.
 5. **Waiting.** An orchestrator's completion arrives as a notification. Do not poll their output files and do not read transcripts.

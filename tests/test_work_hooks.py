@@ -379,6 +379,44 @@ class Models(HookCase):
             write_denied()
 
 
+class ProjectModels(HookCase):
+    """Requirement: Project models within the machine policy: a role model the project sets stays in the role's list."""
+
+    def config(self, text):
+        os.makedirs(os.path.join(REPO, "solo-sdd"), exist_ok=True)
+        open(os.path.join(REPO, "solo-sdd", "config"), "w").write(text)
+
+    def test_a_project_widens_the_lookup_model(self):
+        lookup = agent("Lookup: find the limit", "sonnet", "Explore", agent_id="a1")
+        assert not denied(lookup), "no key: the role rules let sonnet through"
+        self.config("agents.lookup-model: sonnet\n")
+        r = reason(lookup)
+        assert "agents.lookup-model" in r and "cheap" in r and "haiku" in r, r
+        assert not denied(agent("Lookup: find the limit", "haiku", "Explore", agent_id="a1")), "another model of the list"
+        assert not denied_env(lookup, OWNER), "the owner bypass lifts it"
+
+    def test_a_cheaper_orchestrator(self):
+        orch = agent("Orchestrator a", "sonnet")
+        assert not denied(orch), "no key: any model"
+        self.config("agents.orchestrator-model: sonnet\n")
+        r = reason(orch)
+        assert "agents.orchestrator-model" in r and "main" in r and "opus" in r and "fable" in r, r
+        self.config("agents.orchestrator-model: fable\n")
+        assert not denied(agent("Orchestrator a", "fable")), "a model of main"
+
+    def test_a_project_narrows_the_review_model(self):
+        self.config("agents.review-model: fable\n")
+        assert not denied(agent("Review: a", "fable", agent_id="a1"))
+        assert not denied(agent("Review: a", agent_id="a1")), "without model as before"
+
+    def test_a_broken_config(self):
+        self.config("agents.orchestrator-model sonnet\n")
+        assert not denied(agent("Orchestrator a", "sonnet")), "the role rules alone"
+        log = os.path.join(H, ".claude/hook-state/errors.log")
+        assert "solo-sdd/config:1" in open(log).read()
+        os.remove(log)
+
+
 class Denied(Exception):
     pass
 

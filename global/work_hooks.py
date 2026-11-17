@@ -38,7 +38,7 @@ SECRET_WORDS = {"KEY", "TOKEN", "SECRET", "PASSWORD", "PASSWD", "WEBHOOK", "CRED
 # settings:begin
 # solo-sdd/config: one `key: value` per line, lines starting with # are comments, list values are separated by commas.
 SETTINGS_FILE = "solo-sdd/config"
-# key -> (type: choice | int | list | names | paths | text, allowed values (None: any), default, default under `mode: team` (None: the same));
+# key -> (type: choice | int | list | model | names | paths | text, allowed values (None: any), default, default under `mode: team` (None: the same));
 # a key with the default "" takes an empty value, read as "not set"
 REGISTRY = {
     "mode": ("choice", ("solo", "team"), "solo", None),
@@ -65,6 +65,12 @@ REGISTRY = {
     "reply.language": ("choice", ("ru", "en", "off"), "off", None),
     "agents": ("list", ("claude", "codex", "cursor", "other"), "claude, codex, other", None),
     "rules.scope": ("choice", ("project", "global"), "project", None),  # project: init writes the rules block into AGENTS.md
+    "agents.orchestrator-model": ("model", None, "opus", None),  # spec-dispatch; work_hooks.py keeps it in the main list
+    "agents.review-model": ("model", None, "", None),  # "": the session's main model; work_hooks.py: the main list
+    "agents.lookup-model": ("model", None, "haiku", None),  # work_hooks.py: the cheap list
+    "agents.test-model": ("model", None, "haiku", None),  # paid product calls in tests; the Test model allowlist bounds it
+    "agents.dispatcher-effort": ("choice", ("low", "medium", "high"), "low", None),
+    "agents.executor": ("choice", ("self", "codex"), "self", None),  # codex: as if the owner named codex-orchestration
     "integrations": ("names", None, "", None),  # the enabled integrations, by folder name (solo_sdd/integrations.py)
     "integrations.off": ("names", None, "", None),  # the bundled integrations switched off, by folder name
 }
@@ -74,6 +80,7 @@ PATTERNS = {
     "checklist.<name>.file": ("path", None, "", None),  # a markdown file of `- [ ]` items, from the repository root
 }
 NAME_CHARS = "abcdefghijklmnopqrstuvwxyz0123456789-"
+MODEL_CHARS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-_[]"
 TEXT_MAX = 200
 # the Delivery items of AGENTS.md read as the old source of a text or paths key: item -> key
 DELIVERY_ITEMS = (("PR title:", "delivery.pr-title"), ("Deploy:", "delivery.deploy"), ("Owner only:", "delivery.owner-only"))
@@ -119,6 +126,10 @@ def check_value(key, value, registry=REGISTRY):
             raise SettingsError("%s takes one line of printable characters, at most %d characters, not %r"
                                 % (key, TEXT_MAX, v if len(v) <= 60 else v[:60] + "..."))
         return v
+    if kind == "model":
+        if v and all(c in MODEL_CHARS for c in v) or not v and default == "":
+            return v
+        raise SettingsError("%s takes one model name of ASCII letters, digits, ., -, _, [ and ], not %r" % (key, v))
     if kind == "int":
         if not (v.isascii() and v.isdigit()) or int(v) < 1:
             raise SettingsError("%s takes a whole number from 1, not %r" % (key, v))
@@ -1501,7 +1512,26 @@ def agent_role(desc, pol=None):
     return "general"
 
 
-def guard_models_agent(ti, from_subagent=False):
+# role -> (the project key of its model, the machine list that bounds it): Project models within the machine policy
+ROLE_KEYS = {"orchestrator": ("agents.orchestrator-model", "main"), "review": ("agents.review-model", "main"),
+             "lookup": ("agents.lookup-model", "cheap")}
+
+
+def project_model(role, cwd):
+    """(key, value) of the role's model set in the solo-sdd/config of the event folder; None when unset or broken."""
+    if role not in ROLE_KEYS or not cwd:
+        return None
+    key = ROLE_KEYS[role][0]
+    root = git_root(cwd) or cwd
+    try:
+        value, source = read_settings(root)[key]
+    except Exception as e:
+        log_error("guard settings %s" % root, e)
+        return None
+    return (key, value) if source == "file" and value else None
+
+
+def guard_models_agent(ti, from_subagent=False, cwd=None):
     desc = ti.get("description") or ""
     pol = policy_or_none("guard")
     if pol is None:
@@ -1524,6 +1554,13 @@ def guard_models_agent(ti, from_subagent=False):
     if role == "lookup" and not (model and not model_hits(model, pol["expensive"])):
         deny("Lookup subagent on model %s. Set a cheap model explicitly (model: haiku). %s"
              % (model or "inherit", OWNER_ONLY))
+    found = model and project_model(role, cwd)
+    if found and model_hits(model, [found[1]]) and not model_hits(found[1], pol[ROLE_KEYS[role][1]]):
+        name = ROLE_KEYS[role][1]
+        deny("%s subagent on model %s, set by %s in solo-sdd/config, which is outside the machine list %s: %s. "
+             "A project narrows the models of a role, never widens them: set a model from the list, or the owner adds "
+             "it to the %s list of model-policy.json. %s" % (role.capitalize(), model, found[0], name,
+                                                             ", ".join(pol[name]), name, OWNER_ONLY))
 
 
 PROFILES = (".zshenv", ".zshrc", ".zprofile", ".bashrc", ".bash_profile", ".profile")
@@ -2239,7 +2276,7 @@ def cmd_guard(inp):
         guard_archive(sid, text, cwd, inp)
         note_claim_cmd(inp, cmd)
     elif tool == "Agent":
-        guard_models_agent(ti, bool(inp.get("agent_id")))
+        guard_models_agent(ti, bool(inp.get("agent_id")), cwd)
     elif tool == "AskUserQuestion":
         guard_question(ti, cwd)
     elif tool == "SubagentHandback":
