@@ -456,7 +456,8 @@ class LandTest(LandBase):
         # Requirement: Owner-only paths gate, scenario The config outside git (land-local): the transfer would carry an
         # ignored WORKTREE copy edited after setup; an owner edit of the main copy alone merges
         self.put(self.main, ".git/info/exclude", "solo-sdd/\n")
-        self.put(self.main, "solo-sdd/project.md", "# p\n")
+        self.put(self.main, "solo-sdd/project.md", "# p\n")  # the solo-sdd process root: transport carries solo-sdd/
+        self.env["PYTHONPATH"] = str(SCRIPT.parents[1])  # its validate runs `python3 -m solo_sdd` where CI has no command
         self.put(self.main, "solo-sdd/config", "delivery.owner-only: deploy/**\n")
         self.make_change()
         self.put(self.main, "solo-sdd/config", "delivery.owner-only: deploy/**, more/**\n")
