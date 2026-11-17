@@ -3,7 +3,7 @@
 
 In a temporary git project with solo-sdd/ and a .gitignore holding node_modules:
 1. `solo-sdd ignore` lists the four default items and writes nothing.
-2. `ignore --write` keeps node_modules first and adds the block; git hides .env, not .env.example; a repeat: no change.
+2. `ignore --write` keeps node_modules first and adds the block; git hides .env and .env.local, not .env.example; a repeat: no change.
 3. `config set git.ignore ".claude/worktrees/, docs/waiting.md"` with docs/waiting.md tracked: the hint; `ignore --write`
    names `git rm --cached -r -- docs/waiting.md`, the file stays tracked, the block has no .env line.
 4. `config set git.ignore solo-sdd/` and `"*.md"`: exit 1, the second naming AGENTS.md, solo-sdd/config unchanged.
@@ -53,10 +53,10 @@ with tempfile.TemporaryDirectory() as t:
                    and out.splitlines()[:4] == DEFAULTS and read(gitignore) == "node_modules\n", out))
 
     code, out = sdd(proj, "ignore", "--write")
-    hidden, kept = git(proj, "check-ignore", "-q", ".env").returncode, git(proj, "check-ignore", "-q", ".env.example").returncode
+    hidden, kept, local = (git(proj, "check-ignore", "-q", p).returncode for p in (".env", ".env.example", ".env.local"))
     again = sdd(proj, "ignore", "--write")
-    checks.append(("2 the block written after node_modules, .env hidden, .env.example kept, a repeat: no change",
-                   code == 0 and read(gitignore) == "node_modules\n" + BLOCK and (hidden, kept) == (0, 1)
+    checks.append(("2 the block written after node_modules, .env and .env.local hidden, .env.example kept, a repeat: no change",
+                   code == 0 and read(gitignore) == "node_modules\n" + BLOCK and (hidden, kept, local) == (0, 1, 0)
                    and again[1].splitlines()[-1:] == ["no change"], out + again[1]))
 
     with open(os.path.join(proj, "docs", "waiting.md"), "w") as f:

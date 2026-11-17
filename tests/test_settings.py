@@ -579,6 +579,9 @@ class IgnoreListSetting(ConfigDir):
                                   ("solo-sdd/specs/settings/", "solo-sdd/specs/settings/", "solo-sdd/specs/<capability>/"),
                                   ("*/**/spec.md", "*/**/spec.md", "solo-sdd/specs/<capability>/"), ("s*", "s*", "solo-sdd/"),
                                   ("solo-sdd/ch[a]nges/", "solo-sdd/ch[a]nges/", "solo-sdd/changes/"),
+                                  ("agents.md", "agents.md", "AGENTS.md"), ("SOLO-SDD/", "SOLO-SDD/", "solo-sdd/"),
+                                  ("solo-sdd/README.md", "solo-sdd/README.md", "solo-sdd/<top>/"),
+                                  ("solo-sdd/changes/*/notes.md", "solo-sdd/changes/*/notes.md", "solo-sdd/changes/<change>/<...>/"),
                                   ("#x", "#x", "starts with #")):
             code, out = self.cli("set", "git.ignore", value)
             self.assertEqual(code, 1, value)
@@ -586,8 +589,19 @@ class IgnoreListSetting(ConfigDir):
             self.assertIn(path, out, value)
         self.assertEqual(self.read(), "# keep\n")
         for value in ("solo-sdd/changes/archive/", "solo-sdd/changes/archive/**", "**/archive/", "node_modules",
-                      "docs/waiting.md", "!AGENTS.md", "settings", "solo-sdd/other.txt"):
+                      "solo-sdd/changes/Archive/", "docs/waiting.md", "!AGENTS.md", "settings", "foo"):
             self.assertEqual(self.cli("set", "git.ignore", value)[0], 0, value)
+
+    def test_the_names_of_the_tree_refused(self):
+        for rel in ("solo-sdd/specs/settings", "solo-sdd/changes/foo", "solo-sdd/integrations/x"):
+            os.makedirs(os.path.join(self.dir, rel))
+        self.write("# keep\n")
+        for value, path in (("settings", "solo-sdd/specs/settings/"), ("foo", "solo-sdd/changes/foo/"),
+                            ("**/foo/", "solo-sdd/changes/foo/"), ("x", "solo-sdd/integrations/x/")):
+            code, out = self.cli("set", "git.ignore", value)
+            self.assertEqual(code, 1, value)
+            self.assertIn("git.ignore item %s hides %s" % (value, path), out, value)
+        self.assertEqual(self.read(), "# keep\n")
 
     def test_a_broken_file_line(self):
         self.write("# c\ngit.ignore: .env, *.md\n")

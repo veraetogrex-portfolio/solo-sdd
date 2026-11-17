@@ -78,18 +78,22 @@ class SettingsError(ValueError):
 
 
 IGNORE_KEY = "git.ignore"
-# the process paths no git.ignore item may hide (a trailing / marks a folder); <capability> and <change> stand for any
-# folder name, <change> for any but archive: the change archive may stay out of git
+# the process paths no git.ignore item may hide (a trailing / marks a folder, or a path that may be either); placeholders:
+# <capability> any folder name, <change> any but archive (the change archive may stay out of git), <top> any but changes,
+# <...> one or more names of any kind
 KEPT = ("AGENTS.md", "CLAUDE.md", "solo-sdd/", "solo-sdd/project.md", "solo-sdd/analyze.md", "solo-sdd/config",
         "solo-sdd/rules-block", "solo-sdd/integrations/", "solo-sdd/specs/", "solo-sdd/specs/<capability>/",
-        "solo-sdd/specs/<capability>/spec.md", "solo-sdd/changes/", "solo-sdd/changes/<change>/") + tuple(
+        "solo-sdd/specs/<capability>/spec.md", "solo-sdd/changes/", "solo-sdd/changes/<change>/",
+        "solo-sdd/<top>/", "solo-sdd/<top>/<...>/", "solo-sdd/changes/<change>/<...>/") + tuple(
     "solo-sdd/changes/<change>/" + f for f in ("proposal.md", "design.md", "tasks.md", "verification.md", "CLAIM",
                                                "WAITING", "specs/", "specs/<capability>/", "specs/<capability>/spec.md"))
+NOT_NAMED = {"<change>": "archive", "<top>": "changes"}
 
 
 def ignore_part_re(part):
     """A regular expression of one gitignore pattern part: * and ? within a name; a [...] class counts as any one
-    character, a superset of git's match, so the check below never misses what git hides."""
+    character. Matched without case, as git does on a case-insensitive file system: a superset of git's match, so
+    the check below never misses what git hides."""
     out, i = "", 0
     while i < len(part):
         c = part[i]
@@ -104,7 +108,7 @@ def ignore_part_re(part):
 
 def ignore_hits(parts, names, named):
     """Whether the parts of an anchored pattern match the path names as git's wildmatch does; named: a placeholder
-    name (<...>) matches a part, except the literal archive for <change>."""
+    (<...>) matches a part, except the literal name NOT_NAMED gives it, and <...> any rest of the parts."""
     if not parts:
         return not names
     if parts[0] == "**":
@@ -112,16 +116,18 @@ def ignore_hits(parts, names, named):
     if not names:
         return False
     name = names[0]
+    if name == "<...>":
+        return named
     if name.startswith("<"):
-        ok = named and not (name == "<change>" and parts[0] == "archive")
+        ok = named and parts[0].lower() != NOT_NAMED.get(name, "/")
     else:
-        ok = re.fullmatch(ignore_part_re(parts[0]), name) is not None
+        ok = re.fullmatch(ignore_part_re(parts[0]), name, re.I) is not None
     return ok and ignore_hits(parts[1:], names[1:], named)
 
 
-def ignore_hides(item):
-    """The first KEPT path a git.ignore item hides by git's matching (a matched folder hides what is under it), or None;
-    a ! item re-includes and hides none. A capability or change name counts only for a pattern of two or more names."""
+def ignore_hides(item, paths=KEPT):
+    """The first of paths a git.ignore item hides by git's matching (a matched folder hides what is under it), or
+    None; a ! item re-includes and hides none. A placeholder counts only for a pattern of two or more names."""
     if item.startswith("!"):
         return None
     folder = item.endswith("/")
@@ -129,14 +135,19 @@ def ignore_hides(item):
     parts = ["**" if p and set(p) == {"*"} and len(p) > 1 else p for p in body.split("/")]
     anchored = "/" in body
     named = anchored and sum(p != "**" for p in parts) > 1
-    for path in KEPT:
+    for path in paths:
         names = path.rstrip("/").split("/")
         if folder and not path.endswith("/"):
             continue
         if anchored and ignore_hits(parts, names, named) or not anchored and not names[-1].startswith("<") and \
-                re.fullmatch(ignore_part_re(body), names[-1]):
+                re.fullmatch(ignore_part_re(body), names[-1], re.I):
             return path
     return None
+
+
+def ignore_refusal(key, item, hides):
+    return "%s item %s %s; solo-sdd/ (but solo-sdd/changes/archive/), AGENTS.md and CLAUDE.md stay in git" % (
+        key, item, hides if hides.startswith("starts") else "hides " + hides)
 
 
 def bad_name(name):
@@ -192,8 +203,7 @@ def check_value(key, value, registry=REGISTRY):
     for i in items if key == IGNORE_KEY else ():
         hides = "starts with #: git reads it as a comment" if i.startswith("#") else ignore_hides(i)
         if hides:
-            raise SettingsError("%s item %s %s; solo-sdd/ (but solo-sdd/changes/archive/), AGENTS.md and CLAUDE.md stay "
-                                "in git" % (key, i, hides if hides.startswith("starts") else "hides " + hides))
+            raise SettingsError(ignore_refusal(key, i, hides))
     bad = [i for i in items if (bad_path(i) if paths else not good_name(i) if kind == "names" else
                                 i not in allowed if allowed else bad_name(i))]
     if kind == "names" and len(set(items)) < len(items):
@@ -399,6 +409,23 @@ def set_text(text, key, value):
 
 
 IGNORE_HINT = "run: solo-sdd ignore --write"
+
+
+def tree_refusal(root, value):
+    """Why a git.ignore value would hide a file or folder of the project's own solo-sdd/ tree (the archive aside) or
+    its AGENTS.md or CLAUDE.md, or None: the names a capability, a change or an integration has on disk."""
+    paths = ["AGENTS.md", "CLAUDE.md"]
+    top = os.path.join(root, "solo-sdd")
+    for d, dirs, files in os.walk(top):
+        rel = os.path.relpath(d, root).replace(os.sep, "/")
+        if rel == "solo-sdd/changes":
+            dirs[:] = [x for x in dirs if x.lower() != "archive"]
+        paths += [rel + "/" + x + "/" for x in dirs] + [rel + "/" + x for x in files]
+    for item in [i.strip() for i in value.split(",") if i.strip()]:
+        hides = ignore_hides(item, paths)
+        if hides:
+            return ignore_refusal(IGNORE_KEY, item, hides)
+    return None
 BRANCH_KEYS = ("delivery.branch-prefix", "delivery.plan-prefix")
 
 
@@ -495,7 +522,8 @@ def run(args, cwd=".", registry=REGISTRY):
             print(e)
             return 1
     new = set_text(text, args[1], value)
-    why = prefix_refusal(root, values, effective(parse_settings(new, registry), registry, agents))
+    why = prefix_refusal(root, values, effective(parse_settings(new, registry), registry, agents)) or (
+        tree_refusal(root, value) if args[1] == IGNORE_KEY and value else None)
     if why:
         print(why)
         return 1

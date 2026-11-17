@@ -85,10 +85,11 @@ def ignore_block(text):
 
 def ignore_text(text, lines):
     """The .gitignore text with the solo-sdd block holding lines (no lines: no block), every other byte kept; a new
-    block goes at the end after one added line break, with the file's CRLF line endings."""
-    eol = "\r\n" if "\r\n" in text else "\n"
-    block = "".join(ln + eol for ln in [IGNORE_BEGIN] + lines + [IGNORE_END]) if lines else ""
+    block goes at the end after one added line break, with the file's CRLF line endings; an existing block keeps the
+    line ending of its begin line (the break added before it can make a CRLF of a lone CR)."""
     span = ignore_block(text)
+    eol = "\r\n" if ("\r\n" in text if span is None else text.startswith(IGNORE_BEGIN + "\r\n", span[0])) else "\n"
+    block = "".join(ln + eol for ln in [IGNORE_BEGIN] + lines + [IGNORE_END]) if lines else ""
     if span:
         return text[:span[0]] + block + text[span[1]:]
     return text + (eol if text and block and not text.endswith("\n") else "") + block
@@ -138,7 +139,11 @@ def ignore(folder=".", write=False):
     top = r.stdout.rstrip("\n")
     path = os.path.join(top, ".gitignore")
     try:
-        items = [i for i in settings.read_settings(top)[settings.IGNORE_KEY][0].split(", ") if i]
+        value = settings.read_settings(top)[settings.IGNORE_KEY][0]
+        why = settings.tree_refusal(top, value)
+        if why:
+            raise ValueError("%s: %s" % (settings.SETTINGS_FILE, why))
+        items = [i for i in value.split(", ") if i]
         with open(path, encoding="utf-8", newline="") as f:
             text = f.read()
     except FileNotFoundError:
@@ -153,13 +158,16 @@ def ignore(folder=".", write=False):
     except (OSError, ValueError, subprocess.SubprocessError) as e:
         print(e)
         return 1
-    for item in items:
-        print("%s: already hidden by %s, not in the block" % (item, hidden[item]) if item in hidden else item)
     with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".exclude") as f:
         f.write("".join(i + "\n" for i in items))
         f.flush()
         r = subprocess.run(["git", "-C", top, "ls-files", "-z", "-c", "-i", "--exclude-from=" + f.name],
                            capture_output=True, text=True, stdin=subprocess.DEVNULL)
+    if r.returncode:  # a failed listing is no answer: the tracked paths it would name stay unknown
+        print("cannot list the tracked files: %s; nothing written" % r.stderr.strip())
+        return 1
+    for item in items:
+        print("%s: already hidden by %s, not in the block" % (item, hidden[item]) if item in hidden else item)
     for tracked in sorted(p for p in r.stdout.split("\0") if p):
         print("git tracks %s, the block does not remove it: git rm --cached -r -- %s" % (tracked, shlex.quote(tracked)))
     if new == text:

@@ -2072,30 +2072,6 @@ class IgnoreRepo(unittest.TestCase):
 class IgnoreCommand(IgnoreRepo):
     """Requirements: Ignore command; Ignore command refusals."""
 
-    def test_dry_run_with_the_defaults(self):
-        self.put(".gitignore", "node_modules\n")
-        code, out = self.ignore()
-        self.assertEqual(code, 0, out)
-        self.assertEqual(out.splitlines()[:4], [".claude/worktrees/", ".env", ".env.*", "!.env.example"])
-        self.assertIn("solo-sdd ignore --write", out.splitlines()[-1])
-        self.assertEqual(self.gitignore(), "node_modules\n", "a dry run writes nothing")
-
-    def test_write_then_repeat(self):
-        self.put(".gitignore", "node_modules")
-        self.assertEqual(self.ignore("--write")[0], 0)
-        self.assertEqual(self.gitignore(), "node_modules\n" + DEFAULT_BLOCK)
-        self.assertEqual(self.git("check-ignore", "-q", ".env").returncode, 0)
-        self.assertEqual(self.git("check-ignore", "-q", ".env.example").returncode, 1)
-        self.assertEqual(self.git("check-ignore", "-q", ".env.local").returncode, 0)
-        code, out = self.ignore("--write")
-        self.assertEqual((code, out.splitlines()[-1]), (0, "no change"))
-        self.assertEqual(self.gitignore(), "node_modules\n" + DEFAULT_BLOCK)
-
-    def test_no_file_is_created(self):
-        self.assertEqual(self.ignore("--write")[0], 0)
-        self.assertEqual(self.gitignore(), DEFAULT_BLOCK)
-        self.assertEqual(self.git("check-ignore", ".claude/worktrees/a").stdout, ".claude/worktrees/a\n")
-
     def test_a_rule_outside_the_block(self):
         self.put(".gitignore", "x\n# solo-sdd:begin\n.claude/worktrees/\n# solo-sdd:end\n.claude/\n")
         code, out = self.ignore("--write")
@@ -2155,6 +2131,32 @@ class IgnoreCommand(IgnoreRepo):
                 self.assertIn(".gitignore:%d" % line, out, text)
                 self.assertEqual(self.gitignore(), text)
 
+    def test_a_lone_cr_file_written_once(self):
+        self.put(".gitignore", "a\rb\r")
+        self.assertEqual(self.ignore("--write")[0], 0)
+        first = self.gitignore()
+        self.assertEqual(self.ignore("--write")[1].splitlines()[-1], "no change")
+        self.assertEqual(self.gitignore(), first)
+
+    def test_a_failed_listing_refused(self):
+        self.put("docs/w.md", "w\n")
+        self.git("add", "-A")
+        self.put("solo-sdd/config", "git.ignore: docs/\n")
+        with open(os.path.join(self.repo, ".git", "index"), "wb") as f:
+            f.write(b"not an index")
+        code, out = self.ignore("--write")
+        self.assertEqual(code, 1)
+        self.assertIn("cannot list the tracked files", out)
+        self.assertIsNone(self.gitignore())
+
+    def test_a_folder_of_the_tree_refused(self):
+        os.makedirs(os.path.join(self.repo, "solo-sdd", "changes", "foo"))
+        self.put("solo-sdd/config", "git.ignore: foo\n")
+        code, out = self.ignore("--write")
+        self.assertEqual(code, 1)
+        self.assertIn("git.ignore item foo hides solo-sdd/changes/foo/", out)
+        self.assertIsNone(self.gitignore())
+
     def test_a_broken_config_refused(self):
         self.put("solo-sdd/config", "git.ignore: *.md\n")
         code, out = self.ignore("--write")
@@ -2174,11 +2176,10 @@ class IgnoreCommand(IgnoreRepo):
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             self.assertEqual(cli.main(["ignore", "--bogus"]), 2)
             self.assertEqual(cli.main(["ignore", "--write", "--write"]), 2)
-        self.assertIn("ignore [--write]", cli.COMMANDS)
 
 
 
-IGNORE_LINES = st.lists(st.text(st.sampled_from("ab#*!/. "), max_size=6).filter(
+IGNORE_LINES = st.lists(st.text(st.sampled_from("ab#*!/. \r"), max_size=6).filter(
     lambda ln: ln not in (cli.IGNORE_BEGIN, cli.IGNORE_END)), max_size=4)
 
 
@@ -2222,10 +2223,10 @@ class IgnoreCommandProperty(unittest.TestCase):
 
 
 IGNORE_ITEMS = st.lists(st.lists(st.sampled_from(["*", "?", "/", "!", "solo-sdd", "AGENTS.md", "CLAUDE.md", "changes",
-                                                  "archive"]), min_size=1, max_size=5).map("".join), min_size=1, max_size=3)
+                                                  "archive", "agents.md", "Solo-SDD", "Archive"]), min_size=1, max_size=5).map("".join), min_size=1, max_size=3)
 
 
-def by_name_only(item):
+def by_name_only(item, paths=None):
     """A mutant of settings.ignore_hides that refuses only the three names. The property must reject it."""
     return item.rstrip("/") if item.rstrip("/") in ("solo-sdd", "AGENTS.md", "CLAUDE.md") else None
 

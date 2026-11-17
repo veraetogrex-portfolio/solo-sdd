@@ -275,6 +275,10 @@ class Screen:
         except settings.SettingsError as e:
             self.message = str(e)
             return False
+        why = settings.tree_refusal(self.root, value) if key == settings.IGNORE_KEY else None
+        if why:
+            self.message = why
+            return False
         try:
             settings.parse_settings(settings.set_text(self.edited_text(), key, value))
         except settings.SettingsError as e:  # a value the file could not hold, e.g. a line separator
