@@ -10,7 +10,7 @@ A model key (`agents.*-model`) takes one model name of ASCII letters, digits, `.
 
 A text key (`delivery.pr-title`, `delivery.deploy`) takes one line of printable characters, at most 200, with the ends trimmed; its `AGENTS.md` item is read trimmed and as written, without the limit.
 
-A line that is not `key: value`, an unknown key or a wrong value makes the command and the scripts fail with `solo-sdd/config:<line>` and the reason; the hooks take the defaults and write the reason to `~/.claude/hook-state/errors.log`. The file is read with the standard library only: the hooks run on `/usr/bin/python3` 3.9.
+A line that is not `key: value`, an unknown key or a wrong value makes the command and the scripts fail with `solo-sdd/config:<line>` and the reason; the hooks take the defaults and write the reason to `~/.claude/hook-state/errors.log`. The `stop` gates and the `CLAIM` creation therefore stay on under a broken file; each gate reads the file of the repository it checks: each edited repository for uncommitted and interface edits, the change's repository for an unarchived change and for `CLAIM`, the session's repository for an open PR. The file is read with the standard library only: the hooks run on `/usr/bin/python3` 3.9.
 
 | Key | Values | Default | Team default | Read by, and the older source used when the key is not in the file |
 |---|---|---|---|---|
@@ -58,6 +58,13 @@ A line that is not `key: value`, an unknown key or a wrong value makes the comma
 | `agents.executor` | `self`, `codex` | `self` | | `spec-next`, `spec-plan`, `codex-orchestration`, the algorithm and the global rules: `codex` counts as the owner naming `codex-orchestration`; an agent changes the key only on the owner's words in the chat |
 | `integrations` | integration names, separated by commas | none | | `solo-sdd integrations`: the enabled integrations, see [Integrations](integrations.md) |
 | `integrations.off` | integration names, separated by commas | none | | `solo-sdd integrations`: the bundled integrations switched off, see [Integrations](integrations.md) |
+| `hooks.stop.uncommitted` | `on`, `off` | `on` | | the `stop` hook: `off` lets the turn end with uncommitted edits of the session in this repository; each edited repository is read by its own file |
+| `hooks.stop.unarchived` | `on`, `off` | `on` | | the `stop` hook: `off` lets the turn end with a change of this repository whose tasks are all checked and that is not archived |
+| `hooks.stop.open-pr` | `on`, `off` | `on` | | the `stop` hook: `off` lets the turn end with an open PR of the session's repository; under `delivery.merge-by: human` the gate is off whatever this says |
+| `hooks.stop.ui-check` | `on`, `off` | `on` | | the `stop` hook: `off` lets the turn end after an interface edit in this repository without a browser check |
+| `hooks.auto-claim` | `on`, `off` | `on` | | the `guard` hook: `off` stops the first checked task of `tasks.md` from creating `CLAIM`; another session's `CLAIM` and a `WAITING` are still refused |
+| `ui.extensions` | file extensions, a dot and ASCII letters or digits, separated by commas | `.html, .htm, .css, .scss, .sass, .less, .tsx, .jsx, .vue, .svelte` | | the `stop` hook (which edited files count as interface) and `project-init` step 5a (whether the project has an interface) |
+| `ui.widths` | whole numbers from 1, separated by commas | `1280, 390` | | `ui-check` (the screenshot widths) and `spec-plan` (the widths an interface Live Scenario names) |
 | `git.ignore` | .gitignore patterns, separated by commas; an item starting with ! keeps a path in git | `.claude/worktrees/, .env, .env.*, !.env.example` | | `solo-sdd ignore`, `init` and `project-init`: the lines of the solo-sdd block of `.gitignore`, see [Commands](cli.md); an item that hides `AGENTS.md`, `CLAUDE.md` or a path of `solo-sdd/` other than `solo-sdd/changes/archive/` by git's matching, without case as on a case-insensitive file system (checked against the process layout, where any name under `solo-sdd/` counts for a pattern of two or more names, and against the files and folders of the project's own `solo-sdd/` tree by `config set`, the settings screen and `solo-sdd ignore`), or starts with #, is refused; `config set`, `unset` and the settings screen print `run: solo-sdd ignore --write` |
 
 ## Checklists

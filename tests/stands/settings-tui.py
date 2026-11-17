@@ -3,7 +3,7 @@
 
 Each row starts `python3 -m solo_sdd settings` of this tree in a temporary git repository prepared by `init --yes`,
 on a pseudo-terminal of the row's size, sends keys and reads the screen through a small vt100 emulator (TERM=vt100,
-so the escape sequences curses sends stay few) and the config file. The rows run at 120x60 and 40x12, each with and
+so the escape sequences curses sends stay few) and the config file. The rows run at 120x72 and 40x12, each with and
 without NO_COLOR; one more row edits and saves under TERM=xterm-256color and checks only the file.
 Prints one PASS or FAIL line per row and `SUMMARY: all rows passed`, exit 1 on a failure.
 """
@@ -435,7 +435,7 @@ def run_size(base, rows, cols, env, tag):
 def main():
     base = tempfile.mkdtemp(prefix="settings-tui-")
     try:
-        for rows, cols in ((60, 120), (12, 40)):  # 60 rows: every key and group on one screen
+        for rows, cols in ((72, 120), (12, 40)):  # 72 rows: every key and group on one screen
             for env, tag in (({}, "colour"), ({"NO_COLOR": "1"}, "NO_COLOR")):
                 run_size(base, rows, cols, env, tag)
 
@@ -506,7 +506,7 @@ def main():
 
         def ci_wait_keys():
             d = project(base)
-            s = Session(d, 60, 120)  # 60 rows: the four process keys before them push draft off a 40-row screen
+            s = Session(d, 72, 120)  # 72 rows: the four process keys before them push draft off a 40-row screen
             keys = ("delivery.ci-timeout", "delivery.ci-stuck", "delivery.ci-no-checks", "delivery.require-ci",
                     "delivery.code-scanning", "delivery.delete-branch", "delivery.draft")
             try:
@@ -552,7 +552,7 @@ def main():
             for args in (("commit", "-q", "--allow-empty", "-m", "x"), ("branch", "change/a")):
                 subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false",
                                 "-C", d] + list(args), check=True, capture_output=True, stdin=subprocess.DEVNULL)
-            s = Session(d, 60, 120)
+            s = Session(d, 72, 120)
             try:
                 t = s.term.text()
                 need(all(k in t for k in ("delivery.branch-prefix", "delivery.plan-prefix", "commit.light-prefix")),
@@ -577,7 +577,7 @@ def main():
 
         def agent_model_keys():
             d = project(base)
-            s = Session(d, 60, 120)
+            s = Session(d, 72, 120)
             keys = ("agents.orchestrator-model", "agents.review-model", "agents.lookup-model", "agents.test-model",
                     "agents.dispatcher-effort", "agents.executor")
             try:
@@ -602,7 +602,7 @@ def main():
 
         def change_limit_keys():
             d = project(base)
-            s = Session(d, 60, 120)
+            s = Session(d, 72, 120)
             keys = ("process.max-tasks", "process.bugfix-max-tasks", "process.requirement-max-chars",
                     "process.audit-every", "process.analyze")
             try:
@@ -629,7 +629,7 @@ def main():
         def project_rule_keys():
             d = project(base)  # init --yes writes solo-sdd/project.md with `Mode: prod` and `Language: en`
             assert sdd(d, "config", "set", "project.stage", "demo")[0] == 0
-            s = Session(d, 60, 120)
+            s = Session(d, 72, 120)
             keys = ("project.stage", "artifacts.language", "lessons.write", "lessons.max-lines")
             try:
                 t = s.term.text()
@@ -658,7 +658,7 @@ def main():
 
         def ignore_list_key():
             d = project(base)
-            s = Session(d, 60, 120)
+            s = Session(d, 72, 120)
             old = settings.REGISTRY["git.ignore"][2]
             try:
                 t = s.term.text()
@@ -679,6 +679,33 @@ def main():
             finally:
                 s.close()
         row("Ignore list setting: a refused item, an entry, save with the hint", ignore_list_key)
+
+        def stop_hook_keys():
+            d = project(base)
+            s = Session(d, 72, 120)
+            keys = ("hooks.stop.uncommitted", "hooks.stop.unarchived", "hooks.stop.open-pr", "hooks.stop.ui-check",
+                    "hooks.auto-claim", "ui.extensions", "ui.widths")
+            try:
+                t = s.term.text()
+                need(all(k in t for k in keys), "the seven keys listed", t)
+                to(s, "hooks.stop.ui-check")
+                t = s.send("enter")
+                need("Enter set" in flat(t), "a gate switch is a pick", t)
+                s.send("down", "enter")
+                s.send(*["down"] * (settings_ui.KEYS.index("ui.widths") - settings_ui.KEYS.index("hooks.stop.ui-check")))
+                t = s.send("enter")
+                need("Type a value" in flat(t), "the widths are an entry", t)
+                t = s.send(*["backspace"] * len("1280, 390"), *"1280, wide", "enter")
+                need("whole numbers from 1" in flat(t), "a width that is not a number refused", t)
+                s.send("enter", *["backspace"] * len("1280, 390"), *"1440, 360", "enter", "s", "y", "q")
+                need(s.wait() == 0, "saved and quit")
+                listed = sdd(d, "config", "list")[1].splitlines()
+                need({"hooks.stop.ui-check off file", "ui.widths 1440, 360 file", "hooks.auto-claim on default",
+                      "ui.extensions %s default" % settings.REGISTRY["ui.extensions"][2]} <= set(listed),
+                     "config list: %s" % listed)
+            finally:
+                s.close()
+        row("Stop gate switches and Interface settings: the seven keys, a pick, a refused width, an entry, save", stop_hook_keys)
     finally:
         shutil.rmtree(base, True)
     print("SUMMARY: all rows passed" if all(results) else "SUMMARY: %d of %d rows failed" % (

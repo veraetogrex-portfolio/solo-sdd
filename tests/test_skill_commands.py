@@ -230,6 +230,23 @@ class SkillCommandsTest(unittest.TestCase):
             text = " ".join(skill_text.read(REPO / rel).split())
             self.assertIn("changes `agents.executor` only on the owner's words", text, rel)
 
+    def test_interface_settings_in_skills(self):
+        """Requirement: Interface settings: ui-check, spec-plan and the algorithm name the widths of `ui.widths`,
+        project-init the extensions of `ui.extensions`; a fixed value stays only as the fallback default, equal to the
+        registry's."""
+        sys.path.insert(0, str(REPO))
+        from solo_sdd import settings
+        for rel, key in (("skills/ui-check/SKILL.md", "solo-sdd config get ui.widths"),
+                         ("skills/spec-plan/creation.md", "solo-sdd config get ui.widths"),
+                         ("skills/spec-plan/SKILL.md", "`ui.widths`"), ("ALGORITHM.md", "solo-sdd config get ui.widths"),
+                         ("skills/project-init/SKILL.md", "solo-sdd config get ui.extensions")):
+            text = " ".join(skill_text.read(REPO / rel).split())
+            self.assertIn(key, text, rel)
+            self.assertIsNone(re.search(r"1280 and 390|at 390\b|\.scss \.sass|UI_EXT", text), rel)
+            if rel != "skills/spec-plan/SKILL.md":
+                self.assertIn("no `solo-sdd/` tree, no command or a failed call", text, rel)
+            self.assertIn("`%s`" % settings.REGISTRY[key.strip("`").split()[-1]][2], text, rel)
+
     def test_light_path_texts(self):
         """Requirements: Light path bounds, record and count: one rule in the rules and the algorithm, the readers."""
         read = lambda rel: skill_text.read(REPO / rel)

@@ -888,6 +888,94 @@ class Stop(HookCase):
         os.remove(elog)
 
 
+def edits_transcript(name, *paths, push=False):
+    """A main transcript in H with an Edit of each path, and a git push when push is set."""
+    uses = [{"type": "tool_use", "name": "Edit", "input": {"file_path": p}} for p in paths]
+    uses += [{"type": "tool_use", "name": "Bash", "input": {"command": "git push -u origin HEAD"}}] if push else []
+    tr = os.path.join(H, name)
+    open(tr, "w").write("".join(json.dumps({"type": "assistant", "message": {"content": [u]}}) + "\n" for u in uses))
+    return tr
+
+
+def project_config(root, text):
+    os.makedirs(os.path.join(root, "solo-sdd"), exist_ok=True)
+    open(os.path.join(root, "solo-sdd", "config"), "w").write(text)
+
+
+class StopGateSwitches(HookCase):
+    """Requirement: Stop gate switches: each gate reads the settings of the repository it checks."""
+
+    def stop(self, sid, tr, cwd=None, env=None):
+        o = run("stop", {"session_id": sid, "cwd": cwd or REPO, "transcript_path": tr, "last_assistant_message": "Done."}, env)
+        return o["reason"] if o else ""
+
+    def test_unarchived_gate_off(self):
+        # the stand settings-stop-hooks.py switches the uncommitted and ui-check gates off
+        tr, _ = stop_fixture()
+        project_config(REPO, "hooks.stop.unarchived: off\n")
+        r = self.stop("S-g1", tr)
+        assert "not archived" not in r and "uncommitted" in r and "The interface changed" in r, r
+
+    def test_open_pr_gate(self):
+        proj, fbin = os.path.join(H, "proj-pr"), os.path.join(H, "fake-gh")
+        os.makedirs(fbin)
+        subprocess.run(["git", "init", "-q", proj], check=True)
+        open(os.path.join(fbin, "gh"), "w").write('#!/bin/sh\necho \'{"state": "OPEN", "url": "https://github.com/o/r/pull/9"}\'\n')
+        os.chmod(os.path.join(fbin, "gh"), 0o755)
+        tr, env = edits_transcript("t-pr.jsonl", push=True), dict(ENV, PATH=fbin + os.pathsep + ENV["PATH"])
+        # the stand settings-stop-hooks.py step 6 covers the switch on under human and agent merges
+        project_config(proj, "hooks.stop.open-pr: off\n")
+        r = self.stop("S-pr-off", tr, proj, env)
+        assert "pull/9 is open and not merged" not in r, r
+
+    def test_settings_of_the_edited_repository(self):
+        b = os.path.join(H, "proj-b")
+        os.makedirs(b)
+        subprocess.run(["git", "init", "-q", b], check=True)
+        open(os.path.join(b, "b.txt"), "w").write("b\n")
+        tr = edits_transcript("t-b.jsonl", os.path.join(b, "b.txt"))
+        project_config(b, "hooks.stop.uncommitted: off\n")
+        assert self.stop("S-b1", tr) == "", "B's file turns B's gate off for a session in A"
+        project_config(b, "")
+        project_config(REPO, "hooks.stop.uncommitted: off\n")
+        r = self.stop("S-b2", tr)
+        assert "proj-b has uncommitted edits" in r, "A's file does not silence B's gate: " + r
+
+    def test_auto_claim_off_keeps_the_refusals(self):
+        # the stand settings-stop-hooks.py step 5 proves a tick creates no CLAIM
+        project_config(REPO, "hooks.auto-claim: off\n")
+        open(os.path.join(REPO, "openspec/changes/01-a/CLAIM"), "w").write("claude 2026-11-09 session=OTHER\n")
+        assert "taken by another agent" in reason(change_file("proposal.md", "Write", content="x")), "a foreign CLAIM"
+        assert denied({"tool_name": "Edit", "tool_input": {"file_path": os.path.join(REPO, "openspec/changes/02-b/tasks.md")}}), "WAITING"
+
+    def test_a_broken_config_keeps_the_gates(self):
+        tr, _ = stop_fixture()
+        project_config(REPO, "hooks.stop.uncommitted off\n")
+        r = self.stop("S-broken", tr)
+        assert "uncommitted" in r and "not archived" in r and "The interface changed" in r, r
+        log = os.path.join(H, ".claude/hook-state/errors.log")
+        assert "solo-sdd/config:1" in open(log).read()
+        os.remove(log)
+        project_config(REPO, "hooks.auto-claim off\n")
+        os.makedirs(os.path.join(REPO, "openspec/changes/03-c"))
+        assert not denied(change_file("tasks.md", "Write", "03-c", content="- [x] a\n"))
+        assert os.path.exists(os.path.join(REPO, "openspec/changes/03-c/CLAIM")), "a broken file keeps auto-claim on"
+        assert "solo-sdd/config:1" in open(log).read()
+        os.remove(log)
+
+
+class InterfaceExtensions(HookCase):
+    """Requirement: Interface settings: ui.extensions decides which edited files count as interface."""
+
+    def test_a_default_extension_left_out(self):
+        # the stand settings-stop-hooks.py step 3 proves a project extension counts; here the list replaces the default
+        open(os.path.join(REPO, "app.css"), "w").write("x\n")
+        tr = edits_transcript("t-ui.jsonl", os.path.join(REPO, "app.css"))
+        project_config(REPO, "ui.extensions: .html, .jinja\nhooks.stop.uncommitted: off\n")
+        o = run("stop", {"session_id": "S-ui1", "cwd": REPO, "transcript_path": tr, "last_assistant_message": "Done."})
+        assert o is None, ("app.css is no interface file under .html, .jinja", o)
+
+
 CODEX_ROLLOUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "codex-rollout.jsonl")
 RU_TRANSLATE = "\u041f\u0435\u0440\u0435\u0432\u0435\u0434\u0438 \u043d\u0430 \u0430\u043d\u0433\u043b\u0438\u0439\u0441\u043a\u0438\u0439"
 RU_QUESTION = "\u0410 \u0447\u0442\u043e \u0441 \u0442\u0435\u0441\u0442\u0430\u043c\u0438?"
