@@ -1,4 +1,5 @@
 """Checks sdd_pr.py: open, wait (with code scanning alerts), merge, ship, land on fake gh and git (first in PATH); ship and land also on real git."""
+import atexit
 import importlib.util
 import io
 import json
@@ -19,6 +20,8 @@ from hypothesis import example, given, settings, strategies as st
 SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "global/sdd_pr.py"
 WT_SCRIPT = SCRIPT.parent / "sdd_worktree.py"
 URL = "https://github.com/o/r/pull/7"
+NO_SETTINGS = tempfile.mkdtemp()  # the main folder of in-process calls: never the settings of the repository running the tests
+atexit.register(shutil.rmtree, NO_SETTINGS, True)
 _spec = importlib.util.spec_from_file_location("sdd_pr", SCRIPT)
 sp = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(sp)
@@ -176,6 +179,7 @@ class Open(Base):
         c = e.calls("gh", "pr", "create")[0]
         for pair in (["--base", "main"], ["--head", "change/x"], ["--title", "Title"]):
             self.assertIn(pair[1], c[c.index(pair[0]) + 1:c.index(pair[0]) + 2])
+        self.assertNotIn("--draft", c, "delivery.draft off by default: a ready PR")
         push = e.calls("git", "-C", self.wt, "push")[0]
         self.assertEqual(push[4:], ["-u", "origin", "HEAD"])
         self.assertNotIn("--force", push)
@@ -319,16 +323,16 @@ class RequiredChecks(Base):
         self.assert_stuck(self.wait(self.env(rules_json=RULES), timeout="0.2", stuck="300"))
 
     def test_no_checks_waits_stuck_limit(self):  # with required checks an empty list waits the stuck deadline, not 180 s
-        with mock.patch.object(sp, "NO_CHECKS_SEC", 0.05), mock.patch.object(sp, "checks", return_value=[]), \
+        with mock.patch.object(sp, "checks", return_value=[]), \
                 mock.patch.object(sp, "required_checks", return_value={TITLE}), \
                 mock.patch("sys.stdout", new_callable=io.StringIO) as out:
             t = time.monotonic()
-            code = sp.cmd_wait(URL, 5, 0.02, 0.4)
+            code = sp.cmd_wait(URL, 5, 0.02, 0.4, root=NO_SETTINGS, no_checks=0.05)
         self.assertEqual((code, out.getvalue().splitlines()[1]), (4, STUCK_LINE))
         self.assertGreaterEqual(time.monotonic() - t, 0.4)
 
     def test_default_limits(self):
-        with mock.patch.object(sp, "cmd_wait") as w:
+        with mock.patch.object(sp, "cmd_wait") as w, mock.patch.object(sp, "main_folder", return_value=NO_SETTINGS):
             sp.main(["wait", URL])
         w.assert_called_once_with(URL, 1200.0, 15.0, 300.0)
 
@@ -506,7 +510,7 @@ class CodeScanning(Base):
                 mock.patch.object(sp, "required_checks", return_value=set()), \
                 mock.patch.object(sp, "sh", return_value=reply) as sh, \
                 mock.patch("sys.stdout", new_callable=io.StringIO) as out:
-            code = sp.cmd_wait(URL, 5, 0.01)
+            code = sp.cmd_wait(URL, 5, 0.01, root=NO_SETTINGS)  # sh is mocked: no git for the main folder
         lines = out.getvalue().splitlines()
         self.assertEqual(sh.call_args.args, ("gh", "api", ALERTS_API))
         self.assertLessEqual(len(lines) - 1, 20)
@@ -1849,6 +1853,156 @@ class StopProperty(unittest.TestCase):
         self.assertEqual(seen, list(range(fail_at + 1)), p.stderr)  # those before the failed one were called, those after were not
         want = 7 if cmd == "land" and fail_at > 0 else 1
         self.assertEqual(p.returncode, want, p.stderr)
+
+
+def put_config(e, text, where="main"):
+    """A solo-sdd/config in the fake main folder (the stub's --git-common-dir) or in another folder of the fake dir."""
+    p = e.d / where / "solo-sdd" / "config"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(text)
+
+
+INFRA_LINE = f"PR #7 {URL} CI: infra"
+NONE_LINE = f"PR #7 {URL} CI: none"
+
+
+class CiWaitSettings(Base):
+    """Requirement: CI wait settings and Required checks in CI wait: the limits from the main folder's settings."""
+
+    def test_stuck_limit_above_the_timeout(self):  # A stuck limit above the timeout: no limit extends the whole wait
+        e = self.env(rules_json=RULES, checks_json=[[DONE]])
+        put_config(e, "delivery.ci-stuck: 900\n")
+        r = e.run("wait", URL, "--timeout", "0.3", "--interval", "0.05")
+        self.assertEqual((r.returncode, r.stdout.splitlines()), (4, [INFRA_LINE, STUCK_LINE]), r.stderr)
+        self.assertEqual(r.stderr.splitlines(), ["limits: timeout 0.3 s (flag), stuck 900 s (file), no checks 180 s (default)"])
+
+    def test_no_checks_limit_from_the_file(self):  # the 1200 s default timeout is not reached: the 1 s limit ends it
+        e = self.env()
+        put_config(e, "delivery.ci-no-checks: 1\n")
+        r = e.run("wait", URL, "--interval", "0.05")
+        self.assertEqual((r.returncode, r.stdout.splitlines()), (4, [INFRA_LINE, "no checks"]), r.stderr)
+
+
+class MergeGateSettings(Base):
+    """Requirement: Merge gate settings, PR merge, Required checks in CI wait and Code scanning in CI wait."""
+
+    def wait(self, e, *extra):
+        return e.run("wait", URL, "--interval", "0.05", *extra)
+
+    def test_ci_optional_with_a_required_check(self):  # none needs a base branch that requires no check
+        e = self.env(rules_json=RULES)
+        put_config(e, "delivery.require-ci: off\ndelivery.ci-no-checks: 1\n")
+        r = self.wait(e, "--timeout", "5", "--stuck", "0.2")
+        self.assertEqual((r.returncode, r.stdout.splitlines()), (4, [INFRA_LINE, STUCK_LINE]), r.stderr)
+        r = e.run("merge", URL, "squash", "abc123")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("CI not green", r.stderr)
+        self.assertEqual(e.calls("gh", "api", "-X", "PUT"), [])
+
+    def test_ci_optional_with_unread_checks(self):  # a failed checks request is never "no checks"
+        e = self.env(fail_json={"token": "checks", "code": 1})
+        put_config(e, "delivery.require-ci: off\ndelivery.ci-no-checks: 1\n")
+        r = self.wait(e, "--timeout", "3")
+        self.assertEqual((r.returncode, r.stdout.splitlines()), (4, [INFRA_LINE, "checks not read"]), r.stderr)
+        r = e.run("merge", URL, "squash", "abc123")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("checks not read", r.stderr)
+        self.assertEqual(e.calls("gh", "api", "-X", "PUT"), [])
+
+    def test_ci_optional_with_unread_rules(self):  # rules not read: a required check may exist, so no none
+        e = self.env(rulesfail_txt="x")
+        put_config(e, "delivery.require-ci: off\ndelivery.ci-no-checks: 1\n")
+        r = self.wait(e)
+        self.assertEqual((r.returncode, r.stdout.splitlines()), (4, [INFRA_LINE, "no checks"]), r.stderr)
+        r = e.run("merge", URL, "squash", "abc123")
+        self.assertEqual(r.returncode, 1)
+        self.assertEqual(e.calls("gh", "api", "-X", "PUT"), [])
+
+    def test_scanning_off_sends_no_request(self):
+        e = self.env(checks_json=[[DONE]], alerts_json=[alert(28)])
+        put_config(e, "delivery.code-scanning: off\n")
+        r = self.wait(e, "--timeout", "5")
+        self.assertEqual((r.returncode, r.stdout.splitlines()), (0, [GREEN_LINE]), r.stderr)
+        self.assertEqual([c for c in e.calls("gh", "api") if "/code-scanning/" in c[2]], [])
+
+
+class PrShapeSettings(Base):
+    """Requirement: PR shape settings: a draft PR kept by a gate or a failed ready request."""
+
+    def test_a_gate_keeps_the_draft(self):  # a code 8 gate: no ready request
+        e = self.env(checks_json=GREEN, view_json=[dict(OPEN, title="T", isDraft=True)],
+                     files_json=[frow(".github/workflows/ci.yml")])
+        put_config(e, "delivery.draft: on\n")
+        r = e.run("merge", URL, "squash", "abc123")
+        self.assertEqual(r.returncode, 8, r.stderr)
+        self.assertEqual(e.calls("gh", "pr", "ready"), [])
+
+    def test_a_failed_ready_request(self):
+        e = self.env(checks_json=GREEN, view_json=[dict(OPEN, title="T", isDraft=True)],
+                     fail_json={"token": "ready", "code": 1})
+        put_config(e, "delivery.draft: on\n")
+        r = e.run("merge", URL, "squash", "abc123")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("ready", r.stderr)
+        self.assertEqual(e.calls("gh", "api", "-X", "PUT"), [])
+
+
+class SettingsFromTheMainFolder(Base):
+    """Requirement: Delivery settings from the main folder."""
+
+    def test_a_pr_switches_ci_off_for_itself(self):
+        e = self.env()
+        put_config(e, "delivery.require-ci: off\ndelivery.ci-no-checks: 1\n", where="wt")
+        r = e.run("wait", URL, "--timeout", "0.3", "--interval", "0.05")
+        self.assertEqual((r.returncode, r.stdout.splitlines()), (4, [INFRA_LINE, "no checks"]), r.stderr)
+        self.assertEqual(r.stderr, "", "the worktree's file is not read")
+        r = e.run("merge", URL, "squash", "abc123")
+        self.assertEqual(r.returncode, 1)
+        self.assertEqual(e.calls("gh", "api", "-X", "PUT"), [])
+
+    def test_broken_settings_exit_1(self):
+        e = self.env(checks_json=GREEN)
+        put_config(e, "delivery.require-ci: maybe\n")
+        r = e.run("wait", URL, "--timeout", "5", "--interval", "0.05")
+        self.assertEqual((r.returncode, r.stdout), (1, ""))
+        self.assertIn("delivery.require-ci takes on, off", r.stderr)
+        r = e.run("merge", URL, "squash", "abc123")
+        self.assertEqual(r.returncode, 1)
+        self.assertEqual(e.calls("gh", "api", "-X", "PUT"), [])
+
+
+class ShipLandSettings(ShipLandRepo):
+    """Requirement: CI wait settings, Ship and land, Land after green, PR shape settings on real git."""
+
+    def test_ship_takes_the_limits_and_none(self):  # ship codes: 0 for none
+        self.put(self.main, "solo-sdd/config", "delivery.require-ci: off\ndelivery.ci-no-checks: 1\n")
+        r = self.ship(self.mk(checks_json=["none"]))
+        self.assertEqual((r.returncode, r.stdout), (0, NONE_LINE + "\n"), r.stderr)
+        self.assertIn("no checks 1 s (file)", r.stderr)
+
+    def test_ship_opens_a_draft(self):
+        self.put(self.main, "solo-sdd/config", "delivery.draft: on\n")
+        e = self.mk()
+        self.assertEqual(self.ship(e).returncode, 0)
+        self.assertIn("--draft", e.calls("gh", "pr", "create")[0])
+
+    def test_land_keeps_the_branch(self):  # Keep the branch
+        self.put(self.main, "solo-sdd/config", "delivery.delete-branch: off\n")
+        e = self.mk()
+        r = self.land(e)
+        self.assertEqual((r.returncode, r.stdout.splitlines()[-1]), (0, f"PR #7 {URL} land: done"), r.stderr)
+        self.assertEqual(e.calls("gh", "api", "-X", "DELETE"), [])
+        self.assertIn("change/x", g(self.main, "branch", "--list", "change/x"))
+        self.assertEqual(len(self.worktrees()), 1)
+
+    def test_a_repeated_land_with_the_branch_kept(self):
+        self.put(self.main, "solo-sdd/config", "delivery.delete-branch: off\n")
+        head = self.head()
+        self.assertEqual(worktree("remove", self.main, self.wt).returncode, 0)
+        e = self.mk(view_json=[dict(OPEN, headRefOid=head, state="MERGED")])
+        r = self.land(e)
+        self.assertEqual((r.returncode, r.stdout.splitlines()[-1]), (0, f"PR #7 {URL} land: done"), r.stderr)
+        self.assertIn("change/x", g(self.main, "branch", "--list", "change/x"))
 
 
 class Args(Base):

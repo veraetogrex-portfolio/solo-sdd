@@ -6,7 +6,7 @@ The script `sdd-pr.py` runs a change's PR for the dispatcher: opens it, waits fo
 ## Requirements
 
 ### Requirement: PR merge
-`sdd-pr.py merge <url> <method> <hash>` SHALL merge the PR by a GitHub REST API request as the current `gh` login with the given method and `sha` equal to `<hash>`, without `gh pr merge`. Before the request the script SHALL make sure all PR checks passed (`pass` or `skipping`), otherwise code 1 "CI not green" without a request: with an owner bypass GitHub does not check them. `merge` SHALL accept an optional `--title <title>`. An API refusal gives code 1 with the reason text from the response.
+`sdd-pr.py merge <url> <method> <hash>` SHALL merge the PR by a GitHub REST API request as the current `gh` login with the method and `sha` `<hash>`, not `gh pr merge`. Before it every PR check SHALL have passed (`pass` or `skipping`), else code 1 "CI not green" without a request (an owner bypass skips GitHub's own check); no checks pass only under `delivery.require-ci: off`. `merge` takes an optional `--title <title>`. An API refusal gives code 1 with the reason text.
 
 #### Scenario: The PR is closed by a rule with an owner bypass
 - **WHEN** the PR checks are green, `gh pr merge` would refuse because of the rule "only the owner merges", and the `gh` login is the owner with the bypass right
@@ -17,7 +17,7 @@ The script `sdd-pr.py` runs a change's PR for the dispatcher: opens it, waits fo
 - **THEN** code 1 "CI not green", the merge request is not sent, the PR is open
 
 #### Scenario: No checks
-- **WHEN** `gh pr checks` returned no check or failed
+- **WHEN** `gh pr checks` failed, or returned no check while `delivery.require-ci` is `on`
 - **THEN** code 1 "CI not green", the merge request is not sent, the PR is open
 
 #### Scenario: GitHub refused
@@ -45,7 +45,7 @@ The script `sdd-pr.py` runs a change's PR for the dispatcher: opens it, waits fo
 - **THEN** respectively code 0, code 1 or code 5; these checks go before the merge request, as before
 
 #### Scenario: The branch is deleted after merge
-- **WHEN** the merge passed, and the PR head lies in this repository
+- **WHEN** the merge passed, the PR head lies in this repository, and `delivery.delete-branch` is not `off`
 - **THEN** the remote branch is deleted by a separate request
 
 #### Scenario: GitHub already deleted the branch
@@ -56,12 +56,20 @@ The script `sdd-pr.py` runs a change's PR for the dispatcher: opens it, waits fo
 - **WHEN** the PR head lies in a fork, and this repository has a branch with the same name
 - **THEN** the script does not delete it: the PR branch does not live in this repository, and the same name here is someone else's branch
 
+#### Scenario: No checks with CI optional
+- **WHEN** `delivery.require-ci` is `off`, and `gh pr checks` returned no check
+- **THEN** the merge request is sent, code 0
+
+#### Scenario: The branch kept
+- **WHEN** the merge passed, and `delivery.delete-branch` is `off`
+- **THEN** there is no branch deletion request, code 0
+
 ### Requirement: Required checks in CI wait
 `sdd-pr.py wait <url>` SHALL take the required checks of the PR's base branch from the GitHub branch rules (`rules/branches/<branch>`) and the classic protection visible in the branch description (`branches/<branch>`), without requests that need admin rights. The `green` result SHALL be printed only when every required check is among the PR checks and passed (`pass` or `skipping`), and there are no failed or cancelled ones.
 
 #### Scenario: A required check did not start
 - **WHEN** the checks `Checks` and `CodeQL` passed, and the required `PR title` hangs `pending` 300 s after they finished
-- **THEN** `wait` prints `CI: infra` and "required check did not start: PR title", code 4, without waiting for the 1200 s deadline
+- **THEN** `wait` prints `CI: infra` and "required check did not start: PR title", code 4, without waiting for the `delivery.ci-timeout` deadline (default 1200 s)
 
 #### Scenario: A required check is not in the list
 - **WHEN** all PR checks passed, and the required `PR title` is not among them for 300 s
@@ -76,19 +84,23 @@ The script `sdd-pr.py` runs a change's PR for the dispatcher: opens it, waits fo
 - **THEN** the result is `green` and a warning line that the required checks were not checked
 
 #### Scenario: The threshold of a check that did not start
-- **WHEN** a required check is not in the list or is `pending` for more than 300 s after all others finished
+- **WHEN** a required check is not in the list or is `pending` for more than `delivery.ci-stuck` seconds (default 300) after all others finished
 - **THEN** the result is `infra` (code 4) with the line "required check did not start: <name>"
 
 #### Scenario: Restarting a check that did not start
 - **WHEN** `wait` gave the result "required check did not start"
 - **THEN** the dispatcher restarts CI with one empty commit in the change branch and a new wait, not with `gh run rerun`: such a check has no failed run
 
+#### Scenario: CI optional with a required check
+- **WHEN** `delivery.require-ci` is `off`, the base branch requires `PR title`, and the PR has no checks
+- **THEN** the result is `infra` with "required check did not start: PR title", not `none`: `none` needs a base branch that requires no check
+
 ### Requirement: Ship and land
 `sdd-pr.py ship <MAIN> <WORKTREE> <main> <title>` SHALL update the `WORKTREE` branch from `origin/<main>`, run `sdd-worktree.py refresh`, push the branch, open or update the PR and wait for CI by the rules of `wait`; no step runs after a failed one.
 
 #### Scenario: ship codes
 - **WHEN** `ship` finished
-- **THEN** code 0 means `green`, 3 `red`, 4 `infra`, 6 a conflict (the merge undone, the files named, no push), 1 a step failure with its name
+- **THEN** code 0 means `green` (or `none` under `delivery.require-ci: off`), 3 `red`, 4 `infra`, 6 a conflict (the merge undone, the files named, no push), 1 a step failure with its name
 
 #### Scenario: A conflict on refresh
 - **WHEN** `sdd-worktree.py refresh` in `ship` returned code 3 and left conflict markers in `WORKTREE`
@@ -111,7 +123,7 @@ The script `sdd-pr.py` runs a change's PR for the dispatcher: opens it, waits fo
 - **THEN** the merge in `WORKTREE` is undone, code 6, the line names `docs/cli.md`, no push
 
 ### Requirement: Land after green
-`sdd-pr.py land <MAIN> <WORKTREE> <url> <method>` SHALL merge the PR (requirement PR merge) with the `sha` of the `WORKTREE` head, then pull the main folder, run `sdd-worktree.py transport`, `remove` and delete the branch `change/<id>`, stopping at the first failure with the step name.
+`sdd-pr.py land <MAIN> <WORKTREE> <url> <method>` SHALL merge the PR (requirement PR merge) with the `sha` of the `WORKTREE` head, then pull the main folder, run `sdd-worktree.py transport`, `remove` and delete the branch `change/<id>` unless `delivery.delete-branch` is `off`, stopping at the first failure with the step name.
 
 #### Scenario: The merge title
 - **WHEN** `land` merges a PR
@@ -145,8 +157,12 @@ The script `sdd-pr.py` runs a change's PR for the dispatcher: opens it, waits fo
 - **WHEN** the PR is merged, and `transport` returned code 3
 - **THEN** code 7 "merged, not finished: transport", the cleanup did not run; a repeated `land` does not merge again and starts with `transport`
 
+#### Scenario: A repeated land with the branch kept
+- **WHEN** `delivery.delete-branch` is `off`, the PR is MERGED, there is no `WORKTREE` folder, and `change/<id>` exists
+- **THEN** code 0, the branch stays
+
 ### Requirement: Code scanning in CI wait
-When all PR checks passed, `sdd-pr.py wait <url>` SHALL request the open GitHub code scanning alerts on the PR (`ref=refs/pull/<n>/merge`, `state=open`): at least one gives the result `codeql`, code 8, none gives `green`. `sdd-pr.py ship` SHALL pass code 8 as is.
+When all PR checks passed and `delivery.code-scanning` is not `off`, `sdd-pr.py wait <url>` SHALL request the open GitHub code scanning alerts on the PR (`ref=refs/pull/<n>/merge`, `state=open`): under `gate` (default) at least one gives the result `codeql`, code 8, none gives `green`; under `warn` the result is `green`, code 0, with the alert lines. `off` sends no request: `green`, no alert line. `sdd-pr.py ship` SHALL pass code 8 as is.
 
 #### Scenario: The format of alert lines
 - **WHEN** the result is `codeql`
