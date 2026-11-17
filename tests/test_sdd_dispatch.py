@@ -452,6 +452,18 @@ class LandTest(LandBase):
         head = g(self.main, "rev-parse", "HEAD")
         self.assert_waits(self.land(), "deploy/prod.yml", head)
 
+    def test_config_outside_git_waits(self):
+        # Requirement: Owner-only paths gate, scenario The config outside git (land-local): the transfer would carry it
+        self.put(self.main, ".git/info/exclude", "solo-sdd/\n")
+        self.make_change()
+        self.put(self.main, "solo-sdd/config", "delivery.owner-only: deploy/**\n")
+        self.put(self.wt, "solo-sdd/config", "delivery.owner-only: other/**\n")
+        head = g(self.main, "rev-parse", "HEAD")
+        self.assert_waits(self.land(), "solo-sdd/config", head)
+        self.put(self.wt, "solo-sdd/config", "delivery.owner-only: deploy/**\n")
+        r = self.land()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
     def test_config_edit_waits(self):
         # Requirement: Owner-only paths gate (land-local): a branch editing solo-sdd/config waits for the owner
         self.make_change(rel="solo-sdd/config", text="delivery.merge-by: agent\n")

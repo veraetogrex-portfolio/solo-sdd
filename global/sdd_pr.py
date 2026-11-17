@@ -669,13 +669,18 @@ def gate_patterns(pats):
     return [CI_PATTERN] + [x + "**" if x.endswith("/") else x for x in pats if x]
 
 
-def settings_hits(main, files):
+def settings_hits(main, files, wt=None):
     """Files matching CI_PATTERN or delivery.owner-only of the main folder's settings (its old source the «Owner only:»
     items of the main AGENTS.md), never of the PR or the worktree, plus the settings file itself when the change edits
-    it. Broken settings raise SettingsError (OSError): the gate never falls back to fewer paths."""
+    it or the worktree holds a copy that differs from the main folder's (the transfer after merge would carry it).
+    Broken settings raise SettingsError (OSError): the gate never falls back to fewer paths."""
     value = read_settings(main)["delivery.owner-only"][0] if main else ""
     hits = owner_hits(files, gate_patterns(x.strip() for x in value.split(",")))
-    return hits + [SETTINGS_FILE] if SETTINGS_FILE in files and SETTINGS_FILE not in hits else hits
+    theirs = wt is not None and os.path.isfile(os.path.join(wt, SETTINGS_FILE))
+    if SETTINGS_FILE not in hits and (SETTINGS_FILE in files or theirs and (
+            read_settings_text(wt) != (read_settings_text(main) if main else None))):
+        hits.append(SETTINGS_FILE)
+    return hits
 
 
 def glob_re(pat):
@@ -754,7 +759,7 @@ def owner_gate(repo, n, main, wt):
         print(migrate_hint(os.path.join(main, "AGENTS.md"), found), file=sys.stderr)
     rule = owner_rule(text)
     try:
-        hits = settings_hits(main, files)
+        hits = settings_hits(main, files, wt)
     except (OSError, ValueError) as e:
         die("settings: %s" % e)
     if OWNER in found:  # the old item is not read, but its paths are not opened silently either: the owner decides

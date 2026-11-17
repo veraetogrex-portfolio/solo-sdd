@@ -398,10 +398,10 @@ class ConfigDir(unittest.TestCase):
 class TextSettings(ConfigDir):
     """Requirement: Text settings."""
 
-    def test_title_rule_with_spaces(self):
+    def test_ends_trimmed(self):
+        # the stand proves A title rule with spaces and the describe line; here only the trimmed ends
         self.assertEqual(self.cli("set", "delivery.pr-title", "  <id>: <summary>  "),
                          (0, "delivery.pr-title: <id>: <summary>\n"))
-        self.assertEqual(self.get("delivery.pr-title"), (0, "<id>: <summary>\n", "source: file\n"))
         self.assertEqual(self.read(), "delivery.pr-title: <id>: <summary>\n")
 
     def test_refusals_keep_the_file(self):
@@ -417,13 +417,6 @@ class TextSettings(ConfigDir):
         code, out = self.cli("list")
         self.assertEqual(code, 1)
         self.assertIn("solo-sdd/config:1: delivery.deploy takes", out)
-
-    def test_describe_names_the_kind(self):
-        code, blocks = self.describe("delivery.pr-title")
-        self.assertEqual(code, 0)
-        row = blocks["delivery.pr-title"]
-        self.assertEqual((row["group"], row["type"], row["default"]),
-                         ("delivery", "text: one line, at most 200 characters", "the change name"))
 
 
 class DeliveryItemsInConfig(ConfigDir):

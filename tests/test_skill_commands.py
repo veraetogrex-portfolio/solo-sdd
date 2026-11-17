@@ -115,6 +115,13 @@ class SkillCommandsTest(unittest.TestCase):
                 self.assertIn(get % key, flat, rel)
             self.assertIn("old source", flat, rel)
         self.assertIn("`solo-sdd/config`", " ".join(skill_text.read(REPO / "skills/spec-dispatch/merge.md").split()))
+        # a line deciding the title, the deploy or the owner paths by the "Delivery" section also names the key
+        for rel in ("skills/ship/SKILL.md", "skills/spec-dispatch/SKILL.md", "skills/spec-dispatch/preparation.md",
+                    "skills/spec-dispatch/merge.md"):
+            for n, line in enumerate((REPO / rel).read_text(encoding="utf-8").splitlines(), 1):
+                for word, key in (("title", "pr-title"), ("deploy", "deploy"), ("Owner only", "owner-only")):
+                    if ('"Delivery"' in line or "## Delivery" in line) and word in line:
+                        self.assertIn("delivery." + key, line, "%s:%d" % (rel, n))
 
     def test_light_path_texts(self):
         """Requirements: Light path bounds, record and count: one rule in the rules and the algorithm, the readers."""

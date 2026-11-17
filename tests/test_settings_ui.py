@@ -78,6 +78,11 @@ class EditByType(Base):
             ("delivery.merge", "", ["enter", "down", "esc"], ("squash", "default"), False, ""),
             ("dispatch.limit", "", ["r"], ("2", "default"), False, ""),  # a reset of a key not in the file
             ("delivery.mode", "delivery.mode: local\n", ["enter", "enter"], ("local", "file"), False, ""),
+            # Requirement: Text settings: a one-line entry, Esc leaves it unchanged, a longer value is refused
+            ("delivery.pr-title", "delivery.pr-title: old\n", ["enter", "x", "esc"], ("old", "file"), False, ""),
+            ("delivery.deploy", "", ["enter", "backspace", "backspace", *"on", "space", *"merge:", "space", *"Pages",
+                                     "enter"], ("on merge: Pages", "file"), True, ""),
+            ("delivery.deploy", "", ["enter", *("x" * 199), "enter"], ("no", "default"), False, "at most 200 characters"),
         ]
         for key, text, keys, want, edited, message in rows:
             s = self.open(text)
@@ -88,21 +93,6 @@ class EditByType(Base):
             self.assertEqual(key in s.edits, edited, (key, keys))
             self.assertEqual("*unsaved" in "\n".join(s.draw(120, 40)[0]), edited, (key, keys))
             self.assertEqual(config(s.root), text, "an edit writes nothing before save")
-
-    def test_text_key_one_line_input(self):
-        """Requirement: Text settings: a text key is a one-line input, Esc leaves it unchanged."""
-        s = self.open("delivery.pr-title: old\n")
-        select(s, "delivery.pr-title")
-        press(s, "enter")
-        self.assertEqual((s.mode, s.buffer), ("entry", "old"))
-        press(s, "x", "esc")
-        self.assertEqual((s.mode, s.values()["delivery.pr-title"], s.edits), ("list", ("old", "file"), {}))
-        select(s, "delivery.deploy")
-        press(s, "enter", "backspace", "backspace", *"on", "space", *"merge:", "space", *"Pages", "enter")
-        self.assertEqual(s.values()["delivery.deploy"], ("on merge: Pages", "file"))
-        press(s, "enter", *("x" * 200), "enter")
-        self.assertIn("at most 200 characters", s.message)
-        self.assertEqual(s.values()["delivery.deploy"], ("on merge: Pages", "file"))
 
     def test_value_the_file_cannot_hold(self):
         s = self.open("")

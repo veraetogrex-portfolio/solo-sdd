@@ -777,18 +777,15 @@ class OwnerOnlyPaths(Base):
             (e.d / "main/AGENTS.md").write_text(agents(agents_md))
         return e, e.run("merge", URL, "squash", "abc123")
 
-    def test_owner_paths_from_the_config(self):
-        """Requirement: Owner-only paths gate, scenario Owner paths from the config: the file value wins over the item."""
-        e, r = self.gate_config([frow("deploy/prod.yml"), frow("global/x.py")], "delivery.owner-only: deploy/**\n")
-        self.waits(e, r, "deploy/prod.yml")
-        e, r = self.gate_config([frow("README.md")], "delivery.owner-only: deploy/**\n")
+    def test_config_paths_replace_the_item(self):
+        """Requirement: Owner-only paths gate (the stand proves Owner paths from the config): the file value replaces
+        the AGENTS.md item, a path outside it merges."""
+        e, r = self.gate_config([frow("global/x.py"), frow("README.md")], "delivery.owner-only: deploy/**\n")
         self.assertEqual(r.returncode, 0, r.stderr)
 
     def test_a_pr_edits_the_config(self):
-        """Requirement: Owner-only paths gate, scenario A PR edits the config; also renamed away from it."""
-        patch = "@@ -1 +1 @@\n-delivery.merge-by: human\n+delivery.merge-by: agent\n"
-        e, r = self.gate_config([frow("solo-sdd/config", patch)], "# none\n", None)
-        self.waits(e, r, "solo-sdd/config")
+        """Requirement: Owner-only paths gate (the stand proves A PR edits the config): renamed away from it, or matched
+        by a pattern too, it is named once."""
         e, r = self.gate_config([frow("solo-sdd/old", prev="solo-sdd/config"), frow("docs/a.md")], "")
         self.waits(e, r, "docs/a.md", "solo-sdd/config")
         e, r = self.gate_config([frow("solo-sdd/config")], "delivery.owner-only: solo-sdd/**\n", None)
@@ -1138,15 +1135,16 @@ class LandOwnerPaths(ShipLand):
         self.assertEqual(r.returncode, 8, r.stderr)
         self.assertEqual(e.calls("gh", "api", "-X", "PUT"), [])
 
-    def test_land_owner_paths_of_the_main_config(self):
-        """Requirement: Owner-only paths gate: a WORKTREE config with fewer paths changes nothing."""
+    def test_land_config_outside_git(self):
+        """Requirement: Owner-only paths gate, scenario The config outside git: a WORKTREE copy with fewer paths waits."""
         self.put(self.main, "solo-sdd/config", "delivery.owner-only: deploy/**\n")
         self.put(self.wt, "solo-sdd/config", "delivery.owner-only: other/**\n")
-        e = self.mk(files_json=[frow("deploy/prod.yml")])
+        e = self.mk(files_json=[frow("feature.txt")])
         r = self.land(e)
         self.assertEqual(r.returncode, 8, r.stderr)
-        self.assertIn("waits for the owner: deploy/prod.yml", r.stdout)
+        self.assertIn("waits for the owner: solo-sdd/config", r.stdout)
         self.assertEqual(e.calls("gh", "api", "-X", "PUT"), [])
+        self.assertTrue(self.wt.is_dir())
 
 
 WT_STUB = f"""#!{sys.executable}

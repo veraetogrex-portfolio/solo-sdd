@@ -324,7 +324,7 @@ def owner_wait(pr, main, wt, branch):
         print(pr.migrate_hint(os.path.join(main, "AGENTS.md"), found), file=sys.stderr)
     rule = pr.owner_rule(text)
     try:
-        hits = pr.settings_hits(main, files)
+        hits = pr.settings_hits(main, files, wt)
     except (OSError, ValueError) as e:
         return 1, "not merged: settings: %s" % e
     if pr.OWNER in found:  # old item: not read, paths not opened silently

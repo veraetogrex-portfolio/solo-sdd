@@ -31,6 +31,10 @@ Before the merge request `sdd-pr.py merge` and `land` SHALL check the PR files, 
 - **WHEN** a green PR changes the line `delivery.merge-by: human` of `solo-sdd/config` to `agent`
 - **THEN** code 8 with `solo-sdd/config`, no merge is requested, also when a checklist covering it is ticked and approved by another account
 
+#### Scenario: The config outside git
+- **WHEN** `solo-sdd/config` is ignored by git, and the WORKTREE copy differs from the main folder's
+- **THEN** `land` returns code 8 with `solo-sdd/config`: the transfer after merge would bring the copy into the main folder
+
 #### Scenario: Broken settings
 - **WHEN** line 2 of the main folder's `solo-sdd/config` is not `key: value`, and a green PR changes `deploy/prod.yml`
 - **THEN** code 1 naming `solo-sdd/config:2`, no merge is requested, the PR is open: the gate never falls back to fewer paths

@@ -16,7 +16,7 @@
    - Do not rerun checks "until green": a "flaky test" is recognised only with code 4.
    - You do not fix "not merged" yourself: the worktree and branch stay for the user, the other changes continue.
 
-   **`pr` mode** (instead of the local merge above; `local` reads unchanged). If by "Delivery" a merge into main triggers a deploy, ask the user before the first merge (step 9): what rolls out and where.
+   **`pr` mode** (instead of the local merge above; `local` reads unchanged). If `delivery.deploy` (`solo-sdd config get delivery.deploy` in `MAIN`, step 1) says a merge into main triggers a deploy, ask the user before the first merge (step 9): what rolls out and where.
    - Right after an accepted status, as a background Bash command with `run_in_background: true`: `python3 ~/.local/bin/sdd-pr.py ship <MAIN> <WORKTREE> <main> "<title by the rule>"`; the other changes go on, the result arrives as a notification.
 
      From the `ship` launch the change moves from `--running` to `--waiting` and stays there until merge or code 8 `waits for human merge` from `land`, including on repeated `ship` and `wait` without an orchestrator; recalculate by step 2 at once: the freed slot goes to the next change. A return to the orchestrator (conflict, `red`, `codeql`, a build failure after update) puts it back into `--running` until a new `ship`; "not merged" means in no list.
