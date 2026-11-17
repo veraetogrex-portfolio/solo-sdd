@@ -202,6 +202,55 @@ class SetupTests(unittest.TestCase):
         self.assertTrue((r.wt / "ready").exists())
         self.assertIn("command: touch ready", res.stdout)
 
+    def test_settings_without_the_section(self):
+        """Requirement: Working copy settings, scenario A prepare command from the config."""
+        r = Repo(ignore=GITIGNORE + "docs/\n")
+        self.addCleanup(r.close)
+        put(r.main, "solo-sdd/config", "worktree.paths: docs/a.md\nworktree.prepare: touch prepared\n")
+        put(r.main, "AGENTS.md", "# P\n\n## Working copy\n\n- Prepare: `touch old`\n")
+        put(r.main, "docs/a.md", "d\n")
+        res = run("setup", r.main, r.wt)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertTrue((r.wt / "docs/a.md").exists())
+        self.assertTrue((r.wt / "prepared").exists())
+        self.assertFalse((r.wt / "old").exists(), "the file value wins over the item")
+        self.assertIn("command: touch prepared", res.stdout)
+        put(r.main, "solo-sdd/config", "worktree.prepare: x\nworktree.prepare: y\n")
+        res = run("refresh", r.main, r.wt)
+        self.assertEqual(res.returncode, 1)
+        self.assertIn("settings: solo-sdd/config:2", res.stderr)
+
+    def test_another_linked_folder(self):
+        """Requirement: Working copy settings, scenario Another linked folder."""
+        r = Repo(ignore="openspec/\nAGENTS.md\nvendor/\n")
+        self.addCleanup(r.close)
+        put(r.main, "solo-sdd/config", "worktree.links: node_modules, vendor/bundle\n")
+        put(r.main, "node_modules/p/i.js", "1\n")
+        put(r.main, "vendor/bundle/gem.rb", "g\n")
+        put(r.main, ".venv/bin/python", "x\n")
+        res = run("setup", r.main, r.wt)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertIn("link folders 2", res.stdout)
+        self.assertTrue((r.wt / "vendor/bundle").is_symlink())
+        self.assertEqual(os.path.realpath(r.wt / "vendor/bundle"), os.path.realpath(r.main / "vendor/bundle"))
+        self.assertFalse(os.path.lexists(r.wt / ".venv"))
+        exclude = pathlib.Path(r.main, git(r.main, "rev-parse", "--git-common-dir").strip(), "info", "exclude")
+        self.assertIn("vendor/bundle\n", exclude.read_text())
+        self.assertEqual(git(r.wt, "status", "--short"), "")
+        self.assertEqual(run("remove", r.main, r.wt).returncode, 0)
+        self.assertTrue((r.main / "vendor/bundle/gem.rb").exists())
+        self.assertFalse(r.wt.exists())
+
+    def test_a_refused_old_path_named(self):
+        r = Repo(ignore=GITIGNORE + "docs/\n")
+        self.addCleanup(r.close)
+        put(r.main, "AGENTS.md", "# P\n\n## Working copy\n\n- Paths: `/etc/hosts`, `docs/a.md`\n")
+        put(r.main, "docs/a.md", "d\n")
+        res = run("setup", r.main, r.wt)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertTrue((r.wt / "docs/a.md").exists())
+        self.assertEqual(res.stderr.count("AGENTS.md:5: /etc/hosts is left out"), 1, res.stderr)
+
     def test_command_failure(self):
         r = Repo()
         self.addCleanup(r.close)

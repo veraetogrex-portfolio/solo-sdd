@@ -628,6 +628,36 @@ class LandTest(LandBase):
         self.assert_rolled_back(head)
 
     @marks.slow
+    def test_check_timeout_setting(self):
+        """Requirement: Working copy settings, scenarios The variable wins and An invalid variable."""
+        self.put(self.main, "solo-sdd/config", "dispatch.check-timeout: 900\n")
+        self.make_change()
+        head = g(self.main, "rev-parse", "HEAD")
+        check = "if [ -e feature.txt ]; then sleep 100; fi"
+        self.env["SDD_DISPATCH_TIMEOUT"] = "1"
+        r = self.land("--check", check)
+        self.assertEqual(r.returncode, 3, r.stdout)
+        self.assertIn("%s: timeout after 1 s" % check, r.stdout)
+        self.assert_rolled_back(head)
+        self.put(self.main, "solo-sdd/config", "dispatch.check-timeout: 2\n")
+        self.env["SDD_DISPATCH_TIMEOUT"] = "abc"
+        r = self.land("--check", check)
+        self.assertEqual(r.returncode, 3, r.stdout)
+        self.assertIn("%s: timeout after 2 s" % check, r.stdout)
+        self.assert_rolled_back(head)
+
+    def test_check_timeout_setting_capped(self):
+        mod = load_dispatch()
+        old = os.environ.pop("SDD_DISPATCH_TIMEOUT", None)
+        try:
+            for setting, want in ((900, 900), (2147483, 2147483), (99999999, 2147483)):
+                mod.SETTING[0] = setting
+                self.assertEqual(mod.timeout(), want, setting)
+        finally:
+            if old is not None:
+                os.environ["SDD_DISPATCH_TIMEOUT"] = old
+
+    @marks.slow
     def test_command_timeouts_a_hanging_git_step_in_land_local(self):
         self.make_change()
         head = g(self.main, "rev-parse", "HEAD")

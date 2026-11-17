@@ -4,31 +4,32 @@
 Run: sdd_worktree.py <setup|refresh|transport|undo|remove|discard> <MAIN> <WORKTREE>
 
 Artifact set: everything under the process root (solo-sdd/ if it holds project.md, specs/ or changes/, else
-openspec/), the files AGENTS.md and CLAUDE.md at the root and the paths
-of the AGENTS.md section «Working copy» (optional) that git ignores in MAIN.
-Section format (up to the next «## » heading), values in backticks:
+openspec/), the files AGENTS.md and CLAUDE.md at the root and the worktree.paths that git ignores in MAIN.
+The worktree.* keys come from solo-sdd/config of MAIN:
 
-    ## Working copy
+    worktree.paths: docs/architecture.md, docs/waiting.md
+    worktree.prepare: npm ci --prefer-offline
+    worktree.after-refresh: npm run build:ocr
+    worktree.links: node_modules, .venv
 
-    - Paths: `docs/architecture.md`, `docs/waiting.md`
-    - Prepare: `npm ci --prefer-offline`
-    - After refresh: `npm run build:ocr`
-
+Without a file value a key takes its item of the AGENTS.md section «Working copy» (Paths:, Prepare:, After refresh:,
+values in backticks), else its default; an item value the key refuses is named on stderr and left out.
 Paths are relative to the root, files or folders. The prepare command and the after-refresh command run
 through sh -c in WORKTREE; setup runs the prepare command, refresh runs the after-refresh command.
 
 Besides, setup adds to the set the documents MAIN ignores one by one (not as a whole ignored
-folder): .md, .txt, .rst, .adoc up to 1 MiB, no links, node_modules, .venv or .env*. Their list
+folder): .md, .txt, .rst, .adoc up to 1 MiB, no links, nothing under worktree.links, no .env*. Their list
 lives in the snapshot (<WORKTREE>.base/.sdd-ignored); after that they are handled like the whole set.
 
-setup      copies what is needed into WORKTREE, puts the snapshot into <WORKTREE>.base/, links
-           node_modules and .venv, adds them to info/exclude, runs the prepare command.
+setup      copies what is needed into WORKTREE, puts the snapshot into <WORKTREE>.base/, links the worktree.links
+           folders (a node_modules item up to three levels deep, any other at its path from the root, default
+           node_modules and .venv), adds the items to info/exclude, runs the prepare command.
            With `delivery.base` in solo-sdd/config it first moves a worktree without own commits to
            origin/<base> (no such ref: the local <base>) unless HEAD already contains it or a local <base>
            ahead of it, and then prints «start: <ref>»; own commits or broken settings: code 1.
 refresh    brings MAIN edits made after setup into WORKTREE (three-way merge: base = snapshot);
            on conflict the WORKTREE file gets markers, code 3; the snapshot is updated to MAIN.
-           Without conflicts it then runs the «After refresh:» command (stdin closed, limit 600 s):
+           Without conflicts it then runs the worktree.after-refresh command (stdin closed, limit 600 s):
            success is the line «after refresh: <command> — code 0» without the command output; a non-zero
            code or a timeout prints at most the last 20 lines of its output, then a line with the command and
            the code or «timeout», code 4. The transfer and the snapshot are already updated by then. No item or
@@ -51,7 +52,6 @@ import subprocess
 import sys
 
 ROOTS = ["AGENTS.md", "CLAUDE.md"]
-LINKED = ["node_modules", ".venv"]
 MARK = ".sdd-worktree"
 LISTED = ".sdd-ignored"  # in the snapshot: documents of the set ignored one by one, separator \0
 DOCS = (".md", ".txt", ".rst", ".adoc")
@@ -145,6 +145,13 @@ REGISTRY = {
     "delivery.branch-prefix": ("choice", None, "change/", None),  # a change branch is <prefix><id>
     "delivery.plan-prefix": ("choice", None, "plan/", None),  # the spec-plan branch is <prefix><first id>
     "dispatch.limit": ("int", None, "2", None),
+    "dispatch.shared": ("paths", None, "", None),  # sdd-dispatch-plan.py: paths changes may share without a conflict
+    "dispatch.loopback": ("choice", ("on", "off"), "off", None),  # on: the project's tests need local sockets
+    "dispatch.check-timeout": ("int", None, "600", None),  # seconds of each land-local command; SDD_DISPATCH_TIMEOUT wins
+    "worktree.paths": ("paths", None, "", None),  # sdd-worktree.py: git-ignored paths copied into a worktree
+    "worktree.prepare": ("text", None, "", None),  # the command setup runs in a new worktree
+    "worktree.after-refresh": ("text", None, "", None),  # the command refresh runs after a transfer without conflicts
+    "worktree.links": ("paths", None, "node_modules, .venv", None),  # folders linked from the main folder
     "process.review-rounds": ("int", None, "5", None),
     "process.light-path": ("choice", ("on", "off"), "on", None),  # off: every code edit goes through a change
     "process.light-path.max-files": ("int", None, "3", None),
@@ -195,6 +202,10 @@ DELIVERY_ITEMS = (("PR title:", "delivery.pr-title"), ("Deploy:", "delivery.depl
 PROJECT_FILE = "solo-sdd/project.md"
 PROJECT_LINES = (("Mode:", "project.stage"), ("Language:", "artifacts.language"))
 OLD_SOURCE = dict((key, "project.md") for _, key in PROJECT_LINES)  # any other old source key: AGENTS.md
+# the «Working copy» items of AGENTS.md read as the old source of a key: item -> key
+WORKING_ITEMS = (("Paths:", "worktree.paths"), ("Prepare:", "worktree.prepare"),
+                 ("After refresh:", "worktree.after-refresh"), ("Shared:", "dispatch.shared"),
+                 ("Orchestrators:", "dispatch.limit"))
 
 
 class SettingsError(ValueError):
@@ -306,6 +317,8 @@ def check_value(key, value, registry=REGISTRY):
     kind, allowed, default = entry(key, registry)[:3]
     v = value.strip()
     if kind == "text":
+        if not v and default == "":
+            return v
         if not v or not v.isprintable() or len(v) > TEXT_MAX:
             raise SettingsError("%s takes one line of printable characters, at most %d characters, not %r"
                                 % (key, TEXT_MAX, v if len(v) <= 60 else v[:60] + "..."))
@@ -427,8 +440,9 @@ def project_lines(root, registry=REGISTRY):
 def agents_delivery(root, registry=REGISTRY):
     """{key: value} of the old sources at root: the project_lines values, and the «## Delivery» section of AGENTS.md:
     the first allowed «Mode:» and «Merge:» items, the first non-empty «PR title:» and «Deploy:» texts trimmed and as
-    written, and the backquoted patterns of every «Owner only:» item; a file that cannot be opened adds nothing."""
-    out, inside = dict(project_lines(root, registry)[0]), False
+    written, and the backquoted patterns of every «Owner only:» item; the working_items values; a file that cannot be
+    opened adds nothing."""
+    out, inside = dict(project_lines(root, registry)[0], **working_items(root, registry)[0]), False
     try:
         with open(os.path.join(root, "AGENTS.md"), encoding="utf-8", errors="replace") as f:  # other readers own the encoding
             lines = f.read().splitlines()
@@ -452,6 +466,52 @@ def agents_delivery(root, registry=REGISTRY):
             elif s.startswith(item) and s[len(item):].strip():
                 out.setdefault(key, s[len(item):].strip())
     return out
+
+
+def working_items(root, registry=REGISTRY):
+    """({key: value}, [line left out]) of AGENTS.md at root, the old source of the WORKING_ITEMS keys and of
+    dispatch.loopback. In «## Working copy»: the backquoted values of every «Paths:» and «Shared:» item (a leading / of
+    a shared path dropped), the first backquoted value of the first «Prepare:» and «After refresh:» item, as written,
+    and the first number of the first «Orchestrators:» item; a list item «Loopback: needed» of «## Working copy» or
+    «## Commands» is `on`. A path or number check_value refuses is left out and named as AGENTS.md:<line> with the
+    reason; a file that cannot be opened: ({}, [])."""
+    try:
+        with open(os.path.join(root, "AGENTS.md"), encoding="utf-8", errors="replace") as f:
+            lines = f.read().splitlines()
+    except OSError:
+        return {}, []
+    out, bad, section = {}, [], ""
+    for n, ln in enumerate(lines, 1):
+        if ln.startswith("## "):
+            section = ln.strip()
+            continue
+        s = ln.strip()
+        if section in ("## Working copy", "## Commands") and s.startswith(("-", "*")) and "dispatch.loopback" in registry \
+                and re.match(r"loopback:\s*needed\b", s.replace("*", "").lstrip("- "), re.I):
+            out["dispatch.loopback"] = "on"
+        s = s.lstrip("-* ").strip()
+        for item, key in WORKING_ITEMS if section == "## Working copy" else ():
+            if not s.startswith(item) or key not in registry or key in out and registry[key][0] not in LIST_KINDS:
+                continue
+            rest = s[len(item):]
+            if key == "dispatch.limit":
+                m = re.search(r"\d+", rest)
+                vals = [m.group()] if m else []
+            else:
+                vals = [v.lstrip("/") if key == "dispatch.shared" else v for v in rest.split("`")[1::2] if v.strip()]
+            if registry[key][0] == "text":  # a command is read as written, without the length limit
+                if vals:
+                    out[key] = vals[0].strip()
+                continue
+            good = []
+            for v in vals:
+                try:
+                    good.append(check_value(key, v, registry))
+                except SettingsError as e:
+                    bad.append("AGENTS.md:%d: %s is left out: %s" % (n, v, e))
+            if good:
+                out[key] = ", ".join(([out[key]] if key in out else []) + good)
+    return out, bad
 
 
 def read_settings(root, registry=REGISTRY):
@@ -524,33 +584,33 @@ WARNED = set()  # AGENTS.md files already named for old keywords in this process
 
 
 def section(main):
-    """Paths, the prepare command and the after-refresh command from the «Working copy» section."""
-    paths, cmd, after, inside = [], None, None, False
+    """(paths, the prepare command or None, the after-refresh command or None, linked folders) of the worktree.* keys:
+    solo-sdd/config, else the «Working copy» items of AGENTS.md, else the defaults. An item value the key refuses is
+    named on stderr once; broken settings raise RuntimeError naming the line: never a silent fall back."""
     agents = os.path.join(main, "AGENTS.md")
     try:
-        src = read(agents).decode("utf-8")
+        found = migrate_agents(read(agents).decode("utf-8", "replace"))[1]
     except OSError:
-        return paths, cmd, after
-    found = migrate_agents(src)[1]
-    if found and agents not in WARNED:
+        found = []
+    try:
+        values, bad = read_settings(main), working_items(main)[1]
+    except (OSError, ValueError) as e:
+        raise RuntimeError("settings: %s" % e)
+    if agents not in WARNED:
         WARNED.add(agents)
-        print(migrate_hint(agents, found), file=sys.stderr)
-    for ln in src.splitlines():
-        if ln.startswith("## "):
-            inside = ln.strip() == "## Working copy"
-            continue
-        if not inside:
-            continue
-        s = ln.strip().lstrip("-* ").strip()
-        parts = s.split("`")
-        vals = parts[1::2]
-        if s.startswith("Paths:"):
-            paths += [v.strip("/") for v in vals if v and not os.path.isabs(v) and ".." not in v.split("/")]
-        elif s.startswith("Prepare:") and vals:
-            cmd = vals[0]
-        elif s.startswith("After refresh:") and vals:
-            after = vals[0]
-    return paths, cmd, after
+        if found:
+            print(migrate_hint(agents, found), file=sys.stderr)
+        for ln in bad:
+            print(ln, file=sys.stderr)
+    split = lambda key: [v.strip().strip("/") for v in values[key][0].split(",") if v.strip().strip("/")]
+    return (split("worktree.paths"), values["worktree.prepare"][0] or None, values["worktree.after-refresh"][0] or None,
+            split("worktree.links"))
+
+
+def under_link(f, links):
+    """The path lies in a linked folder: a name without / anywhere in it, a longer item at its path from the root."""
+    parts = f.split("/")
+    return any(x in parts if "/" not in x else f.startswith(x + "/") for x in links)
 
 
 def listed(wt):
@@ -590,8 +650,9 @@ def loose_ignored(main):
     # git does not collapse an ignored folder with a tracked file: its files come one by one;
     # --no-index, otherwise check-ignore treats such a folder as tracked
     hidden = set(ignored(main, sorted({os.path.dirname(f) for f in names} - {""}), "--no-index"))
+    links = section(main)[3]
     return sorted(f for f in names if regular(os.path.join(main, f)) and os.path.dirname(f) not in hidden
-                  and not set(f.split("/")) & set(LINKED))
+                  and not under_link(f, links))
 
 
 def is_document(main, f):
@@ -649,10 +710,11 @@ def prune_empty(path, stop):
         path = os.path.dirname(path)
 
 
-def find_links(main):
-    """node_modules no deeper than three levels (not entering them or .git) and .venv at the root."""
+def find_links(main, links):
+    """The worktree.links folders of main: a `node_modules` item no deeper than three levels (not entering them or
+    .git), any other item at its path from the root."""
     found = []
-    for d, dirs, _ in os.walk(main):
+    for d, dirs, _ in os.walk(main) if "node_modules" in links else ():
         rel = os.path.relpath(d, main)
         depth = 0 if rel == "." else rel.count(os.sep) + 1
         if ".git" in dirs:
@@ -662,9 +724,7 @@ def find_links(main):
             found.append(os.path.normpath(os.path.join(rel, "node_modules")))
         if depth >= 2:
             dirs[:] = []
-    if os.path.isdir(os.path.join(main, ".venv")):
-        found.append(".venv")
-    return found
+    return found + [x for x in links if x != "node_modules" and os.path.isdir(os.path.join(main, x))]
 
 
 def link_modules(src, dst, level=0):
@@ -684,13 +744,13 @@ def link_modules(src, dst, level=0):
         write(os.path.join(dst, MARK), b"")
 
 
-def add_exclude(main):
+def add_exclude(main, links):
     r = git(main, "rev-parse", "--git-common-dir")
     if r.returncode:
         raise RuntimeError("git rev-parse: " + r.stderr.decode("utf-8", "replace").strip())
     p = os.path.join(main, r.stdout.decode().strip(), "info", "exclude")
     have = read(p).decode("utf-8").splitlines() if os.path.exists(p) else []
-    add = [x for x in LINKED if x not in have]
+    add = [x for x in links if x not in have]
     if add:
         os.makedirs(os.path.dirname(p), exist_ok=True)
         with open(p, "a", encoding="utf-8") as f:
@@ -706,7 +766,7 @@ def setup(main, wt):
     write(wt + ".start", head.stdout)
     start = start_at_base(main, wt, head.stdout.decode().strip())
     base = wt + ".base"
-    paths, cmd, _ = section(main)
+    paths, cmd, _, linked = section(main)
     known = files_under(main, [process_root(main)] + ROOTS + paths)
     extra = [f for f in loose_ignored(main) if f not in known and is_document(main, f)]
     cand = [f for f in known + extra if not os.path.exists(os.path.join(wt, f))]
@@ -720,8 +780,10 @@ def setup(main, wt):
     if extra:
         write(os.path.join(base, LISTED), "\0".join(extra).encode("utf-8"))
     links = 0
-    for rel in find_links(main):
+    for rel in find_links(main, linked):
         dst = os.path.join(wt, rel)
+        if rel in linked and "/" in rel and not os.path.lexists(dst):  # a named item gets its parent folders
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
         if os.path.lexists(dst) or not os.path.isdir(os.path.dirname(dst)):
             continue
         if os.path.basename(rel) == "node_modules":
@@ -729,7 +791,7 @@ def setup(main, wt):
         else:
             os.symlink(os.path.abspath(os.path.join(main, rel)), dst)
         links += 1
-    add_exclude(main)
+    add_exclude(main, linked)
     if cmd:
         r = subprocess.run(["sh", "-c", cmd], cwd=wt, stdin=subprocess.DEVNULL)
         if r.returncode:
@@ -934,8 +996,8 @@ def undo(main, wt):
     return 0
 
 
-def unlink_links(wt):
-    for rel in find_links(wt):
+def unlink_links(main, wt):
+    for rel in find_links(wt, section(main)[3]):
         p = os.path.join(wt, rel)
         if os.path.islink(p):
             os.unlink(p)
@@ -957,7 +1019,7 @@ def remove(main, wt):
     dirty = git(wt, "status", "--porcelain")
     if dirty.returncode or dirty.stdout.strip():
         raise RuntimeError("git worktree remove: the worktree has uncommitted changes, nothing removed")
-    unlink_links(wt)
+    unlink_links(main, wt)
     for x in (wt + ".base", wt + ".undo"):
         shutil.rmtree(x, ignore_errors=True)
     # without --force: ignored copies and excluded links do not get in the way, and git will not let uncommitted work be erased
@@ -986,7 +1048,7 @@ def discard(main, wt):
     own = only_here(main, wt, head)
     if own:
         raise RuntimeError("commit %s exists only in %s: nothing removed" % (head, own))
-    unlink_links(wt)
+    unlink_links(main, wt)
     for x in (wt + ".base", wt + ".undo"):
         shutil.rmtree(x, ignore_errors=True)
     r = git(main, "worktree", "remove", "--force", wt)
