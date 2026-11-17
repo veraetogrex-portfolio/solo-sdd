@@ -10,7 +10,7 @@ The result is a set of changes, each of which closes in one `/spec-next` run. No
 ## Order
 
 0. **Legacy tree.** The project has `openspec/` and no `solo-sdd/`: stop before any change work, change no file and name the next step `solo-sdd import openspec`; do not import by yourself.
-1. **Context.** The local project rules, `solo-sdd/project.md` (intent, language, mode), `solo-sdd list --json`, `solo-sdd list --specs`, the project's `DESIGN.md` if there is one. This avoids duplicates of existing changes and specs.
+1. **Context.** The local project rules, `solo-sdd/project.md` (intent, mode), `solo-sdd list --json`, `solo-sdd list --specs`, the project's `DESIGN.md` if there is one. This avoids duplicates of existing changes and specs. The prose of every artifact is in `solo-sdd config get artifacts.language` (default `en`); headings, `SHALL`, `WHEN`, `THEN`, keys and paths stay English.
 1a. **Light path.** Before any unit, take out two kinds of input item; they get no change. An item already closed by a `light:` commit (its subject starts with the text of `solo-sdd config get commit.light-prefix`, default `light:`, no `solo-sdd/` tree or no command: `light:`, matched as plain text:
    `LP="$(solo-sdd config get commit.light-prefix 2>/dev/null)" || LP=light:; git log --format='%s%x09%h' | LP="$LP" awk 'index($0, ENVIRON["LP"]) == 1'`;
    the older form for the default prefix: `git log --oneline --grep='^light:'`) is counted with its hash.
@@ -55,7 +55,7 @@ More than five changes: you write the artifacts yourself; Codex executors only i
 
 `solo-sdd new <name>` lays out `proposal.md`, `verification.md` and `tasks.md` from templates and prints the path of the delta template; a delta goes into `specs/<capability>/spec.md` by that template. HTML comments in them are hints and never count as content. `solo-sdd validate` accepts a change by these rules:
 
-- `proposal.md`: the sections `## Why`, `## What Changes`, `## Capabilities` (with `### New Capabilities` and `### Modified Capabilities`), `## Impact`, `## Out of Scope`, `## Depends On`, `## Source`; every one except `Capabilities` holds text. Language: English unless `solo-sdd/project.md` names another.
+- `proposal.md`: the sections `## Why`, `## What Changes`, `## Capabilities` (with `### New Capabilities` and `### Modified Capabilities`), `## Impact`, `## Out of Scope`, `## Depends On`, `## Source`; every one except `Capabilities` holds text.
 - Deltas: one `specs/<capability>/spec.md` per capability named in `Capabilities`. A capability without a main spec (`solo-sdd/specs/<capability>/spec.md`) starts its delta with `## Purpose` of at least 50 characters; an existing one has no `## Purpose`. `## MODIFIED Requirements` copies the whole block of the main spec under the same requirement name, with every scenario it had, and then changes it; `## REMOVED Requirements` holds one `### Requirement: <name>` per removed name; `## RENAMED Requirements` a `- FROM: ### Requirement: <old>` line and then a `- TO: ### Requirement: <new>` line.
 - A change without deltas (documents only) has no `specs/` and writes a bare line `Specs: none` (not a list item) under `## Capabilities`.
 - Every requirement under `## ADDED` or `## MODIFIED Requirements` has at least one `#### Scenario:` with a `- **WHEN** …` (or `GIVEN`) and a `- **THEN** …` step.

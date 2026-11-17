@@ -11,7 +11,7 @@ Done when you can say `/spec-next` in the folder to both agents right away and t
 
 ## Order
 
-1. **Mode.** Decide by the task: `demo` (a demo, a defence, a prototype) or `prod`. The mode is not given and the task is not about a demo: choose `prod` and record the decision.
+1. **Mode.** Decide by the task: `demo` (a demo, a defence, a prototype) or `prod`. The mode is not given and the task is not about a demo: choose `prod` and record the decision. It goes into the `Mode:` line of step 3, the old source of `project.stage`, as `Language:` is of `artifacts.language`; a value set by `solo-sdd config set` wins over the line.
 2. **Git.** `git init`, if there is none. An address is given: add a remote. What stays out of git is the project setting `git.ignore` (default `.claude/worktrees/, .env, .env.*, !.env.example`; the folder of built-in Claude Code worktrees must not get into commits).
 
    After the process tree of step 3 add the project's own keys, certificates and working data to it with `solo-sdd config set git.ignore "<the value in effect>, <path>, ..."`, never `solo-sdd/`, `AGENTS.md` or `CLAUDE.md` (the command refuses them), then run `solo-sdd ignore --write`: it writes only the solo-sdd block of `.gitignore` (`# solo-sdd:begin` ... `# solo-sdd:end`), with each listed path no other rule of the repository's `.gitignore` files hides.

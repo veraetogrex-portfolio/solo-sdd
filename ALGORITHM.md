@@ -31,7 +31,7 @@ Cross-cutting skills at any stage: `work-status` (five lines about the state), `
 
 ### 0. The project is ready for agents: `project-init`
 
-Once per project. It creates `AGENTS.md` (project rules: commands, map, boundaries and invariants, checks), `CLAUDE.md` with the line `@AGENTS.md`, the process tree `solo-sdd/` by `solo-sdd init` with `solo-sdd/project.md` (language, mode and an "Intent"), `.env.example`, README.
+Once per project. It creates `AGENTS.md` (project rules: commands, map, boundaries and invariants, checks), `CLAUDE.md` with the line `@AGENTS.md`, the process tree `solo-sdd/` by `solo-sdd init` with `solo-sdd/project.md` (language, mode and an "Intent"; `solo-sdd config get artifacts.language` and `solo-sdd config get project.stage` read its `Language:` and `Mode:` lines, and a `solo-sdd/config` value wins over them; an agent changes `project.stage`, `artifacts.language`, `lessons.write` and `lessons.max-lines` only on the owner's words in the chat), `.env.example`, README.
 
 In a repository that already has code it also writes the codebase map `docs/codebase/` (`STACK.md`, `ARCHITECTURE.md`, `CONVENTIONS.md`, `CONCERNS.md`): four cheap subagents, every statement names a path, each file stamped with the commit; the `CONCERNS.md` items are candidates for `spec-plan`. `/project-init map` refreshes it.
 

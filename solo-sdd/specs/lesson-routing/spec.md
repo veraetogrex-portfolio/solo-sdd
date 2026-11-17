@@ -6,7 +6,7 @@ A correction from the owner or the found cause of a bug becomes one short rule i
 ## Requirements
 
 ### Requirement: Lesson from a correction or a fix
-After the owner corrects the agent in a way that applies beyond the current task, or after a bug fix whose cause is found, the agent SHALL write, without asking, one imperative sentence about the class of cause, not the symptom, into the `## Lessons` section of the project's `AGENTS.md`, creating the section at the end of the file if it is missing. When the owner forbade edits, the lesson goes to the report as `Lesson (not written): <sentence>` instead.
+After the owner corrects the agent in a way that applies beyond the current task, or after a bug fix whose cause is found, the agent SHALL write, without asking, one imperative sentence about the class of cause, not the symptom, into the `## Lessons` section of the project's `AGENTS.md`, creating the section at the end of the file if it is missing. When the owner forbade edits, or `lessons.write` is `off`, the lesson goes to the report as `Lesson (not written): <sentence>` instead.
 
 #### Scenario: Missing await
 - **WHEN** a failing test is fixed by adding a missing `await` in one handler

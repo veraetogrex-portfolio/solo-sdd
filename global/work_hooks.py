@@ -38,7 +38,7 @@ SECRET_WORDS = {"KEY", "TOKEN", "SECRET", "PASSWORD", "PASSWD", "WEBHOOK", "CRED
 # settings:begin
 # solo-sdd/config: one `key: value` per line, lines starting with # are comments, list values are separated by commas.
 SETTINGS_FILE = "solo-sdd/config"
-# key -> (type: choice | int | list | model | names | paths | text, allowed values (None: any), default, default under `mode: team` (None: the same));
+# key -> (type: choice | int | lang | list | model | names | paths | text, allowed values (None: any), default, default under `mode: team` (None: the same));
 # a key with the default "" takes an empty value, read as "not set"
 REGISTRY = {
     "mode": ("choice", ("solo", "team"), "solo", None),
@@ -70,6 +70,10 @@ REGISTRY = {
     "process.audit-every": ("int", None, "5", None),  # spec-next proposes spec-audit at a multiple of the archive count
     "process.analyze": ("choice", ("on", "off"), "on", None),  # off: spec-plan and spec-next skip spec-analyze
     "commit.light-prefix": ("text", None, "light:", None),  # a light commit subject starts with it, as plain text
+    "project.stage": ("choice", ("demo", "prod"), "", None),  # "": the global rules decide by the task
+    "artifacts.language": ("lang", None, "en", None),  # the prose of the change artifacts
+    "lessons.write": ("choice", ("on", "off"), "on", None),  # off: a lesson goes to the report, not into AGENTS.md
+    "lessons.max-lines": ("int", None, "20", None),  # the most lines of ## Lessons
     "reply.language": ("choice", ("ru", "en", "off"), "off", None),
     "agents": ("list", ("claude", "codex", "cursor", "other"), "claude, codex, other", None),
     "rules.scope": ("choice", ("project", "global"), "project", None),  # project: init writes the rules block into AGENTS.md
@@ -95,6 +99,10 @@ MODEL_CHARS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-_
 TEXT_MAX = 200
 # the Delivery items of AGENTS.md read as the old source of a text or paths key: item -> key
 DELIVERY_ITEMS = (("PR title:", "delivery.pr-title"), ("Deploy:", "delivery.deploy"), ("Owner only:", "delivery.owner-only"))
+# the lines of solo-sdd/project.md read as the old source of a key, source `project.md`: line start -> key
+PROJECT_FILE = "solo-sdd/project.md"
+PROJECT_LINES = (("Mode:", "project.stage"), ("Language:", "artifacts.language"))
+OLD_SOURCE = dict((key, "project.md") for _, key in PROJECT_LINES)  # any other old source key: AGENTS.md
 
 
 class SettingsError(ValueError):
@@ -214,6 +222,10 @@ def check_value(key, value, registry=REGISTRY):
         if v and all(c in MODEL_CHARS for c in v) or not v and default == "":
             return v
         raise SettingsError("%s takes one model name of ASCII letters, digits, ., -, _, [ and ], not %r" % (key, v))
+    if kind == "lang":
+        if 2 <= len(v) <= 3 and v.isascii() and v.isalpha() and v.islower():
+            return v
+        raise SettingsError("%s takes a language code of 2 or 3 lowercase letters (ISO 639), not %r" % (key, v))
     if kind == "int":
         low = INT_MIN.get(key, 1)
         if not (v.isascii() and v.isdigit()) or int(v) < low:
@@ -265,8 +277,8 @@ def parse_settings(text, registry=REGISTRY, name=SETTINGS_FILE):
 
 
 def effective(found, registry=REGISTRY, agents=None):
-    """{key: (value, source)}: source `file`, else `AGENTS.md` (agents: agents_delivery), else `mode` (the team default
-    under `mode: team`), else `default`."""
+    """{key: (value, source)}: source `file`, else `AGENTS.md` or `project.md` (agents: agents_delivery, OLD_SOURCE),
+    else `mode` (the team default under `mode: team`), else `default`."""
     team = found.get("mode") == "team"
     agents = agents or {}
     out = {}
@@ -274,7 +286,7 @@ def effective(found, registry=REGISTRY, agents=None):
         if key in found:
             out[key] = (found[key], "file")
         elif key in agents:
-            out[key] = (agents[key], "AGENTS.md")
+            out[key] = (agents[key], OLD_SOURCE.get(key, "AGENTS.md"))
         elif team and team_default is not None:
             out[key] = (team_default, "mode")
         else:
@@ -292,16 +304,40 @@ def read_settings_text(root):
         return ""
 
 
+def project_lines(root, registry=REGISTRY):
+    """({key: value}, [line left out]) of solo-sdd/project.md at root, the old source of the PROJECT_LINES keys: the
+    first line starting with each item, trimmed, a final dot dropped; an empty one counts as none, a value check_value
+    refuses is left out and its line named with the reason; a file that cannot be opened: ({}, [])."""
+    try:
+        with open(os.path.join(root, PROJECT_FILE), encoding="utf-8", errors="replace") as f:
+            lines = f.read().splitlines()
+    except OSError:
+        return {}, []
+    out, bad, seen = {}, [], set()
+    for ln in lines:
+        for item, key in PROJECT_LINES:
+            v = ln[len(item):].strip() if ln.startswith(item) and key not in seen and key in registry else ""
+            v = v[:-1].rstrip() if v.endswith(".") else v
+            if not v:
+                continue
+            seen.add(key)
+            try:
+                out[key] = check_value(key, v, registry)
+            except SettingsError as e:
+                bad.append("%s is left out: %s" % (ln.strip(), e))
+    return out, bad
+
+
 def agents_delivery(root, registry=REGISTRY):
-    """{key: value} of the «## Delivery» section of AGENTS.md at root, the old source of its keys: the first allowed
-    «Mode:» and «Merge:» items, the first non-empty «PR title:» and «Deploy:» texts trimmed and as written, and the
-    backquoted patterns of every «Owner only:» item; a file that cannot be opened: {}."""
+    """{key: value} of the old sources at root: the project_lines values, and the «## Delivery» section of AGENTS.md:
+    the first allowed «Mode:» and «Merge:» items, the first non-empty «PR title:» and «Deploy:» texts trimmed and as
+    written, and the backquoted patterns of every «Owner only:» item; a file that cannot be opened adds nothing."""
+    out, inside = dict(project_lines(root, registry)[0]), False
     try:
         with open(os.path.join(root, "AGENTS.md"), encoding="utf-8", errors="replace") as f:  # other readers own the encoding
             lines = f.read().splitlines()
     except OSError:
-        return {}
-    out, inside = {}, False
+        return out
     for ln in lines:
         if ln.startswith("## "):
             inside = ln.strip() == "## Delivery"

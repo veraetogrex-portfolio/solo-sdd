@@ -193,6 +193,32 @@ class SkillCommandsTest(unittest.TestCase):
                 if fixed.search(line) and "process." not in line]
         self.assertEqual(bare, [])
 
+    def test_project_rules_through_config(self):
+        """Requirements: Project rules in config, Project lines as the old source, Lesson from a correction or a fix:
+        the rules and skills read the four keys through `solo-sdd config get`, the file value wins over the
+        `project.md` line, `lessons.write: off` sends a lesson to the report, and only the owner changes the keys."""
+        read = lambda rel: " ".join(skill_text.read(REPO / rel).split())
+        rules = read("global/AGENTS.md")
+        mode = rules.split("## 11.", 1)[1].split("## 12.", 1)[0]
+        lessons = rules.split("## 15.", 1)[1]
+        self.assertIn("`solo-sdd config get project.stage`", mode)
+        self.assertIn("a `solo-sdd/config` value wins over the `Mode:` line of `solo-sdd/project.md`", mode)
+        self.assertIn("`solo-sdd config get lessons.write` is `off`, the report gives it as "
+                      "`Lesson (not written): <sentence>`", lessons)
+        self.assertIn("at most `solo-sdd config get lessons.max-lines` lines (no `solo-sdd/` tree or no command: 20)",
+                      lessons)
+        plan = read("skills/spec-plan/SKILL.md")
+        self.assertIn("`solo-sdd config get artifacts.language`", plan)
+        self.assertIn("headings, `SHALL`, `WHEN`, `THEN`, keys and paths stay English", plan)
+        for rel in ("skills/project-init/SKILL.md", "ALGORITHM.md", "templates/solo-sdd/project.md"):
+            text = read(rel)
+            for key in ("project.stage", "artifacts.language"):
+                self.assertIn("`%s`" % key, text, "%s: %s" % (rel, key))
+            self.assertIn("wins over", text, rel)
+        for rel in ("global/AGENTS.md", "ALGORITHM.md"):
+            self.assertIn("changes `project.stage`, `artifacts.language`, `lessons.write` and `lessons.max-lines` only "
+                          "on the owner's words", read(rel), rel)
+
     def test_executor_setting_from_the_owner(self):
         """Requirement: Executor setting from the owner: agents.executor codex counts as the owner naming
         codex-orchestration; an agent changes the key only on the owner's words."""
