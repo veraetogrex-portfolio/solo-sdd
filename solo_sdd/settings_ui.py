@@ -673,7 +673,8 @@ class Screen:
                  "default %s, team default %s" % (row["default"] or "(none)", row["team_default"] or "(same)")]
         item = self.agents.get(self.key)
         if item is not None and values[self.key][1] == "file" and values[self.key][0] != item:
-            lines.append("the file value overrides the Delivery item of AGENTS.md: " + item)
+            lines.append("the file value overrides the %s: %s" % ("line of " + settings.PROJECT_FILE if self.key in
+                         settings.OLD_SOURCE else "Delivery item of AGENTS.md", item))
         return lines
 
     def section(self, title, rows, sel, detail):

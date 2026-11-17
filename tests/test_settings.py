@@ -582,23 +582,14 @@ class ProjectRulesInConfig(ConfigDir):
         for bad in ("Russian language", "EN", "e", "engl", "pt-br", "\u0440\u0443", ""):
             with self.assertRaisesRegex(settings.SettingsError, "2 or 3 lowercase letters", msg=bad):
                 settings.check_value("artifacts.language", bad)
-        code, out = self.cli("set", "artifacts.language", "Russian language")
-        self.assertEqual(code, 1)
-        self.assertIn("2 or 3 lowercase letters", out)
+        self.cli("set", "artifacts.language", "Russian language")  # the stand checks the code and the message
         self.assertFalse(os.path.exists(self.cfg), "a refused value writes nothing")
 
     def test_the_project_lines(self):
+        # the stand proves the old line, list and the file winning; here the final dot and the first line of two
         self.project("Language: ru.", "Mode: demo", "Mode: prod")
-        path = os.path.join(self.dir, "solo-sdd", "project.md")
-        with open(path, "rb") as f:
-            before = f.read()
         self.assertEqual(self.get("project.stage"), (0, "demo\n", "source: project.md\n"))
         self.assertEqual(self.get("artifacts.language"), (0, "ru\n", "source: project.md\n"))
-        self.assertIn("project.stage demo project.md", self.cli("list")[1].splitlines())
-        self.assertEqual(self.cli("set", "project.stage", "prod")[0], 0)
-        self.assertEqual(self.get("project.stage"), (0, "prod\n", "source: file\n"))
-        with open(path, "rb") as f:
-            self.assertEqual(f.read(), before, "config set leaves project.md as it is")
 
     def test_a_line_value_outside_the_list(self):
         self.project("Mode: staging", "Language: Russian")

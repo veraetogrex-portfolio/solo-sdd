@@ -153,11 +153,11 @@ REGISTRY = {
     "process.requirement-max-chars": ("int", None, "500", None),  # solo-sdd validate: one requirement text
     "process.audit-every": ("int", None, "5", None),  # spec-next proposes spec-audit at a multiple of the archive count
     "process.analyze": ("choice", ("on", "off"), "on", None),  # off: spec-plan and spec-next skip spec-analyze
-    "commit.light-prefix": ("text", None, "light:", None),
+    "commit.light-prefix": ("text", None, "light:", None),  # a light commit subject starts with it, as plain text
     "project.stage": ("choice", ("demo", "prod"), "", None),  # "": the global rules decide by the task
     "artifacts.language": ("lang", None, "en", None),  # the prose of the change artifacts
     "lessons.write": ("choice", ("on", "off"), "on", None),  # off: a lesson goes to the report, not into AGENTS.md
-    "lessons.max-lines": ("int", None, "20", None),  # the most lines of ## Lessons  # a light commit subject starts with it, as plain text
+    "lessons.max-lines": ("int", None, "20", None),  # the most lines of ## Lessons
     "reply.language": ("choice", ("ru", "en", "off"), "off", None),
     "agents": ("list", ("claude", "codex", "cursor", "other"), "claude, codex, other", None),
     "rules.scope": ("choice", ("project", "global"), "project", None),  # project: init writes the rules block into AGENTS.md

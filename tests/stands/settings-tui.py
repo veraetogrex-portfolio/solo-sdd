@@ -636,7 +636,9 @@ def main():
                 need(all(k in t for k in keys), "the four project rule keys listed", t)
                 need(any("project.stage" in ln and "overrides project.md: prod" in ln for ln in t.splitlines()),
                      "the file value marked over the project.md line", t)
-                to(s, "artifacts.language")
+                t = to(s, "project.stage")
+                need("overrides the line of solo-sdd/project.md: prod" in flat(t), "the detail names project.md", t)
+                s.send("down")  # artifacts.language
                 t = s.send("enter")
                 need("Type a value" in flat(t), "the language is an entry", t)
                 t = s.send(*["backspace"] * len("en"), *"Russian", "enter")

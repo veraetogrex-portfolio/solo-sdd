@@ -102,7 +102,7 @@ def first_config(root, given, interactive, read):
 
 def reconfigured(text, given, interactive, read, agents=None):
     """The text with only the lines of keys whose answer differs from the value in effect changed;
-    agents: the AGENTS.md items of settings.agents_delivery."""
+    agents: the old sources of settings.agents_delivery (AGENTS.md items, solo-sdd/project.md lines)."""
     current = settings.effective(settings.parse_settings(text), agents=agents)
     for key in list(QUESTIONS) + [k for k in settings.REGISTRY if k not in QUESTIONS]:
         got = given.get(key) or (ask(key, current[key][0], read=read) if interactive else None)
