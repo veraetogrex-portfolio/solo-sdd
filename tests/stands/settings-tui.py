@@ -506,7 +506,7 @@ def main():
 
         def ci_wait_keys():
             d = project(base)
-            s = Session(d, 40, 120)
+            s = Session(d, 60, 120)  # 60 rows: the four process keys before them push draft off a 40-row screen
             keys = ("delivery.ci-timeout", "delivery.ci-stuck", "delivery.ci-no-checks", "delivery.require-ci",
                     "delivery.code-scanning", "delivery.delete-branch", "delivery.draft")
             try:
@@ -625,6 +625,34 @@ def main():
             finally:
                 s.close()
         row("Change size limits: the five keys, a refused limit, an entry, a pick, save", change_limit_keys)
+
+        def project_rule_keys():
+            d = project(base)  # init --yes writes solo-sdd/project.md with `Mode: prod` and `Language: en`
+            assert sdd(d, "config", "set", "project.stage", "demo")[0] == 0
+            s = Session(d, 60, 120)
+            keys = ("project.stage", "artifacts.language", "lessons.write", "lessons.max-lines")
+            try:
+                t = s.term.text()
+                need(all(k in t for k in keys), "the four project rule keys listed", t)
+                need(any("project.stage" in ln and "overrides project.md: prod" in ln for ln in t.splitlines()),
+                     "the file value marked over the project.md line", t)
+                to(s, "artifacts.language")
+                t = s.send("enter")
+                need("Type a value" in flat(t), "the language is an entry", t)
+                t = s.send(*["backspace"] * len("en"), *"Russian", "enter")
+                need("2 or 3 lowercase letters" in flat(t) and "unsaved" not in t, "a language name refused, nothing edited", t)
+                s.send("enter", *["backspace"] * len("en"), *"ru", "enter")
+                s.send(*["down"] * (settings_ui.KEYS.index("lessons.write") - settings_ui.KEYS.index("artifacts.language")))
+                t = s.send("enter")
+                need("Enter set" in flat(t), "lessons.write is a pick", t)
+                s.send("down", "enter", "s", "y", "q")
+                need(s.wait() == 0, "saved and quit")
+                listed = sdd(d, "config", "list")[1].splitlines()
+                need({"project.stage demo file", "artifacts.language ru file", "lessons.write off file",
+                      "lessons.max-lines 20 default"} <= set(listed), "config list: %s" % listed)
+            finally:
+                s.close()
+        row("Project rules: the four keys, the project.md mark, a refused language, an entry, a pick, save", project_rule_keys)
 
         def ignore_list_key():
             d = project(base)

@@ -60,7 +60,7 @@ class SettingsFile(unittest.TestCase):
 
     def test_registry_shape(self):
         for key, (kind, allowed, default, team) in settings.REGISTRY.items():
-            self.assertIn(kind, ("choice", "int", "list", "model", "names", "paths", "text"), key)
+            self.assertIn(kind, ("choice", "int", "lang", "list", "model", "names", "paths", "text"), key)
             self.assertEqual(settings.check_value(key, default), default, key)
             if team is not None:
                 self.assertEqual(settings.check_value(key, team), team, key)
@@ -557,6 +557,64 @@ class DeliveryItemsInConfig(ConfigDir):
         self.assertEqual(self.get("delivery.deploy"), (0, item + "\n", "source: AGENTS.md\n"))
 
 
+class ProjectRulesInConfig(ConfigDir):
+    """Requirements: Project rules in config; Project lines as the old source; Config command (source project.md)."""
+    KEYS = {"project.stage": ("choice", ("demo", "prod"), ""), "artifacts.language": ("lang", None, "en"),
+            "lessons.write": ("choice", ("on", "off"), "on"), "lessons.max-lines": ("int", None, "20")}
+
+    def project(self, *lines):
+        with open(os.path.join(self.dir, "solo-sdd", "project.md"), "w", encoding="utf-8") as f:
+            f.write("# Project\n\n" + "".join(ln + "\n" for ln in lines) + "\nIntent: a tool. Mode: prose, no line.\n")
+
+    def run_err(self, *args):
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = settings.run(list(args), self.dir)
+        return code, err.getvalue()
+
+    def test_the_four_keys(self):
+        for key, (kind, allowed, default) in self.KEYS.items():
+            self.assertEqual(settings.REGISTRY.get(key), (kind, allowed, default, None), key)
+            self.assertEqual(settings.describe(key, {})["group"], "process", key)
+            self.assertEqual(settings.effective({})[key], (default, "default"), key)
+        for good in ("en", "ru", "deu", " ru "):
+            self.assertEqual(settings.check_value("artifacts.language", good), good.strip())
+        for bad in ("Russian language", "EN", "e", "engl", "pt-br", "\u0440\u0443", ""):
+            with self.assertRaisesRegex(settings.SettingsError, "2 or 3 lowercase letters", msg=bad):
+                settings.check_value("artifacts.language", bad)
+        code, out = self.cli("set", "artifacts.language", "Russian language")
+        self.assertEqual(code, 1)
+        self.assertIn("2 or 3 lowercase letters", out)
+        self.assertFalse(os.path.exists(self.cfg), "a refused value writes nothing")
+
+    def test_the_project_lines(self):
+        self.project("Language: ru.", "Mode: demo", "Mode: prod")
+        path = os.path.join(self.dir, "solo-sdd", "project.md")
+        with open(path, "rb") as f:
+            before = f.read()
+        self.assertEqual(self.get("project.stage"), (0, "demo\n", "source: project.md\n"))
+        self.assertEqual(self.get("artifacts.language"), (0, "ru\n", "source: project.md\n"))
+        self.assertIn("project.stage demo project.md", self.cli("list")[1].splitlines())
+        self.assertEqual(self.cli("set", "project.stage", "prod")[0], 0)
+        self.assertEqual(self.get("project.stage"), (0, "prod\n", "source: file\n"))
+        with open(path, "rb") as f:
+            self.assertEqual(f.read(), before, "config set leaves project.md as it is")
+
+    def test_a_line_value_outside_the_list(self):
+        self.project("Mode: staging", "Language: Russian")
+        code, out, err = self.get("project.stage")
+        self.assertEqual((code, out), (0, "\n"))
+        self.assertIn("Mode: staging", err)
+        self.assertTrue(err.endswith("source: default\n"), err)
+        code, out, err = self.get("artifacts.language")
+        self.assertEqual(out, "en\n")
+        self.assertIn("Language: Russian", err)
+        for args in (["list"], ["list", "--json"], ["describe"], ["describe", "project.stage"]):
+            code, err = self.run_err(*args)
+            self.assertEqual(code, 0, args)
+            self.assertIn("Mode: staging", err, args)
+
+
 class IgnoreListSetting(ConfigDir):
     """Requirements: Ignore list setting; Process paths stay tracked."""
     HINT = "run: solo-sdd ignore --write\n"
@@ -742,7 +800,8 @@ VALUES = {k: st.sampled_from(v[1]) if v[1] else MODELS if v[0] == "model" else
           for k, v in settings.REGISTRY.items()}
 VALUES.update({"delivery.branch-prefix": st.sampled_from(["change/", "feat/", "team-1/"]),
                "delivery.plan-prefix": st.sampled_from(["plan/", "plans/"]),
-               "commit.light-prefix": st.sampled_from(["light:", "[quick]", "q: x"])})
+               "commit.light-prefix": st.sampled_from(["light:", "[quick]", "q: x"]),
+               "artifacts.language": st.sampled_from(["en", "ru", "deu"])})
 COMMENT = st.text(st.characters(blacklist_categories=("Cs", "Cc", "Zl", "Zp")), max_size=12).map(lambda s: "# " + s)
 
 

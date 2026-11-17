@@ -650,7 +650,7 @@ class Screen:
             text += " *unsaved"
         item = self.agents.get(key)
         if item is not None and source == "file" and value != item:
-            text += "  overrides AGENTS.md: " + item
+            text += "  overrides %s: %s" % (settings.OLD_SOURCE.get(key, "AGENTS.md"), item)
         return text
 
     def draw_list(self, room):

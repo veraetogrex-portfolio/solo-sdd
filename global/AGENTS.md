@@ -98,7 +98,8 @@ Shared by Claude Code and Codex. The three copies above are deployed from the so
 
 ## 11. Project mode
 
-- The mode is set in the local rules: `demo` or `prod`. If not set, decide by the task: a demo, a defence, a prototype, an MVP mean `demo`.
+- The mode is `solo-sdd config get project.stage`: `demo` or `prod`; a `solo-sdd/config` value wins over the `Mode:` line of `solo-sdd/project.md`, which the command reads when the file sets none. Empty, no `solo-sdd/` tree or no command: the local rules; if not set, decide by the task: a demo, a defence, a prototype, an MVP mean `demo`.
+- An agent changes `project.stage`, `artifacts.language`, `lessons.write` and `lessons.max-lines` only on the owner's words in the chat.
 - `demo`: no docker and no deploy, invented data, one demo script, the run command as the first line of the README.
 - `prod`: logs cover every stage so that the cause of a failure can be found from them; there is a deploy instruction.
 
@@ -127,8 +128,8 @@ The whole algorithm, with all stages and gates: `~/.local/share/solo-sdd/ALGORIT
 
 ## 15. Lessons
 
-- The user corrected you in a way that applies beyond the current task, or you fixed a bug and found its cause: without asking, write one imperative sentence about the class of cause, not the symptom, with no file or line ("Every async call in a handler is awaited", not "add await in api.py"), into the `## Lessons` section at the end of the project's `AGENTS.md`, creating the section if it is missing. This is part of any task, also under "change nothing" or "only the named places"; if the user forbade edits, the report gives it as `Lesson (not written): <sentence>`. A remark about the current diff only ("rename this variable") is not a lesson.
-- First search `## Lessons` and the rest of that `AGENTS.md`: a lesson an existing line covers refines that line instead of adding one. The section holds at most 20 lines; a 21st means merging or generalising the closest lines in the same edit, also without asking.
+- The user corrected you in a way that applies beyond the current task, or you fixed a bug and found its cause: without asking, write one imperative sentence about the class of cause, not the symptom, with no file or line ("Every async call in a handler is awaited", not "add await in api.py"), into the `## Lessons` section at the end of the project's `AGENTS.md`, creating the section if it is missing. This is part of any task, also under "change nothing" or "only the named places"; if the user forbade edits, or `solo-sdd config get lessons.write` is `off`, the report gives it as `Lesson (not written): <sentence>`. A remark about the current diff only ("rename this variable") is not a lesson.
+- First search `## Lessons` and the rest of that `AGENTS.md`: a lesson an existing line covers refines that line instead of adding one. The section holds at most `solo-sdd config get lessons.max-lines` lines (no `solo-sdd/` tree or no command: 20); one more means merging or generalising the closest lines in the same edit, also without asking.
 - No `AGENTS.md` in the project: create none; the report gives the lesson as `Lesson (no AGENTS.md): <sentence>`.
 - Never write a lesson into the installed global rules (`~/AGENTS.md`, `~/.codex/AGENTS.md`, `~/.claude/CLAUDE.md`); a lesson about the solo-sdd process itself goes only into the report as `Lesson for solo-sdd: <sentence>`.
 - The report names every line written or refined in `## Lessons` and its file.
