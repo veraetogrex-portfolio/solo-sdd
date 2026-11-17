@@ -14,7 +14,7 @@ USAGE = """usage:
   sdd-dispatch.py land-local <MAIN> <WORKTREE> <id> [--check <command>]...
   accept codes: 0 matches, 1 mismatches, 2 block not parsed
   land-local codes: 0 merged, 1 step failed, 2 main not clean, 3 check red with the change, 4 main red, 6 merge or transport conflict,
-    8 waits for the owner («Owner only:» paths or .github/workflows) or a human merge (delivery.merge-by: human)"""
+    8 waits for the owner (delivery.owner-only paths, .github/workflows or solo-sdd/config) or a human merge (delivery.merge-by: human)"""
 VALIDATE_CMD = "openspec validate --all --strict --no-interactive"
 HERE = os.path.dirname(os.path.abspath(__file__))
 NOT_FOUND = "solo-sdd not found: neither the solo-sdd command nor python3 -m solo_sdd"
@@ -323,7 +323,10 @@ def owner_wait(pr, main, wt, branch):
     if found:
         print(pr.migrate_hint(os.path.join(main, "AGENTS.md"), found), file=sys.stderr)
     rule = pr.owner_rule(text)
-    hits = pr.owner_hits(files, pr.owner_patterns(rule))
+    try:
+        hits = pr.settings_hits(main, files)
+    except (OSError, ValueError) as e:
+        return 1, "not merged: settings: %s" % e
     if pr.OWNER in found:  # old item: not read, paths not opened silently
         hits.append(pr.OLD_OWNER_HIT)
     if text is not None:

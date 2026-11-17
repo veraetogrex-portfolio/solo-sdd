@@ -102,6 +102,20 @@ class SkillCommandsTest(unittest.TestCase):
         for rule in ("## Purpose", "MODIFIED", "Specs: none", "Acceptance", "Live Scenario", "Depends On", "property"):
             self.assertIn(rule, text)
 
+    def test_delivery_items_through_config(self):
+        """Requirement: Delivery items in config: ship, spec-dispatch and project-init read the PR title, the deploy and
+        the owner paths through `solo-sdd config get`, the "Delivery" item of AGENTS.md named as the old source."""
+        get = "`solo-sdd config get delivery.%s`"
+        for rel, keys in (("skills/ship/SKILL.md", ("pr-title", "deploy", "owner-only")),
+                          ("skills/spec-dispatch/preparation.md", ("pr-title", "deploy")),
+                          ("skills/spec-dispatch/merge.md", ("owner-only",)),
+                          ("skills/project-init/SKILL.md", ("pr-title", "deploy", "owner-only"))):
+            flat = " ".join(skill_text.read(REPO / rel).split())
+            for key in keys:
+                self.assertIn(get % key, flat, rel)
+            self.assertIn("old source", flat, rel)
+        self.assertIn("`solo-sdd/config`", " ".join(skill_text.read(REPO / "skills/spec-dispatch/merge.md").split()))
+
     def test_light_path_texts(self):
         """Requirements: Light path bounds, record and count: one rule in the rules and the algorithm, the readers."""
         read = lambda rel: skill_text.read(REPO / rel)

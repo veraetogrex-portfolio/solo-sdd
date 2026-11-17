@@ -67,8 +67,10 @@ Done when you can say `/spec-next` in the folder to both agents right away and t
 | Checks | What to run before "done" |
 | Security | Secrets, paid requests, prod |
 | Interface (only in a project with an interface) | A link to `DESIGN.md`: the interface direction, filled in by the user |
-| Delivery | For `spec-dispatch` and `ship`: the item "Mode:" is `local` (merge into the local main branch, then `ship`) or `pr` (every change is its own PR), "Merge:" is `squash`, `merge` or `rebase`, "PR title:" is the rule, "Deploy:" says whether a merge into the main branch triggers a rollout and where, "Owner only:" holds path patterns in backquotes (`*` within a name, `**` across folders, a trailing `/` means the whole directory) that the agent does not merge itself; `.github/workflows/**` is always added, the list is read from the main folder's `AGENTS.md` |
+| Delivery | For `spec-dispatch` and `ship`: the item "Mode:" is `local` (merge into the local main branch, then `ship`) or `pr` (every change is its own PR), "Merge:" is `squash`, `merge` or `rebase`, "PR title:" is the rule, "Deploy:" says whether a merge into the main branch triggers a rollout and where, "Owner only:" holds path patterns in backquotes (`*` within a name, `**` across folders, a trailing `/` means the whole directory) that the agent does not merge itself; `.github/workflows/**` is always added, the list is read from the main folder |
 | Working copy (optional) | For `spec-dispatch`, if some artifacts are ignored by git: the items under the table |
+
+The "PR title:", "Deploy:" and "Owner only:" items are the old source of `solo-sdd config get delivery.pr-title`, `solo-sdd config get delivery.deploy` and `solo-sdd config get delivery.owner-only`: a value set in `solo-sdd/config` wins, and a change that edits `solo-sdd/config` also waits for the owner.
 
 The items of "Working copy":
 

@@ -60,7 +60,7 @@ class SettingsFile(unittest.TestCase):
 
     def test_registry_shape(self):
         for key, (kind, allowed, default, team) in settings.REGISTRY.items():
-            self.assertIn(kind, ("choice", "int", "list", "names"), key)
+            self.assertIn(kind, ("choice", "int", "list", "names", "paths", "text"), key)
             self.assertEqual(settings.check_value(key, default), default, key)
             if team is not None:
                 self.assertEqual(settings.check_value(key, team), team, key)
@@ -381,6 +381,86 @@ class Command(unittest.TestCase):
                            text=True, env=dict(os.environ, PYTHONPATH=REPO), stdin=subprocess.DEVNULL, timeout=60)
         self.assertEqual(r.returncode, 2)
         self.assertIn("config list|get", r.stdout)
+
+
+class ConfigDir(unittest.TestCase):
+    """A project folder and the command helpers of Command, without its tests."""
+    setUp, cli, write, read, describe = Command.setUp, Command.cli, Command.write, Command.read, Command.describe
+
+    def get(self, key):
+        """(code, stdout, stderr) of `config get <key>` run in this process."""
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = settings.run(["get", key], self.dir)
+        return code, out.getvalue(), err.getvalue()
+
+
+class TextSettings(ConfigDir):
+    """Requirement: Text settings."""
+
+    def test_title_rule_with_spaces(self):
+        self.assertEqual(self.cli("set", "delivery.pr-title", "  <id>: <summary>  "),
+                         (0, "delivery.pr-title: <id>: <summary>\n"))
+        self.assertEqual(self.get("delivery.pr-title"), (0, "<id>: <summary>\n", "source: file\n"))
+        self.assertEqual(self.read(), "delivery.pr-title: <id>: <summary>\n")
+
+    def test_refusals_keep_the_file(self):
+        self.write("# keep\ndelivery.deploy: no\n")
+        for bad, why in (("x" * 201, "at most 200 characters"), ("a\nb", "one line"), ("a\x07b", "one line"),
+                         ("a\tb", "one line"), ("", "one line")):
+            code, out = self.cli("set", "delivery.deploy", bad)
+            self.assertEqual(code, 1, repr(bad))
+            self.assertIn(why, out, repr(bad))
+        self.assertEqual(self.read(), "# keep\ndelivery.deploy: no\n")
+        self.assertEqual(self.cli("set", "delivery.deploy", "y" * 200)[0], 0, "200 characters fit")
+        self.write("delivery.deploy: %s\n" % ("z" * 201))
+        code, out = self.cli("list")
+        self.assertEqual(code, 1)
+        self.assertIn("solo-sdd/config:1: delivery.deploy takes", out)
+
+    def test_describe_names_the_kind(self):
+        code, blocks = self.describe("delivery.pr-title")
+        self.assertEqual(code, 0)
+        row = blocks["delivery.pr-title"]
+        self.assertEqual((row["group"], row["type"], row["default"]),
+                         ("delivery", "text: one line, at most 200 characters", "the change name"))
+
+
+class DeliveryItemsInConfig(ConfigDir):
+    """Requirements: Delivery items in config; Defaults by mode (the key's old source)."""
+
+    def agents(self, *items):
+        with open(os.path.join(self.dir, "AGENTS.md"), "w", encoding="utf-8") as f:
+            f.write("# p\n\n- Deploy: outside\n\n## Delivery\n\n" + "".join("- %s\n" % x for x in items)
+                    + "\n## Other\n\n- Owner only: `x/**`\n- PR title: other\n")
+
+    def test_the_old_items(self):
+        self.agents("Mode: pr", "PR title:   <id>: <what>  ", "Deploy: no", "Owner only: `global/work_hooks.py`, `docs/**`",
+                    "Owner only: `deploy/`")
+        self.assertEqual(self.get("delivery.owner-only"),
+                         (0, "global/work_hooks.py, docs/**, deploy/\n", "source: AGENTS.md\n"))
+        self.assertEqual(self.get("delivery.pr-title"), (0, "<id>: <what>\n", "source: AGENTS.md\n"))
+        self.assertEqual(self.get("delivery.deploy"), (0, "no\n", "source: AGENTS.md\n"))
+        self.assertIn("delivery.mode pr AGENTS.md", self.cli("list")[1].splitlines())
+
+    def test_defaults_without_items(self):
+        self.agents("Mode: pr", "Owner only: no paths here")
+        lines = self.cli("list")[1].splitlines()
+        for want in ("delivery.pr-title the change name default", "delivery.deploy no default",
+                     "delivery.owner-only  default"):
+            self.assertIn(want, lines)
+
+    def test_the_file_wins(self):
+        self.agents("Deploy: no", "Owner only: `docs/**`")
+        self.write("delivery.deploy: on merge into main, Cloudflare Pages\ndelivery.owner-only: deploy/**\n")
+        self.assertEqual(self.get("delivery.deploy"), (0, "on merge into main, Cloudflare Pages\n", "source: file\n"))
+        self.assertEqual(self.get("delivery.owner-only"), (0, "deploy/**\n", "source: file\n"))
+
+    def test_a_long_old_item(self):
+        item = "on merge `main` -> Pages " + "x" * 215
+        self.assertEqual(len(item), 240)
+        self.agents("Deploy: " + item)
+        self.assertEqual(self.get("delivery.deploy"), (0, item + "\n", "source: AGENTS.md\n"))
 
 
 VALUES = {k: st.sampled_from(v[1]) if v[1] else st.integers(1, 99).map(str) for k, v in settings.REGISTRY.items()}

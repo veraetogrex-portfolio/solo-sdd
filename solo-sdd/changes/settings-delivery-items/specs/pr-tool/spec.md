@@ -29,7 +29,7 @@ Before the merge request `sdd-pr.py merge` and `land` SHALL check the PR files, 
 
 #### Scenario: A PR edits the config
 - **WHEN** a green PR changes the line `delivery.merge-by: human` of `solo-sdd/config` to `agent`
-- **THEN** code 8 with `solo-sdd/config`, no merge is requested
+- **THEN** code 8 with `solo-sdd/config`, no merge is requested, also when a checklist covering it is ticked and approved by another account
 
 #### Scenario: Broken settings
 - **WHEN** line 2 of the main folder's `solo-sdd/config` is not `key: value`, and a green PR changes `deploy/prod.yml`

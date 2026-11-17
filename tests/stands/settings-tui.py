@@ -480,6 +480,29 @@ def main():
             finally:
                 s.close()
         row("xterm-256color: edit and save", xterm)
+
+        def delivery_items():
+            d = project(base)
+            s = Session(d, 40, 120)
+            try:
+                t = s.term.text()
+                need(all(k in t for k in ("delivery.pr-title", "delivery.deploy", "delivery.owner-only")),
+                     "the three Delivery keys listed", t)
+                to(s, "delivery.pr-title")
+                t = s.send("enter")
+                need("Type a value" in flat(t), "a text key is a one-line entry", t)
+                s.send(*["backspace"] * len("the change name"), *"<id>:", "space", *"<summary>", "enter")
+                s.send("down", "enter", "x", "esc", "down", "enter", *"deploy/**", "enter", "s", "y", "q")
+                need(s.wait() == 0, "saved and quit")
+                text = config(d)
+                need("delivery.pr-title: <id>: <summary>" in text and "delivery.owner-only: deploy/**" in text
+                     and "delivery.deploy" not in text, "the title and the paths saved, Esc kept the deploy:\n" + text)
+                listed = sdd(d, "config", "list")[1].splitlines()
+                need({"delivery.pr-title <id>: <summary> file", "delivery.deploy no default",
+                      "delivery.owner-only deploy/** file"} <= set(listed), "config list: %s" % listed)
+            finally:
+                s.close()
+        row("Delivery items: the three keys, a text entry, Esc, save", delivery_items)
     finally:
         shutil.rmtree(base, True)
     print("SUMMARY: all rows passed" if all(results) else "SUMMARY: %d of %d rows failed" % (

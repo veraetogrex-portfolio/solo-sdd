@@ -444,6 +444,20 @@ class LandTest(LandBase):
         head = g(self.main, "rev-parse", "HEAD")
         self.assert_waits(self.land(), "AGENTS.md", head)
 
+    def test_owner_path_of_the_main_config_waits(self):
+        # Requirement: Owner-only paths gate (land-local): the main folder's delivery.owner-only, not the worktree's
+        self.make_change(rel="deploy/prod.yml")
+        self.put(self.main, "solo-sdd/config", "delivery.owner-only: deploy/**\n")
+        self.put(self.wt, "solo-sdd/config", "delivery.owner-only: other/**\n")
+        head = g(self.main, "rev-parse", "HEAD")
+        self.assert_waits(self.land(), "deploy/prod.yml", head)
+
+    def test_config_edit_waits(self):
+        # Requirement: Owner-only paths gate (land-local): a branch editing solo-sdd/config waits for the owner
+        self.make_change(rel="solo-sdd/config", text="delivery.merge-by: agent\n")
+        head = g(self.main, "rev-parse", "HEAD")
+        self.assert_waits(self.land(), "solo-sdd/config", head)
+
     def test_owner_rule_no_match_lands(self):
         self.owner_main()
         self.make_change()
