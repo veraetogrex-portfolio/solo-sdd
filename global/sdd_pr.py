@@ -683,7 +683,7 @@ def settings_hits(main, files, wt=None):
 
 def carried_config(main, wt):
     """True when sdd-worktree.py transport would carry the worktree's settings file into main: its bytes differ from
-    the setup snapshot <wt>.base, and git ignores it in main (a tracked file comes with the merge, not the transfer);
+    the setup snapshot <wt>.base (a copy deleted from the worktree is carried as a deletion), and git ignores it in main (a tracked file comes with the merge, not the transfer);
     a check-ignore that fails counts as ignored. An owner edit of the main copy alone is no hit."""
     def raw(path):
         try:
@@ -691,8 +691,7 @@ def carried_config(main, wt):
                 return f.read()
         except FileNotFoundError:
             return None
-    mine = raw(os.path.join(wt, SETTINGS_FILE))
-    if mine is None or mine == raw(os.path.join(wt + ".base", SETTINGS_FILE)):
+    if raw(os.path.join(wt, SETTINGS_FILE)) == raw(os.path.join(wt + ".base", SETTINGS_FILE)):
         return False
     return not main or sh("git", "-C", main, "check-ignore", "-q", "--", SETTINGS_FILE).returncode != 1
 

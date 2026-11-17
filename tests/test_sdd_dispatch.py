@@ -463,6 +463,8 @@ class LandTest(LandBase):
         self.put(self.wt, "solo-sdd/config", "delivery.owner-only: other/**\n")
         head = g(self.main, "rev-parse", "HEAD")
         self.assert_waits(self.land(), "solo-sdd/config", head)
+        os.unlink(os.path.join(self.wt, "solo-sdd/config"))  # the transfer would delete the main copy
+        self.assert_waits(self.land(), "solo-sdd/config", head)
         self.put(self.wt, "solo-sdd/config", "delivery.owner-only: deploy/**\n")
         r = self.land()
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
