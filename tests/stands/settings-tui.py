@@ -599,6 +599,32 @@ def main():
             finally:
                 s.close()
         row("Subagent model settings: the six keys, a model entry, an effort pick, save", agent_model_keys)
+
+        def change_limit_keys():
+            d = project(base)
+            s = Session(d, 60, 120)
+            keys = ("process.max-tasks", "process.bugfix-max-tasks", "process.requirement-max-chars",
+                    "process.audit-every", "process.analyze")
+            try:
+                t = s.term.text()
+                need(all(k in t for k in keys), "the five change limit keys listed", t)
+                to(s, "process.max-tasks")
+                t = s.send("enter")
+                need("Type a value" in flat(t), "a limit key is an entry", t)
+                t = s.send(*["backspace"] * len("10"), "2", "enter")
+                need("a whole number from 3" in flat(t) and "unsaved" not in t, "a task limit of 2 refused, nothing edited", t)
+                s.send("enter", *["backspace"] * len("10"), *"14", "enter")
+                s.send(*["down"] * (settings_ui.KEYS.index("process.analyze") - settings_ui.KEYS.index("process.max-tasks")))
+                t = s.send("enter")
+                need("Enter set" in flat(t), "the analyze key is a pick", t)
+                s.send("down", "enter", "s", "y", "q")
+                need(s.wait() == 0, "saved and quit")
+                listed = sdd(d, "config", "list")[1].splitlines()
+                need({"process.max-tasks 14 file", "process.analyze off file", "process.audit-every 5 default",
+                      "process.requirement-max-chars 500 default"} <= set(listed), "config list: %s" % listed)
+            finally:
+                s.close()
+        row("Change size limits: the five keys, a refused limit, an entry, a pick, save", change_limit_keys)
     finally:
         shutil.rmtree(base, True)
     print("SUMMARY: all rows passed" if all(results) else "SUMMARY: %d of %d rows failed" % (

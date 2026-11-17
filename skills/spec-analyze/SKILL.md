@@ -26,17 +26,17 @@ Argument: the change name. Without an argument, the change `/spec-next` is runni
 - `Out of Scope` is not empty; the neighbouring changes of the plan are named in it.
 - All changes from `Depends On` are already in `solo-sdd/changes/archive/`. Otherwise the change is not ready to start: CRITICAL.
 - `Source` is the user's quote, not a retelling.
-- At most 10 tasks; the last group is `Acceptance` of two tasks.
+- At most `solo-sdd config get process.max-tasks` tasks (default 10); the last group is `Acceptance` of two tasks.
 - No tasks that wait for a person, access or paid consent: they belong in `Needs`.
 - The `Live Scenario` reaches what the user sees (the built artifact, a screen, a service answer), not an internal function. Every `Needs` item has a `Fallback`. A paid call is named with the number and the amount.
 - `Impact` has only paths of files and directories in backquotes. A quoted value that is not a path (a function name, a command, a word, a language) is MEDIUM: remove the quotes.
-- The text of an `ADDED` or `MODIFIED` requirement in the delta (from `### Requirement:` to the first header, usually `#### Scenario:`) longer than 500 chars is HIGH. Fix: examples and edge cases into scenarios, several behaviours into separate requirements; for `MODIFIED` the behaviour does not change and the previous scenarios stay.
-- A bug fix change (`spec-plan`, the "Bug fix" section): Why has a reproduction and the place of the cause `file:line`; the first task is a test for the bug scenario that fails on the current code; at most 5 tasks; side edits are named in Out of Scope. A violation is HIGH.
+- The text of an `ADDED` or `MODIFIED` requirement in the delta (from `### Requirement:` to the first header, usually `#### Scenario:`) longer than `solo-sdd config get process.requirement-max-chars` chars (default 500) is HIGH. Fix: examples and edge cases into scenarios, several behaviours into separate requirements; for `MODIFIED` the behaviour does not change and the previous scenarios stay.
+- A bug fix change (`spec-plan`, the "Bug fix" section): Why has a reproduction and the place of the cause `file:line`; the first task is a test for the bug scenario that fails on the current code; at most `solo-sdd config get process.bugfix-max-tasks` tasks (default 5), never more than `process.max-tasks`; side edits are named in Out of Scope. A violation is HIGH.
 - Hostile input. The change code reads foreign input (files, archives, documents or network data whose path or content arrive while the program runs: an argument, a request, the network, the user's choice, rather than lying in the project repository), and `tasks.md` has no task of tests on hostile input: HIGH.
 
   Fix: a separate task of tests on hostile input, even if pass 1 already found the requirements for this input uncovered; it holds the items applicable to this input: a limit on size and number of entries (ZIP bomb, compression ratio), archive entry paths (`..`, absolute, links), nesting depth, XML entity expansion, catastrophic regular expressions, truncated and broken input, escaping when inserting into code, HTML or a command.
 
-  Applicability is decided by the input format, not by the intended parsing method: any archive has entry paths, even if it is not unpacked to disk. An inapplicable item is not written. Only if `tasks.md` already has the maximum number of tasks (10, for a bug fix 5), the items are added to the existing test task. A change that reads only `AGENTS.md`, configs and the project's own files gives no finding.
+  Applicability is decided by the input format, not by the intended parsing method: any archive has entry paths, even if it is not unpacked to disk. An inapplicable item is not written. Only if `tasks.md` already has the maximum number of tasks (`process.max-tasks`, for a bug fix the smaller of it and `process.bugfix-max-tasks`), the items are added to the existing test task. A change that reads only `AGENTS.md`, configs and the project's own files gives no finding.
 
 **3. Checkability.** Every task has an observable criterion: a named test that fails on the current code, a command with the expected output or a Live Scenario step. "The field exists", "the function is called", "the tests are green" do not count as proof.
 

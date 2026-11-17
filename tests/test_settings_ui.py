@@ -114,7 +114,7 @@ class SaveOnlyEditedLines(Base):
 
     def test_long_confirmation_scrolls(self):
         keys = [k for k in settings_ui.KEYS if settings.REGISTRY[k][1] is None and settings.REGISTRY[k][0] == "int"]
-        text = "".join("%s: 7\n" % k for k in keys) + "mode: team\nreply.language: en\nrules.scope: global\n"
+        text = "".join("%s: %d\n" % (k, max(7, settings.INT_MIN.get(k, 1))) for k in keys) + "mode: team\nreply.language: en\nrules.scope: global\n"
         text += "delivery.mode: pr\ndelivery.merge: rebase\ndelivery.merge-by: human\nprocess.light-path: off\n"
         s = self.open(text)
         for k in settings_ui.KEYS:

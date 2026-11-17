@@ -148,6 +148,11 @@ REGISTRY = {
     "process.review-rounds": ("int", None, "5", None),
     "process.light-path": ("choice", ("on", "off"), "on", None),  # off: every code edit goes through a change
     "process.light-path.max-files": ("int", None, "3", None),
+    "process.max-tasks": ("int", None, "10", None),  # solo-sdd validate: tasks of one change
+    "process.bugfix-max-tasks": ("int", None, "5", None),  # spec-plan, spec-analyze: a bug fix takes the smaller limit
+    "process.requirement-max-chars": ("int", None, "500", None),  # solo-sdd validate: one requirement text
+    "process.audit-every": ("int", None, "5", None),  # spec-next proposes spec-audit at a multiple of the archive count
+    "process.analyze": ("choice", ("on", "off"), "on", None),  # off: spec-plan and spec-next skip spec-analyze
     "commit.light-prefix": ("text", None, "light:", None),  # a light commit subject starts with it, as plain text
     "reply.language": ("choice", ("ru", "en", "off"), "off", None),
     "agents": ("list", ("claude", "codex", "cursor", "other"), "claude, codex, other", None),
@@ -161,6 +166,8 @@ REGISTRY = {
     "integrations": ("names", None, "", None),  # the enabled integrations, by folder name (solo_sdd/integrations.py)
     "integrations.off": ("names", None, "", None),  # the bundled integrations switched off, by folder name
 }
+# the lowest value of an int key, 1 when not named: a task limit under 3 fits no change (Acceptance holds two tasks)
+INT_MIN = {"process.max-tasks": 3, "process.bugfix-max-tasks": 3, "process.requirement-max-chars": 100}
 # pattern keys: <name> is lowercase letters, digits and -, not starting with -; set keys show in `config list` as `file`
 PATTERNS = {
     "checklist.<name>.paths": ("paths", None, "", None),  # globs of the files a person checks by the list
@@ -218,8 +225,9 @@ def check_value(key, value, registry=REGISTRY):
             return v
         raise SettingsError("%s takes one model name of ASCII letters, digits, ., -, _, [ and ], not %r" % (key, v))
     if kind == "int":
-        if not (v.isascii() and v.isdigit()) or int(v) < 1:
-            raise SettingsError("%s takes a whole number from 1, not %r" % (key, v))
+        low = INT_MIN.get(key, 1)
+        if not (v.isascii() and v.isdigit()) or int(v) < low:
+            raise SettingsError("%s takes a whole number from %d, not %r" % (key, low, v))
         return str(int(v))
     items = [i.strip() for i in v.split(",")] if kind in ("list", "paths", "names") else [v]
     items = [i for i in items if i]

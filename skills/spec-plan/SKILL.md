@@ -19,7 +19,7 @@ The result is a set of changes, each of which closes in one `/spec-next` run. No
 2. **Units.** Split the input into units. A unit fits when all four conditions hold:
    - one result the user can check themselves;
    - one area of code;
-   - at most 10 tasks;
+   - at most `solo-sdd config get process.max-tasks` tasks (default 10; a bug fix: the smaller of it and `solo-sdd config get process.bugfix-max-tasks`, default 5);
    - there is a live check scenario.
    
    Group bugs by a common cause or area, not one per change.
@@ -45,7 +45,7 @@ The result is a set of changes, each of which closes in one `/spec-next` run. No
 5. **Creation.** Read `creation.md` each time this step starts, also after compaction: for every unit `solo-sdd new <name>`, then the artifacts in order by the "Writing rules" section, with what each must hold.
 6. **External conditions.** Access, a key, a person or a paid call is needed: write it into `Needs`. A change made up entirely of such conditions gets a `WAITING` file and a line in `docs/waiting.md`. The user's business facts under placeholders (step 5) does not give `WAITING`.
 7. **Check.** `solo-sdd validate --all`.
-7a. **Cross-check.** The `spec-analyze` skill on every created change; edits only in the artifacts. Then repeat step 7.
+7a. **Cross-check.** The `spec-analyze` skill on every created change; edits only in the artifacts. Then repeat step 7. `solo-sdd config get process.analyze` is `off`: no cross-check, the report's `Analyze:` line is `Analyze: off (solo-sdd/config)`. An agent changes the `process` limits and `process.analyze` only on the owner's words in the chat.
 8. **Coverage.** Match every input item with a change or with the light path of step 1a (its commit, or `to do` until the commit after step 9). Any other item without a change is an error: create a change or explain in the report why there is none.
 9. **Plan commit.** Read `plan-commit.md` each time this step starts, also after compaction: after gate G1 (steps 7, 7a, 8), the plan commit on `plan/<first id>` (`plan/`: `solo-sdd config get delivery.plan-prefix`) under `delivery.mode` `pr` or on the main branch under `local`.
 
@@ -60,7 +60,7 @@ More than five changes: you write the artifacts yourself; Codex executors only i
 - A change without deltas (documents only) has no `specs/` and writes a bare line `Specs: none` (not a list item) under `## Capabilities`.
 - Every requirement under `## ADDED` or `## MODIFIED Requirements` has at least one `#### Scenario:` with a `- **WHEN** …` (or `GIVEN`) and a `- **THEN** …` step.
 - `verification.md`: `## Live Scenario` (steps on real input, each with the command or action and the expected output, up to what the user sees), `## Needs` (access, keys, paid calls with count and cost, or `none`), `## Fallback` (how each need is replaced) hold text; `## Result`, `## Not Verified` and `## Decisions Without Owner` keep their placeholders until `/spec-next`.
-- `tasks.md`: at most 10 tasks `- [ ]`, each with the test or command that proves it and doable by the agent alone; anything waiting for a person, access or a paid approval goes into `Needs`, not into a task. A requirement that states an invariant ("never", "always", "at most one", order kept), a round trip or idempotence gets a property-based test task (Hypothesis for Python, fast-check for TypeScript) named after the requirement; the task proves the test fails on a code mutation and its generator reaches the boundary states.
+- `tasks.md`: at most `process.max-tasks` tasks `- [ ]` (default 10), each with the test or command that proves it and doable by the agent alone; anything waiting for a person, access or a paid approval goes into `Needs`, not into a task. A requirement that states an invariant ("never", "always", "at most one", order kept), a round trip or idempotence gets a property-based test task (Hypothesis for Python, fast-check for TypeScript) named after the requirement; the task proves the test fails on a code mutation and its generator reaches the boundary states.
 - Tests in `tasks.md` prove behaviour, so the suite grows with behaviour only:
   - A scenario the Live Scenario stand proves needs no second test of the same behaviour; a new case of a tested behaviour is a new row of that test's table, not a new test function. A property test pass 3a of `spec-analyze` requires and a bug fix's test of the bug scenario are not repeats.
   - No test for code without a behaviour of its own: a getter, a DTO, configuration, a thin library wrapper, a private function a scenario test reaches, a one-off script (a stand checks it), what a separate CI step checks.
@@ -77,7 +77,7 @@ The input is one bug or several with a common cause, and the cause is already fo
 2. **proposal.md.** Why: the reproduction and the cause with `file:line`. What Changes: only removing the cause. Out of Scope: side improvements, refactoring and neighbouring symptoms, one line each. Source: the user's message about the bug verbatim. A bug fix gets no Design Read.
 3. **Spec.** A bug means the spec did not describe this case or the code drifted from it. The bug scenario is added to the spec: a MODIFIED Requirement (whole, with all previous scenarios) with a new scenario, or ADDED if the behaviour was not described at all. The length rule from step 5 applies here too: a `MODIFIED` long requirement is shortened in the same delta. A bug fix is not created without a delta spec: the spec would not catch the next such bug either.
 4. **verification.md.** The Live Scenario is the reproduction steps: on the previous code they give the error, after the fix the expected result. In a UI bug fix, a list "element → action → result" only for the affected elements.
-5. **tasks.md.** At most 5 tasks. The first is a test for the bug scenario, named after the Requirement and failing on the current code. Then the fix of the cause and, if needed, one more task; the last group is `Acceptance`. If the change code reads foreign input (step 5 of the "Order" section), this one more task is the tests on hostile input. If its slot is needed for other work, the items are added to the existing test task.
+5. **tasks.md.** At most `process.bugfix-max-tasks` tasks (default 5), never more than `process.max-tasks`. The first is a test for the bug scenario, named after the Requirement and failing on the current code. Then the fix of the cause and, if needed, one more task; the last group is `Acceptance`. If the change code reads foreign input (step 5 of the "Order" section), this one more task is the tests on hostile input. If its slot is needed for other work, the items are added to the existing test task.
 6. **Closing.** Steps 7-9 of the "Order" section.
 
 The name follows the project's pattern, with the word `fix`. If the cause touches more than one area of code, it is not a bug fix but an ordinary plan unit.
@@ -95,7 +95,7 @@ Changes created: <n>
 
 Map: <change> — <map files of its type rows>, one line per change | Map: none
 Map stale: <file>, <n> commits since <hash>; refresh: /project-init map (one line per printed stale file, no line otherwise)
-Analyze: CRITICAL <n> · HIGH <n>, fixed <n>
+Analyze: CRITICAL <n> · HIGH <n>, fixed <n> | Analyze: off (solo-sdd/config)
 Coverage: <input items> of <input items>; light path: <item — `light:` <hash> | to do> | none; without a change: <item — reason> | none
 Plan: commit <hash> | commit <hash> on plan/<id>, PR <url> | commit <hash> on plan/<id>, PR <url>, waits for human merge | plan outside git | no change: light path only (plan/: the delivery.plan-prefix value)
 Waiting for external conditions: <change — what is needed> | none
@@ -107,12 +107,12 @@ Next: /spec-next | /spec-next after the merge of <PR url> | the light path items
 
 | Mistake | Fix |
 |---|---|
-| One change for the whole plan | Split until each has 10 tasks and one result |
+| One change for the whole plan | Split until each fits `process.max-tasks` tasks and one result |
 | A change per bug | Group by cause |
 | Retelling the request in your own words in `Source` | Only a verbatim quote |
 | Dependencies in the task text | Only in `Depends On` |
 | A bug fix without the bug scenario in the spec | The scenario is added through MODIFIED or ADDED, otherwise the bug comes back |
-| A requirement longer than 500 chars | Examples into scenarios, behaviours into separate requirements; `MODIFIED` is shortened in the same delta |
+| A requirement longer than `process.requirement-max-chars` (500) | Examples into scenarios, behaviours into separate requirements; `MODIFIED` is shortened in the same delta |
 | A scenario without a WHEN/GIVEN or THEN step, a section like `## DEPRECATED Requirements` in a delta | Steps `**WHEN**` (or `**GIVEN**`) and `**THEN**` in every scenario; only the sections ADDED, MODIFIED, REMOVED, RENAMED Requirements |
 | Dials derived from the user's words | Only a `Dial` line with three numbers, otherwise 1/1/1 and the mark "draft without direction" |
 | Invented reviews or numbers in tasks | The placeholder `[data needed: …]` and `Needs` |

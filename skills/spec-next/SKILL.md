@@ -16,7 +16,7 @@ Argument (optional): the name or number of a change. Without an argument, choose
 2. **Selection.** `solo-sdd list --json`. Take the named change; else the one with the most tasks done; else the next one in order with closed dependencies. Skip a change whose folder has a `CLAIM` from another agent or `WAITING` (waits for an external condition, see `docs/waiting.md`), and a change whose proposal `Depends On` section names changes not archived yet.
 3. **Claim.** Create `CLAIM` in the main project folder, even if the implementation goes into a worktree. Claude: `echo "claude $(date +%F) session=$CLAUDE_CODE_SESSION_ID" > solo-sdd/changes/<id>/CLAIM`: by the session id the write hook tells its own `CLAIM` from another's (without the id it adds it itself on the first edit). Codex: the line `codex <date>`.
 4. **Context.** Read `proposal.md`, `design.md`, `tasks.md`, the delta specs.
-4a. **Check before code.** The `spec-analyze` skill on this change. Fix CRITICAL and HIGH findings in the artifacts before the first code edit. An unarchived dependency from `Depends On` means the change is not ready: remove `CLAIM` and go back to step 2.
+4a. **Check before code.** The `spec-analyze` skill on this change. Fix CRITICAL and HIGH findings in the artifacts before the first code edit. `solo-sdd config get process.analyze` is `off`: no `spec-analyze` pass, the report has `Analyze: off (solo-sdd/config)`; the `Depends On` check below stays. An agent changes the `process` limits and `process.analyze` only on the owner's words in the chat. An unarchived dependency from `Depends On` means the change is not ready: remove `CLAIM` and go back to step 2.
 5. **Implementation.** You do all items of `tasks.md` yourself, including code: you hold the plan, a handoff to a subagent loses precision. Subagents are only for independent acceptance (step 7a, tag `Review:`) and heavy reading (tag `Lookup:`, only `subagent_type: Explore`, `model` from `solo-sdd config get agents.lookup-model`).
 
    The exception: the user named Codex, or `solo-sdd config get agents.executor` prints `codex` (`agents.executor: codex` counts as the user naming `codex-orchestration`); then executors write the code by the skill `codex-orchestration`, and you lay out the tasks and accept the result with your own commands. A request to have one model plan and another write the code is not an exception: you write the code yourself. The same in Codex: its own subagents only for acceptance and search. Check `- [x]` only after checking the item.
@@ -87,6 +87,7 @@ Suite: <before> (<change>) -> <after> | n/a -> <after>
 Live test: <what was run, what was got> | not done — <reason>
 Independent acceptance: rounds <k>; extra round: ran | did not run; done <n> of <m>; findings: <Important and Pre-existing as a list, Nit as a count>; reviewer failure: <round and what was not got> | no remarks
 Decisions made without you: <list>
+<only with process.analyze off: Analyze: off (solo-sdd/config)>
 Moved to a new change: <id> | none
 Lesson: <line written or refined in ## Lessons> -> <path of that AGENTS.md>, one line each | none
 <extra lines, only when there are such lessons: Lesson for solo-sdd: <sentence> · Lesson (no AGENTS.md): <sentence> · Lesson (not written): <sentence>>
@@ -95,4 +96,4 @@ Delivery: <commit, PR, whether merged> | waits for deploy consent: <what and whe
 Needs from you: <action> | nothing
 ```
 
-If the number of folders in `solo-sdd/changes/archive` after this archive is a multiple of 5, add the line: `Time for: /spec-audit on the main specs`.
+If the number of folders in `solo-sdd/changes/archive` after this archive is a multiple of `solo-sdd config get process.audit-every` (default 5), add the line: `Time for: /spec-audit on the main specs`.

@@ -156,6 +156,42 @@ class SkillCommandsTest(unittest.TestCase):
         self.assertIn("`opus` when it is not set", launch[0])
         self.assertIn("`/effort low`", read("skills/spec-dispatch/SKILL.md"))
 
+    def test_process_cadence_settings(self):
+        """Requirements: Process cadence settings and Change size limits: the skills and the algorithm read the five
+        keys through `solo-sdd config get`, name every fixed limit with its key, and let an agent change the keys
+        only on the owner's words."""
+        read = lambda rel: " ".join(skill_text.read(REPO / rel).split())
+        get = "`solo-sdd config get process.%s`"
+        for rel, keys in (("skills/spec-plan/SKILL.md", ("max-tasks", "bugfix-max-tasks", "requirement-max-chars",
+                                                         "analyze")),
+                          ("skills/spec-analyze/SKILL.md", ("max-tasks", "bugfix-max-tasks", "requirement-max-chars")),
+                          ("skills/spec-next/SKILL.md", ("analyze", "audit-every")),
+                          ("ALGORITHM.md", ("max-tasks", "bugfix-max-tasks", "requirement-max-chars", "analyze",
+                                            "audit-every"))):
+            text = read(rel)
+            for key in keys:
+                self.assertIn(get % key, text, "%s: %s" % (rel, key))
+        for rel in ("skills/spec-plan/SKILL.md", "skills/spec-next/SKILL.md", "ALGORITHM.md"):
+            self.assertIn("changes the `process` limits and `process.analyze` only on the owner's words", read(rel), rel)
+        for rel in ("skills/spec-plan/SKILL.md", "skills/spec-next/SKILL.md"):
+            self.assertIn("`Analyze: off (solo-sdd/config)`", read(rel), rel)
+        # Scenario Analyze switched off, Audit every three archives: the spec-next lines that hold the gate and the audit
+        lines = skill_text.read(REPO / "skills/spec-next/SKILL.md").splitlines()
+        gate = [l for l in lines if l.startswith("4a. ")]
+        self.assertEqual(len(gate), 1)
+        self.assertIn("`off`", gate[0])
+        self.assertIn("Depends On", gate[0], "the dependency check stays with analyze off")
+        audit = [l for l in lines if "Time for: /spec-audit on the main specs" in l]
+        self.assertEqual(len(audit), 1)
+        self.assertIn("process.audit-every", audit[0])
+        # every line that names a fixed limit names its key
+        fixed = re.compile(r"\b(10|5) tasks|\b500 char|every 5 archives|Every 5 archives|multiple of 5|10, for a bug fix 5")
+        bare = ["%s:%d" % (rel, n) for rel in ("skills/spec-plan/SKILL.md", "skills/spec-plan/creation.md",
+                                               "skills/spec-analyze/SKILL.md", "skills/spec-next/SKILL.md", "ALGORITHM.md")
+                for n, line in enumerate((REPO / rel).read_text(encoding="utf-8").splitlines(), 1)
+                if fixed.search(line) and "process." not in line]
+        self.assertEqual(bare, [])
+
     def test_executor_setting_from_the_owner(self):
         """Requirement: Executor setting from the owner: agents.executor codex counts as the owner naming
         codex-orchestration; an agent changes the key only on the owner's words."""

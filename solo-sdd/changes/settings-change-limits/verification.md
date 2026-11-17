@@ -31,3 +31,5 @@ not needed.
 - analyze: `process.analyze: off` and a raised limit let an agent skip the check before code or grow a change on its own → the skills and `ALGORITHM.md` let an agent change the five keys only on the owner's words in the chat.
 - analyze: "after every N archives" did not say which count → the archive folder count after this archive is a multiple of `process.audit-every`, as `spec-next` counts today.
 - analyze: a broken `solo-sdd/config` under `validate` had no row → `validate` fails naming the file and line, as Settings file says for every command; a row in task 1.2.
+- spec-next analyze: Change size limits makes every limit error name its source, so the two existing exact items `11 > 10` and `Long: 501 > 500` of `tests/test_process_format.py` read ` (default)` after the change, while task 1.3 kept every assertion → task 1.3 names the two items as the only assertions that change; the main `process-format` scenarios name the file and the count, not the text, and stay.
+- spec-next analyze: `process.analyze: off` would also skip the dependency check of `spec-next` step 4a → only the `spec-analyze` pass is skipped, the `Depends On` check stays.
