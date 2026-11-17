@@ -620,7 +620,7 @@ class WorkingCopySettings(ConfigDir):
             self.assertEqual(settings.describe(key, {})["group"], "dispatch", key)
             self.assertEqual(settings.effective({})[key], (default, "default"), key)
         self.assertEqual(self.cli("set", "worktree.prepare", "npm ci"), (0, "worktree.prepare: npm ci\n"))
-        self.assertEqual(self.cli("set", "worktree.prepare", ""), (0, "worktree.prepare: \n"), "an empty command unsets")
+        self.assertEqual(self.cli("set", "worktree.prepare", ""), (0, "worktree.prepare: \n"), "an empty command reads as not set")
         self.assertEqual(self.cli("set", "dispatch.check-timeout", "0")[0], 1)
 
     def test_the_old_items(self):

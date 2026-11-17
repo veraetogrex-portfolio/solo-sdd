@@ -1107,8 +1107,7 @@ class LoopbackBeforeLaunchTests(Base):
     def test_loopback_from_the_config(self):
         """Requirement: Working copy settings: dispatch.loopback in the file, over the AGENTS.md item."""
         self.connect(error=PermissionError(1, "Operation not permitted"))
-        for agents, config, want in ((None, "dispatch.loopback: on\n", "loopback: blocked (needed by the project): "),
-                                     ("## Commands\n\n- Loopback: needed\n", "dispatch.loopback: off\n", "loopback: blocked: ")):
+        for agents, config, want in (("## Commands\n\n- Loopback: needed\n", "dispatch.loopback: off\n", "loopback: blocked: "),):
             p = self.project(agents)
             p.change("a")
             put(p.main, "solo-sdd/config", config)

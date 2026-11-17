@@ -39,7 +39,8 @@ transport  brings artifact edits into MAIN (three-way merge: base = snapshot);
            Files ignored one by one outside the set that differ between MAIN and WORKTREE are named
            in the line «not transported: ...»; the exit code does not change because of them.
 undo       returns MAIN to the state before the last transport.
-remove     removes the links, the snapshot, .undo, the .start record and the worktree itself.
+remove     removes the links (by the <WORKTREE>.links record setup writes, never by the settings), the snapshot,
+           .undo, the .start and .links records and the worktree itself.
 discard    removes a worktree without its own commits (HEAD equals the <WORKTREE>.start record made by setup,
            the commit is not only in the branch being removed) together with its branch; otherwise code 1, nothing changes.
 """
@@ -608,9 +609,8 @@ def section(main):
 
 
 def under_link(f, links):
-    """The path lies in a linked folder: a name without / anywhere in it, a longer item at its path from the root."""
-    parts = f.split("/")
-    return any(x in parts if "/" not in x else f.startswith(x + "/") for x in links)
+    """The path lies in a linked folder: a `node_modules` item anywhere in it, any other item at its path from the root."""
+    return any("node_modules" in f.split("/") if x == "node_modules" else f.startswith(x + "/") for x in links)
 
 
 def listed(wt):
@@ -750,7 +750,8 @@ def add_exclude(main, links):
         raise RuntimeError("git rev-parse: " + r.stderr.decode("utf-8", "replace").strip())
     p = os.path.join(main, r.stdout.decode().strip(), "info", "exclude")
     have = read(p).decode("utf-8").splitlines() if os.path.exists(p) else []
-    add = [x for x in links if x not in have]
+    # node_modules is linked at any depth up to three levels; any other item only at its path from the root
+    add = [x for x in (x if x == "node_modules" else "/" + x for x in links) if x not in have]
     if add:
         os.makedirs(os.path.dirname(p), exist_ok=True)
         with open(p, "a", encoding="utf-8") as f:
@@ -779,7 +780,7 @@ def setup(main, wt):
     extra = [f for f in extra if os.path.isfile(os.path.join(base, f))]
     if extra:
         write(os.path.join(base, LISTED), "\0".join(extra).encode("utf-8"))
-    links = 0
+    made = []
     for rel in find_links(main, linked):
         dst = os.path.join(wt, rel)
         if rel in linked and "/" in rel and not os.path.lexists(dst):  # a named item gets its parent folders
@@ -790,7 +791,9 @@ def setup(main, wt):
             link_modules(os.path.join(main, rel), dst)
         else:
             os.symlink(os.path.abspath(os.path.join(main, rel)), dst)
-        links += 1
+        made.append(rel)
+    if made:
+        write(wt + ".links", "\0".join(made).encode("utf-8"))
     add_exclude(main, linked)
     if cmd:
         r = subprocess.run(["sh", "-c", cmd], cwd=wt, stdin=subprocess.DEVNULL)
@@ -798,7 +801,7 @@ def setup(main, wt):
             raise RuntimeError("prepare command exited with code %d: %s" % (r.returncode, cmd))
     if start:
         print("start: " + start)
-    print("copied files %d, link folders %d, command: %s" % (len(copied), links, cmd or "none"))
+    print("copied files %d, link folders %d, command: %s" % (len(copied), len(made), cmd or "none"))
     return 0
 
 
@@ -996,8 +999,14 @@ def undo(main, wt):
     return 0
 
 
-def unlink_links(main, wt):
-    for rel in find_links(wt, section(main)[3]):
+def unlink_links(wt):
+    """Removes the folders setup linked, by its record <WORKTREE>.links (a worktree set up before the record: the
+    default node_modules and .venv); never reads the settings, so a broken or changed file does not block cleanup."""
+    try:
+        rels = read(wt + ".links").decode("utf-8").split("\0")
+    except OSError:
+        rels = find_links(wt, ["node_modules", ".venv"])
+    for rel in rels:
         p = os.path.join(wt, rel)
         if os.path.islink(p):
             os.unlink(p)
@@ -1019,9 +1028,11 @@ def remove(main, wt):
     dirty = git(wt, "status", "--porcelain")
     if dirty.returncode or dirty.stdout.strip():
         raise RuntimeError("git worktree remove: the worktree has uncommitted changes, nothing removed")
-    unlink_links(main, wt)
+    unlink_links(wt)
     for x in (wt + ".base", wt + ".undo"):
         shutil.rmtree(x, ignore_errors=True)
+    if os.path.exists(wt + ".links"):
+        os.unlink(wt + ".links")
     # without --force: ignored copies and excluded links do not get in the way, and git will not let uncommitted work be erased
     r = git(main, "worktree", "remove", wt)
     if r.returncode:
@@ -1048,9 +1059,11 @@ def discard(main, wt):
     own = only_here(main, wt, head)
     if own:
         raise RuntimeError("commit %s exists only in %s: nothing removed" % (head, own))
-    unlink_links(main, wt)
+    unlink_links(wt)
     for x in (wt + ".base", wt + ".undo"):
         shutil.rmtree(x, ignore_errors=True)
+    if os.path.exists(wt + ".links"):
+        os.unlink(wt + ".links")
     r = git(main, "worktree", "remove", "--force", wt)
     if r.returncode:
         raise RuntimeError("git worktree remove: " + r.stderr.decode("utf-8", "replace").strip())

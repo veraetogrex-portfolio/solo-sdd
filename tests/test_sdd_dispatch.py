@@ -629,17 +629,11 @@ class LandTest(LandBase):
 
     @marks.slow
     def test_check_timeout_setting(self):
-        """Requirement: Working copy settings, scenarios The variable wins and An invalid variable."""
-        self.put(self.main, "solo-sdd/config", "dispatch.check-timeout: 900\n")
+        """Requirement: Working copy settings, scenario An invalid variable (the stand proves The variable wins)."""
+        self.put(self.main, "solo-sdd/config", "dispatch.check-timeout: 2\n")
         self.make_change()
         head = g(self.main, "rev-parse", "HEAD")
         check = "if [ -e feature.txt ]; then sleep 100; fi"
-        self.env["SDD_DISPATCH_TIMEOUT"] = "1"
-        r = self.land("--check", check)
-        self.assertEqual(r.returncode, 3, r.stdout)
-        self.assertIn("%s: timeout after 1 s" % check, r.stdout)
-        self.assert_rolled_back(head)
-        self.put(self.main, "solo-sdd/config", "dispatch.check-timeout: 2\n")
         self.env["SDD_DISPATCH_TIMEOUT"] = "abc"
         r = self.land("--check", check)
         self.assertEqual(r.returncode, 3, r.stdout)

@@ -76,7 +76,7 @@ Done when you can say `/spec-next` in the folder to both agents right away and t
 
 The "PR title:", "Deploy:" and "Owner only:" items are the old source of `solo-sdd config get delivery.pr-title`, `solo-sdd config get delivery.deploy` and `solo-sdd config get delivery.owner-only`: a value set in `solo-sdd/config` wins, and a change that edits `solo-sdd/config` also waits for the owner.
 
-Working copy values you decide go into `solo-sdd/config` through `solo-sdd config set <key> <value>`, never into a new "Working copy" section; an existing section stays as written, its items are the old source of these keys:
+Working copy values you decide go into `solo-sdd/config` through `solo-sdd config set <key> <value>`, never into a new "Working copy" section (no `solo-sdd/` tree, no command or a failed call: the report names each value and its key, nothing is written); an existing section stays as written, its items are the old source of these keys:
 
 - `worktree.paths` (item "Paths:") says what else git-ignored to copy into a worktree,
 - `worktree.prepare` (item "Prepare:") is the command for it (installing dependencies, for example `npm ci`),
@@ -87,7 +87,7 @@ Working copy values you decide go into `solo-sdd/config` through `solo-sdd confi
 
 The `Tests (one)` row by runner: unittest `python3 -m unittest <module>` (one test: `<module>.<Class>.<test>`), pytest `pytest -q <file>` (one test: `<file>::<test>`), vitest `npx vitest run <file> --reporter=dot` and jest `npx jest <file> --silent` (one test in both: `-t "<name>"`). Every reader of the suite command (a script, the `TESTS` field of a status, the `Checks` section, the thread limit below) takes the `Tests` row only.
 
-The test command with a "Working copy" section or a `worktree.` or `dispatch.` key in `solo-sdd/config` (the `Tests` row; `Tests (one)` gets no flag): compute `max(1, ⌊cores / N⌋)`, where cores is the output of `sysctl -n hw.ncpu` (on Linux, `nproc`), N is the output of `solo-sdd config get dispatch.limit` (default 2, the "Orchestrators:" item when the file sets none),
+The test command with a "Working copy" section or a `worktree.` or `dispatch.` key in `solo-sdd/config` (the `Tests` row; `Tests (one)` gets no flag): compute `max(1, ⌊cores / N⌋)`, where cores is the output of `sysctl -n hw.ncpu` (on Linux, `nproc`), N is the output of `solo-sdd config get dispatch.limit` (it reads the "Orchestrators:" item when the file sets none; no `solo-sdd/` tree, no command or a failed call: the first number of that item, else 2),
 and write into the table the ready command with this number, without the formula and conditions: vitest and jest get `--maxWorkers=<number>` (through npm: `npm test -- --maxWorkers=<number>`), pytest with pytest-xdist installed gets `-n <number>`.
 
 Neither, or the test runner cannot limit threads: the command without a flag. Add the flag to an existing command without one, do not recompute a flag already there.

@@ -376,7 +376,9 @@ class SkillCommandsTest(unittest.TestCase):
             self.assertIn(w, limit)
         self.assertNotIn('N is the item "Orchestrators:"', init)
         self.assertIn("go into `solo-sdd/config` through `solo-sdd config set <key> <value>`, never into a new "
-                      '"Working copy" section; an existing section stays as written', init)
+                      '"Working copy" section', init)
+        self.assertIn("an existing section stays as written", init)
+        self.assertIn("no `solo-sdd/` tree, no command or a failed call: the first number of that item, else 2", limit)
         for key in ("worktree.paths", "worktree.prepare", "worktree.after-refresh", "dispatch.limit", "dispatch.shared",
                     "dispatch.loopback"):
             self.assertIn("`%s" % key, init)
