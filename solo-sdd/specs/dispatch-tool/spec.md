@@ -40,7 +40,7 @@ In `accept` the `VALIDATE` field SHALL match on exit code 0, and the `LIVE` fiel
 - **THEN** the field matches
 
 ### Requirement: Local land command
-`sdd-dispatch.py land-local <MAIN> <WORKTREE> <id> [--check <command>]...` SHALL stop at the first failure: before the merge, edited tracked files of `MAIN` give code 2, a branch writing a file `MAIN` has untracked code 6; `git merge --no-ff --no-edit change/<id>`, a conflict: `merge --abort`, code 6; `sdd-worktree.py transport`, code 3: `reset --keep` to the pre-merge commit, code 6. Each code 2 and 6 names the files. `sdd-worktree.py` output (`not transported: <files>` too) is printed as is.
+`sdd-dispatch.py land-local <MAIN> <WORKTREE> <id> [--check <command>]...` SHALL stop at the first failure: before the merge, edited tracked files of `MAIN` give code 2, a branch writing a file `MAIN` has untracked code 6; the merge by `delivery.local-merge`, a conflict: abort, code 6; `sdd-worktree.py transport`, code 3: `reset --keep` to the pre-merge commit, code 6. Codes 2 and 6 name the files; `sdd-worktree.py` output is printed as is.
 
 #### Scenario: A merge conflict
 - **WHEN** merging `change/b` gives a conflict in `README.md`
@@ -70,12 +70,48 @@ In `accept` the `VALIDATE` field SHALL match on exit code 0, and the `LIVE` fiel
 - **WHEN** git or `sdd-worktree.py` ended with a code other than those handled in the requirement text
 - **THEN** code 1 with the line "not merged: <step>: <error>"
 
+#### Scenario: The default merge
+- **WHEN** `delivery.local-merge` is not set and `land-local` merges `change/b`
+- **THEN** the main branch gets a merge commit with two parents, as `git merge --no-ff --no-edit` makes
+
+#### Scenario: Squash
+- **WHEN** `delivery.local-merge` is `squash`, `change/b` has three own commits, the last named `b: done`
+- **THEN** the main branch gets one commit with one parent named `b: done`, and the cleanup deletes `change/b`
+
+#### Scenario: Rebase
+- **WHEN** `delivery.local-merge` is `rebase`, and the main branch moved ahead after `change/b` started
+- **THEN** the main branch history is linear with the commits of `change/b` on top, no merge commit
+
+#### Scenario: A squash conflict
+- **WHEN** `delivery.local-merge` is `squash` and the squash gives a conflict in `README.md`
+- **THEN** the index and tree are reset to the previous commit, code 6 names `README.md`, the worktree and branch are in place
+
+#### Scenario: Transport lines kept
+- **WHEN** `sdd-worktree.py transport` prints `not transported: docs/notes.md` and ends with code 0
+- **THEN** the line is printed as is and the run goes on
+
+#### Scenario: A rebase conflict
+- **WHEN** `delivery.local-merge` is `rebase` and rebasing `change/b` onto the main branch gives a conflict in `README.md`
+- **THEN** the rebase runs in a temporary worktree that is removed, code 6 names `README.md`, the main branch, `change/b` and WORKTREE are on their previous commits
+
+#### Scenario: Rebase keeps ignored copies
+- **WHEN** `delivery.local-merge` is `rebase`, the main branch moved ahead, and `change/b` takes `solo-sdd/changes/archive/` out of git while `MAIN` tracks it
+- **THEN** code 0, the archive files are on the disk of `MAIN` after the transfer: WORKTREE moves to the rebased commit with `reset --keep` and keeps its ignored copies
+
+#### Scenario: Squash without an own commit
+- **WHEN** `delivery.local-merge` is `squash` and `change/b` has no own commit along the first parent other than merge and empty commits
+- **THEN** code 1 with "not merged: merge: no title in the last own commit of the branch", the main branch is unchanged
+
 ### Requirement: Local land checks and cleanup
-After the merge and the transfer `land-local` SHALL run every `--check` and `solo-sdd validate --all` once each. All passed: `sdd-worktree.py remove`, `git branch -d change/<id>`, code 0 and the merge hash. A failure of `remove` or `branch -d` does not roll back the merge: code 1 with the line "merged <hash>, not cleaned: <step>: <error>".
+After the merge and the transfer `land-local` SHALL run every `--check` and `solo-sdd validate --all` once each. All passed: `sdd-worktree.py remove`, `git branch -d change/<id>` (`-D` after `squash` and `rebase`: a squashed branch is not merged by hash), code 0 and the merge hash. A failure of `remove` or the branch deletion does not roll back the merge: code 1 with the line "merged <hash>, not cleaned: <step>: <error>".
 
 #### Scenario: Everything passed
 - **WHEN** the merge, the transfer and all checks passed
 - **THEN** code 0, the worktree is removed, the branch `change/<id>` is deleted
+
+#### Scenario: Cleanup after squash
+- **WHEN** `delivery.local-merge` is `squash`, the merge and all checks passed
+- **THEN** code 0, `change/<id>` is deleted although its commits are not in the main branch by hash
 
 ### Requirement: Local land after a red check
 If a check after merge in `land-local` failed, the script SHALL roll back the merge (`git reset --keep` to the commit before it, then `sdd-worktree.py undo`), not repeat checks "until green", and once run the failed check in `MAIN` on the main branch before the merge. It passes there: code 3, with the command and the last failure lines (up to 20, stdout and stderr together). It fails there too: code 4 "main red" with the command and the lines. The worktree and branch stay in both cases.
