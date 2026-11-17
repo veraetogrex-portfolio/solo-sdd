@@ -23,10 +23,14 @@ DEFAULT_TIMEOUT = 600
 MAX_TIMEOUT = 2147483  # about 24 days: the wait of subprocess passes milliseconds as a C int
 
 
+SETTING = [DEFAULT_TIMEOUT]  # dispatch.check-timeout of the main folder, set by land-local once it reads the settings
+
+
 def timeout():
-    """Seconds of SDD_DISPATCH_TIMEOUT when it is a whole number of ASCII digits from 1 to MAX_TIMEOUT, else 600."""
+    """Seconds of SDD_DISPATCH_TIMEOUT when it is a whole number of ASCII digits from 1 to MAX_TIMEOUT, else the
+    setting (600 before land-local reads it), at most MAX_TIMEOUT."""
     v = os.environ.get("SDD_DISPATCH_TIMEOUT", "")
-    return int(v) if re.fullmatch(r"[0-9]+", v) and 0 < int(v) <= MAX_TIMEOUT else DEFAULT_TIMEOUT
+    return int(v) if re.fullmatch(r"[0-9]+", v) and 0 < int(v) <= MAX_TIMEOUT else min(SETTING[0], MAX_TIMEOUT)
 
 
 class Timeout(Exception):
@@ -483,6 +487,7 @@ def land_local(main, wt, cid, checks):
         values = pr.read_settings(main)
         human, how = values["delivery.merge-by"][0] == "human", values["delivery.local-merge"][0]
         branch = values["delivery.branch-prefix"][0] + cid
+        SETTING[0] = int(values["dispatch.check-timeout"][0])
     except (OSError, ValueError, KeyError) as e:  # KeyError: an older sdd-pr.py next to the script
         print("not merged: settings: %s" % e)
         return 1

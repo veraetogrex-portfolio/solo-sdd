@@ -6,7 +6,7 @@ The `project-init` skill prepares a project for work by the algorithm: it writes
 ## Requirements
 
 ### Requirement: Test command under dispatcher
-If the project's `AGENTS.md` has a "Working copy" section, `project-init` SHALL write the test command in the "Commands" section with the thread limit `max(1, ⌊cores / N⌋)`, where N is the item "Orchestrators:" (default 2): for vitest and jest `--maxWorkers`, for pytest-xdist `-n`. If there is no section or the test runner cannot limit threads, the command is written without a flag.
+If the project's `AGENTS.md` has a "Working copy" section or `solo-sdd/config` sets a `worktree.` or `dispatch.` key, `project-init` SHALL write the test command in the "Commands" section with the thread limit `max(1, ⌊cores / N⌋)`, where N is `dispatch.limit` through `solo-sdd config get` (default 2): for vitest and jest `--maxWorkers`, for pytest-xdist `-n`. Without them, or a test runner that cannot limit threads, the command is written without a flag.
 
 #### Scenario: Vitest under the dispatcher
 - **WHEN** the project has vitest, the computer has 8 cores, "Working copy" with "Orchestrators: 2"
@@ -19,6 +19,14 @@ If the project's `AGENTS.md` has a "Working copy" section, `project-init` SHALL 
 #### Scenario: Without the "Orchestrators:" item
 - **WHEN** the project has vitest, the computer has 8 cores, "Working copy" without the item "Orchestrators:"
 - **THEN** "Commands" has the test command with `--maxWorkers=4`
+
+#### Scenario: The old item still counts
+- **WHEN** the project has vitest, the computer has 8 cores, "Working copy" with "Orchestrators: 4", and no `solo-sdd/config` value
+- **THEN** "Commands" has the test command with `--maxWorkers=2`
+
+#### Scenario: The limit from the config
+- **WHEN** the project has vitest, the computer has 8 cores, and `solo-sdd/config` has `dispatch.limit: 4` with `worktree.links: node_modules`
+- **THEN** "Commands" has the test command with `--maxWorkers=2`
 
 ### Requirement: Process artifacts in git
 In a project where `project-init` creates `.gitignore`, it SHALL NOT ignore `solo-sdd/`, `AGENTS.md` and `CLAUDE.md` and SHALL commit them in one commit naming only these paths and `.gitignore`. If `.gitignore` already exists and none of the paths is hidden, the skill SHALL commit the same three paths. If this run changed the solo-sdd block of an existing `.gitignore`, it SHALL go into the artifact commit, or, if they are not committed, into its own commit.
@@ -115,3 +123,10 @@ The `/project-init` report SHALL list each item of `CONCERNS.md` as a candidate 
 #### Scenario: Three concerns
 - **WHEN** `CONCERNS.md` holds three items
 - **THEN** the report lists three candidate lines and `solo-sdd/changes/` gets no new folder
+
+### Requirement: Working copy values in the settings
+When `project-init` decides working copy values (paths to copy, a prepare or after-refresh command, shared paths, loopback, the orchestrator limit), it SHALL write them with `solo-sdd config set` into `solo-sdd/config` and SHALL NOT create a "Working copy" section; an existing "Working copy" section SHALL stay as written.
+
+#### Scenario: A new project with dependencies
+- **WHEN** `project-init` runs in a project without "Working copy" whose worktrees need `npm ci`
+- **THEN** `solo-sdd/config` has `worktree.prepare: npm ci`, and `AGENTS.md` has no "Working copy" section

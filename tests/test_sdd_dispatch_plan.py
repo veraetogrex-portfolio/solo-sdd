@@ -1104,6 +1104,19 @@ class LoopbackBeforeLaunchTests(Base):
             self.assertEqual(lines[2:4], ["delivery: local (default), merge: squash (default)", "launch: a"])
 
 
+    def test_loopback_from_the_config(self):
+        """Requirement: Working copy settings: dispatch.loopback in the file, over the AGENTS.md item."""
+        self.connect(error=PermissionError(1, "Operation not permitted"))
+        for agents, config, want in (("## Commands\n\n- Loopback: needed\n", "dispatch.loopback: off\n", "loopback: blocked: "),):
+            p = self.project(agents)
+            p.change("a")
+            put(p.main, "solo-sdd/config", config)
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                code = dp.main([str(p.main)])
+            self.assertEqual((code, buf.getvalue().splitlines()[1]), (0, want + "[Errno 1] Operation not permitted"), config)
+
+
 class SettingsReaderTests(Base):
     """Requirement «Readers use the settings»: solo-sdd/config first, the AGENTS.md item before the default."""
 
@@ -1128,6 +1141,20 @@ class SettingsReaderTests(Base):
         self.assertIn("\ndelivery: local (file), merge: rebase (AGENTS.md)\n", p.run()[1])
         put(p.main, "solo-sdd/config", "mode: team\n")
         self.assertIn("\ndelivery: pr (AGENTS.md), merge: rebase (AGENTS.md)\n", p.run()[1], "the AGENTS.md item comes before the team default")
+
+    def test_shared_from_config_and_a_refused_item(self):
+        """Requirements: Working copy settings (dispatch.shared); Working copy items as the old source."""
+        p = self.project("## Working copy\n\n- Shared: `../up.md`, `docs/map.md`\n", tree="solo-sdd")
+        p.change("a", impact=["docs/map.md", "x/cli.md"])
+        p.change("b", impact=["docs/map.md", "x/cli.md"])
+        r = subprocess.run(["/usr/bin/python3", str(SCRIPT), str(p.main)], capture_output=True, text=True, timeout=60,
+                           stdin=subprocess.DEVNULL)
+        self.assertIn("b — conflict with a: file x/cli.md", r.stdout)
+        self.assertIn("AGENTS.md:3: ../up.md is left out: dispatch.shared takes relative paths", r.stderr)
+        put(p.main, "solo-sdd/config", "dispatch.shared: x/, docs/map.md\n")
+        out = p.run()[1]
+        self.assertIn("launch: a b\n", out)
+        self.assertIn("together: a and b — docs/map.md, x/cli.md\n", out)
 
     def test_defaults_without_sources(self):
         p = self.project(tree="solo-sdd")

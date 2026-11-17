@@ -99,7 +99,7 @@ A deployment gate is worded for the whole repository, not for one change: a push
 
 ### cleanup-scope
 
-A cleanup of copies an earlier version or a gone source deployed skips every path the current deployment map still lays out, names its candidates instead of matching all unmapped state entries, and takes a source as gone only when it is missing, never when it cannot be read for lack of permission (a folder that can be listed but not entered included); a removal in a folder the owner also writes to deletes only the entries its own sources name (the map, the state, its caches), keeps and names every other entry, and silences only the one error it expects (a folder not empty).
+A cleanup of copies an earlier version or a gone source deployed skips every path the current deployment map still lays out, names its candidates instead of matching all unmapped state entries, and takes a source as gone only when it is missing, never when it cannot be read for lack of permission (a folder that can be listed but not entered included); a removal in a folder the owner also writes to deletes only the entries its own sources name (the map, the state, its caches), keeps and names every other entry, and silences only the one error it expects (a folder not empty); a cleanup of what a setup step made (links, copies) removes what that step recorded when it made it, never what the settings name now, so a setting changed or broken since neither blocks the cleanup nor leaves the old items.
 
 ### setting-sources
 

@@ -20,16 +20,17 @@ Process root: solo-sdd/ if it holds project.md, specs/ or changes/, else openspe
 Artifacts outside git: if the process root, AGENTS.md or CLAUDE.md is ignored, the line «Artifacts outside git: <paths>» is printed.
 A hard conflict of two changes: a shared requirement (capability, name) or a shared file from Impact.
 Conflicts are checked against running, waiting-for-merge and already granted changes.
-Shared paths give no conflict: COMMON and the «Shared:» item of the AGENTS.md section «Working copy»;
-a path ending in / makes every file under it shared. Pairs launched over a shared path are «together:» lines.
+Shared paths give no conflict: COMMON and dispatch.shared of solo-sdd/config, else the «Shared:» item of the AGENTS.md
+section «Working copy»; a path ending in / makes every file under it shared. Pairs launched over a shared path are «together:» lines.
 Limit: dispatch.limit of solo-sdd/config, else the «Orchestrators: <number>» item of the AGENTS.md section «Working copy»,
 else the settings default (2). A broken solo-sdd/config: exit 1 with the file, the line and the reason.
 Places are taken by running changes and only by those waiting for merge beyond the limit: free =
 limit - running - max(0, waiting for merge - limit). First line: «limit: N, running: K, waiting for merge: W».
 Order: by the number of open changes that depend on this one (directly or through a chain), then by id.
 Second line: «loopback: ok» or «loopback: blocked: <error>»: a listen and a connect on 127.0.0.1, once per call,
-the timeout LOOPBACK_TIMEOUT; a sandbox may deny them. The item «Loopback: needed» of the AGENTS.md section
-«Commands» or «Working copy» (the project's tests need local sockets) makes it «loopback: blocked (needed by the project): <error>».
+the timeout LOOPBACK_TIMEOUT; a sandbox may deny them. dispatch.loopback: on (solo-sdd/config, else the item «Loopback:
+needed» of the AGENTS.md section «Commands» or «Working copy»: the project's tests need local sockets) makes it
+«loopback: blocked (needed by the project): <error>».
 Third line: «delivery: <local|pr> (<source>), merge: <squash|merge|rebase> (<source>)»: each from solo-sdd/config (file),
 else the «Mode:» and «Merge:» items of the AGENTS.md section «Delivery» with an allowed value (AGENTS.md), else the team
 default under mode: team (mode), else the settings default (default: nothing names it).
@@ -76,6 +77,13 @@ REGISTRY = {
     "delivery.branch-prefix": ("choice", None, "change/", None),  # a change branch is <prefix><id>
     "delivery.plan-prefix": ("choice", None, "plan/", None),  # the spec-plan branch is <prefix><first id>
     "dispatch.limit": ("int", None, "2", None),
+    "dispatch.shared": ("paths", None, "", None),  # sdd-dispatch-plan.py: paths changes may share without a conflict
+    "dispatch.loopback": ("choice", ("on", "off"), "off", None),  # on: the project's tests need local sockets
+    "dispatch.check-timeout": ("int", None, "600", None),  # seconds of each land-local command; SDD_DISPATCH_TIMEOUT wins
+    "worktree.paths": ("paths", None, "", None),  # sdd-worktree.py: git-ignored paths copied into a worktree
+    "worktree.prepare": ("text", None, "", None),  # the command setup runs in a new worktree
+    "worktree.after-refresh": ("text", None, "", None),  # the command refresh runs after a transfer without conflicts
+    "worktree.links": ("paths", None, "node_modules, .venv", None),  # folders linked from the main folder
     "process.review-rounds": ("int", None, "5", None),
     "process.light-path": ("choice", ("on", "off"), "on", None),  # off: every code edit goes through a change
     "process.light-path.max-files": ("int", None, "3", None),
@@ -126,6 +134,10 @@ DELIVERY_ITEMS = (("PR title:", "delivery.pr-title"), ("Deploy:", "delivery.depl
 PROJECT_FILE = "solo-sdd/project.md"
 PROJECT_LINES = (("Mode:", "project.stage"), ("Language:", "artifacts.language"))
 OLD_SOURCE = dict((key, "project.md") for _, key in PROJECT_LINES)  # any other old source key: AGENTS.md
+# the «Working copy» items of AGENTS.md read as the old source of a key: item -> key
+WORKING_ITEMS = (("Paths:", "worktree.paths"), ("Prepare:", "worktree.prepare"),
+                 ("After refresh:", "worktree.after-refresh"), ("Shared:", "dispatch.shared"),
+                 ("Orchestrators:", "dispatch.limit"))
 
 
 class SettingsError(ValueError):
@@ -237,6 +249,8 @@ def check_value(key, value, registry=REGISTRY):
     kind, allowed, default = entry(key, registry)[:3]
     v = value.strip()
     if kind == "text":
+        if not v and default == "":
+            return v
         if not v or not v.isprintable() or len(v) > TEXT_MAX:
             raise SettingsError("%s takes one line of printable characters, at most %d characters, not %r"
                                 % (key, TEXT_MAX, v if len(v) <= 60 else v[:60] + "..."))
@@ -358,8 +372,9 @@ def project_lines(root, registry=REGISTRY):
 def agents_delivery(root, registry=REGISTRY):
     """{key: value} of the old sources at root: the project_lines values, and the «## Delivery» section of AGENTS.md:
     the first allowed «Mode:» and «Merge:» items, the first non-empty «PR title:» and «Deploy:» texts trimmed and as
-    written, and the backquoted patterns of every «Owner only:» item; a file that cannot be opened adds nothing."""
-    out, inside = dict(project_lines(root, registry)[0]), False
+    written, and the backquoted patterns of every «Owner only:» item; the working_items values; a file that cannot be
+    opened adds nothing."""
+    out, inside = dict(project_lines(root, registry)[0], **working_items(root, registry)[0]), False
     try:
         with open(os.path.join(root, "AGENTS.md"), encoding="utf-8", errors="replace") as f:  # other readers own the encoding
             lines = f.read().splitlines()
@@ -383,6 +398,52 @@ def agents_delivery(root, registry=REGISTRY):
             elif s.startswith(item) and s[len(item):].strip():
                 out.setdefault(key, s[len(item):].strip())
     return out
+
+
+def working_items(root, registry=REGISTRY):
+    """({key: value}, [line left out]) of AGENTS.md at root, the old source of the WORKING_ITEMS keys and of
+    dispatch.loopback. In «## Working copy»: the backquoted values of every «Paths:» and «Shared:» item (a leading / of
+    a shared path dropped), the first backquoted value of the first «Prepare:» and «After refresh:» item, as written,
+    and the first number of the first «Orchestrators:» item; a list item «Loopback: needed» of «## Working copy» or
+    «## Commands» is `on`. A path or number check_value refuses is left out and named as AGENTS.md:<line> with the
+    reason; a file that cannot be opened: ({}, [])."""
+    try:
+        with open(os.path.join(root, "AGENTS.md"), encoding="utf-8", errors="replace") as f:
+            lines = f.read().splitlines()
+    except OSError:
+        return {}, []
+    out, bad, section = {}, [], ""
+    for n, ln in enumerate(lines, 1):
+        if ln.startswith("## "):
+            section = ln.strip()
+            continue
+        s = ln.strip()
+        if section in ("## Working copy", "## Commands") and s.startswith(("-", "*")) and "dispatch.loopback" in registry \
+                and re.match(r"loopback:\s*needed\b", s.replace("*", "").lstrip("- "), re.I):
+            out["dispatch.loopback"] = "on"
+        s = s.lstrip("-* ").strip()
+        for item, key in WORKING_ITEMS if section == "## Working copy" else ():
+            if not s.startswith(item) or key not in registry or key in out and registry[key][0] not in LIST_KINDS:
+                continue
+            rest = s[len(item):]
+            if key == "dispatch.limit":
+                m = re.search(r"\d+", rest)
+                vals = [m.group()] if m else []
+            else:
+                vals = [v.lstrip("/") if key == "dispatch.shared" else v for v in rest.split("`")[1::2] if v.strip()]
+            if registry[key][0] == "text":  # a command is read as written, without the length limit
+                if vals:
+                    out[key] = vals[0].strip()
+                continue
+            good = []
+            for v in vals:
+                try:
+                    good.append(check_value(key, v, registry))
+                except SettingsError as e:
+                    bad.append("AGENTS.md:%d: %s is left out: %s" % (n, v, e))
+            if good:
+                out[key] = ", ".join(([out[key]] if key in out else []) + good)
+    return out, bad
 
 
 def read_settings(root, registry=REGISTRY):
@@ -533,33 +594,22 @@ def apply_ignores(changes, pairs):
             for cid, c in changes.items()}
 
 
-def agents_section(main):
-    """Shared paths and the limit (None without the item) from the «Working copy» section."""
-    common, limit = set(COMMON), None
+def agents_section(main, values):
+    """Shared paths: COMMON and dispatch.shared of values; names the pre-English keywords and the item values the
+    settings left out of AGENTS.md on stderr."""
     agents = os.path.join(main, "AGENTS.md")
-    src = text(agents)
-    found = migrate_agents(src)[1]
+    found = migrate_agents(text(agents))[1]
     if found:
         print(migrate_hint(agents, found), file=sys.stderr)
-    for ln in sections(src, "Working copy"):
-        s = ln.strip().lstrip("-* ").strip()
-        if s.startswith("Shared:"):
-            common |= {v.lstrip("/") for v in s.split("`")[1::2] if v}
-        elif s.startswith("Orchestrators:"):
-            m = re.search(r"\d+", s)
-            if m:
-                limit = int(m.group())
-    return common, limit
+    for ln in working_items(main)[1]:
+        print(ln, file=sys.stderr)
+    return set(COMMON) | {v.strip() for v in values["dispatch.shared"][0].split(",") if v.strip()}
 
 
 def loopback_needed(main):
-    """The project declares that its tests need local sockets: «Loopback: needed» in «Commands» or «Working copy»."""
-    src = text(os.path.join(main, "AGENTS.md"))
-    for ln in sections(src, "Commands") + sections(src, "Working copy"):
-        s = ln.strip()
-        if s.startswith(("-", "*")) and re.match(r"loopback:\s*needed\b", s.replace("*", "").lstrip("- "), re.I):
-            return True
-    return False
+    """The project declares that its tests need local sockets: dispatch.loopback on (solo-sdd/config, else the item
+    «Loopback: needed» of the AGENTS.md section «Commands» or «Working copy»)."""
+    return read_settings(main)["dispatch.loopback"][0] == "on"
 
 
 def has_branch(main, cid, prefix="change/"):
@@ -625,9 +675,7 @@ def read_project(main, shared=()):
         raise OSError("no folder " + base)
     values = read_settings(main)
     prefix = values["delivery.branch-prefix"][0]
-    common, limit = agents_section(main)
-    if values["dispatch.limit"][1] == "file" or limit is None:
-        limit = int(values["dispatch.limit"][0])
+    common, limit = agents_section(main, values), int(values["dispatch.limit"][0])
     common |= set(shared)
     archived = set()
     arch = os.path.join(base, "archive")
@@ -816,7 +864,7 @@ def main(argv):
                           spec_names(os.path.abspath(args[0])), waiting, deliver["delivery.branch-prefix"][0])
     run, wait = busy(changes, running, waiting)
     print(render(granted, waits, limit, run, together(changes, granted, run, wait),
-                 ignored_artifacts(os.path.abspath(args[0])), wait, loopback(loopback_needed(os.path.abspath(args[0]))), deliver))
+                 ignored_artifacts(os.path.abspath(args[0])), wait, loopback(deliver["dispatch.loopback"][0] == "on"), deliver))
     if process_root(os.path.abspath(args[0])) == "openspec":
         print(IMPORT_HINT)
     return 0

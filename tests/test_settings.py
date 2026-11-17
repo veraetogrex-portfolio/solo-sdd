@@ -603,6 +603,60 @@ class DeliveryItemsInConfig(ConfigDir):
         self.assertEqual(self.get("delivery.deploy"), (0, item + "\n", "source: AGENTS.md\n"))
 
 
+class WorkingCopySettings(ConfigDir):
+    """Requirements: Working copy settings; Working copy items as the old source."""
+    KEYS = {"worktree.paths": ("paths", None, ""), "worktree.prepare": ("text", None, ""),
+            "worktree.after-refresh": ("text", None, ""), "worktree.links": ("paths", None, "node_modules, .venv"),
+            "dispatch.shared": ("paths", None, ""), "dispatch.loopback": ("choice", ("on", "off"), "off"),
+            "dispatch.check-timeout": ("int", None, "600")}
+
+    def agents(self, text):
+        with open(os.path.join(self.dir, "AGENTS.md"), "w", encoding="utf-8") as f:
+            f.write("# p\n\n" + text)
+
+    def test_the_seven_keys(self):
+        for key, (kind, allowed, default) in self.KEYS.items():
+            self.assertEqual(settings.REGISTRY.get(key), (kind, allowed, default, None), key)
+            self.assertEqual(settings.describe(key, {})["group"], "dispatch", key)
+            self.assertEqual(settings.effective({})[key], (default, "default"), key)
+        self.assertEqual(self.cli("set", "worktree.prepare", "npm ci"), (0, "worktree.prepare: npm ci\n"))
+        self.assertEqual(self.cli("set", "worktree.prepare", ""), (0, "worktree.prepare: \n"), "an empty command reads as not set")
+        self.assertEqual(self.cli("set", "dispatch.check-timeout", "0")[0], 1)
+
+    def test_the_old_items(self):
+        self.agents("## Working copy\n\n- Paths: `docs/a.md`, `tmp/`\n- Prepare: `npm ci`\n- After refresh: `make x`\n"
+                    "- Shared: `CHANGELOG.md`, `/docs/`\n- Shared: `tests/stand.sh`\n- Orchestrators: 4 (eight cores)\n"
+                    "- Prepare: `other`\n\n## Other\n\n- Orchestrators: 9\n- Paths: `x.md`\n")
+        for key, want in (("worktree.paths", "docs/a.md, tmp/"), ("worktree.prepare", "npm ci"),
+                          ("worktree.after-refresh", "make x"), ("dispatch.shared", "CHANGELOG.md, docs/, tests/stand.sh"),
+                          ("dispatch.limit", "4"), ("dispatch.loopback", "off"), ("worktree.links", "node_modules, .venv"),
+                          ("dispatch.check-timeout", "600")):
+            source = "default" if key in ("dispatch.loopback", "worktree.links", "dispatch.check-timeout") else "AGENTS.md"
+            self.assertEqual(self.get(key), (0, want + "\n", "source: %s\n" % source), key)
+
+    def test_loopback_needed_from_either_section(self):
+        for text in ("## Commands\n\n- Loopback: needed\n", "## Working copy\n\n* loopback: Needed.\n"):
+            self.agents(text)
+            self.assertEqual(self.get("dispatch.loopback"), (0, "on\n", "source: AGENTS.md\n"), text)
+        self.agents("## Security\n\n- Loopback: needed\n")
+        self.assertEqual(self.get("dispatch.loopback"), (0, "off\n", "source: default\n"))
+
+    def test_a_refused_old_value(self):
+        self.agents("## Working copy\n\n- Paths: `/etc/hosts`, `docs/a.md`\n- Orchestrators: 0\n")
+        code, out, err = self.get("worktree.paths")
+        self.assertEqual((code, out), (0, "docs/a.md\n"))
+        self.assertIn("AGENTS.md:5: /etc/hosts is left out: worktree.paths takes relative paths", err)
+        self.assertIn("AGENTS.md:6: 0 is left out: dispatch.limit takes a whole number from 1", err)
+        self.assertTrue(err.endswith("source: AGENTS.md\n"), err)
+        self.assertEqual(self.get("dispatch.limit")[1:], ("2\n", err.replace("AGENTS.md\n", "default\n")))
+
+    def test_the_file_wins(self):
+        self.agents("## Working copy\n\n- Shared: `CHANGELOG.md`\n- Orchestrators: 4\n- Loopback: needed\n")
+        self.write("dispatch.shared: docs/\ndispatch.limit: 3\ndispatch.loopback: off\n")
+        for key, want in (("dispatch.shared", "docs/"), ("dispatch.limit", "3"), ("dispatch.loopback", "off")):
+            self.assertEqual(self.get(key), (0, want + "\n", "source: file\n"), key)
+
+
 class ProjectRulesInConfig(ConfigDir):
     """Requirements: Project rules in config; Project lines as the old source; Config command (source project.md)."""
     KEYS = {"project.stage": ("choice", ("demo", "prod"), ""), "artifacts.language": ("lang", None, "en"),

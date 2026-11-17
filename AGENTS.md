@@ -104,7 +104,7 @@ Before "done": the `Tests` row, the lint from the table without output, `python3
 - A check of printed output or a document matches by prefix and by whole item with whitespace collapsed, never by position or physical line. ([full text](LESSONS.md#output-checks-by-prefix))
 - A stand that grades a judgement call expects one answer only where every correct reading gives it. ([full text](LESSONS.md#judgement-stands))
 - A deployment gate is worded for the whole repository, a publication target handed to a new name is guarded in every clone, and a deploying command is never run to learn its options. ([full text](LESSONS.md#deployment-gates))
-- A cleanup removes only what the current map and its own sources name, keeps and names everything else, and takes a source as gone only when it is missing. ([full text](LESSONS.md#cleanup-scope))
+- A cleanup removes only what the current map, its own sources or its setup's record name (never what settings name now), keeps and names everything else, and takes a source as gone only when it is missing. ([full text](LESSONS.md#cleanup-scope))
 - A value that falls back to a default is reported with its source, every reader takes a setting from one shared definition and falls back to its default when the command or the tree is missing, never on its error text or an empty answer, and an inferred choice is stored once made. ([full text](LESSONS.md#setting-sources))
 - A bulk wording replacement keeps quoted program output verbatim and is reread line by line. ([full text](LESSONS.md#bulk-wording))
 - A script that moves or rewrites a branch decides from the commits themselves, never from a setting. ([full text](LESSONS.md#branch-scripts-from-commits))

@@ -365,6 +365,28 @@ class SkillCommandsTest(unittest.TestCase):
                 "| Tests | `pytest -q` |\n", encoding="utf-8")
             self.assertEqual(sdd_eval.test_command(tmp), "pytest -q")
 
+    def test_working_copy_settings_in_skills(self):
+        """Requirements: Test command under dispatcher (N is `dispatch.limit` through `solo-sdd config get`, a
+        `worktree.` or `dispatch.` key is the dispatcher sign); Working copy values in the settings."""
+        read = lambda rel: " ".join(skill_text.read(REPO / rel).split())
+        init = read("skills/project-init/SKILL.md")
+        limit = init.split('The test command with a "Working copy" section', 1)[1].split(" Neither,", 1)[0]
+        for w in ("a `worktree.` or `dispatch.` key in `solo-sdd/config`", "`solo-sdd config get dispatch.limit`",
+                  "max(1, ⌊cores / N⌋)"):
+            self.assertIn(w, limit)
+        self.assertNotIn('N is the item "Orchestrators:"', init)
+        self.assertIn("go into `solo-sdd/config` through `solo-sdd config set <key> <value>`, never into a new "
+                      '"Working copy" section', init)
+        self.assertIn("an existing section stays as written", init)
+        self.assertIn("no `solo-sdd/` tree, no command or a failed call: the first number of that item, else 2", limit)
+        for key in ("worktree.paths", "worktree.prepare", "worktree.after-refresh", "dispatch.limit", "dispatch.shared",
+                    "dispatch.loopback"):
+            self.assertIn("`%s" % key, init)
+        dispatch = read("skills/spec-dispatch/SKILL.md")
+        for key in ("dispatch.loopback", "dispatch.shared", "worktree.paths", "worktree.links", "worktree.prepare",
+                    "dispatch.check-timeout", "dispatch.limit"):
+            self.assertIn("`%s`" % key, dispatch)
+
     BUDGET = ("`Tests (one)`", "once after the last code edit", "only when code changed after that run",
               "the failed tests first", "`--reporter=dot`", "only the failure lines")
 

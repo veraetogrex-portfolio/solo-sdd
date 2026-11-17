@@ -37,6 +37,13 @@ REGISTRY = {
     "delivery.branch-prefix": ("choice", None, "change/", None),  # a change branch is <prefix><id>
     "delivery.plan-prefix": ("choice", None, "plan/", None),  # the spec-plan branch is <prefix><first id>
     "dispatch.limit": ("int", None, "2", None),
+    "dispatch.shared": ("paths", None, "", None),  # sdd-dispatch-plan.py: paths changes may share without a conflict
+    "dispatch.loopback": ("choice", ("on", "off"), "off", None),  # on: the project's tests need local sockets
+    "dispatch.check-timeout": ("int", None, "600", None),  # seconds of each land-local command; SDD_DISPATCH_TIMEOUT wins
+    "worktree.paths": ("paths", None, "", None),  # sdd-worktree.py: git-ignored paths copied into a worktree
+    "worktree.prepare": ("text", None, "", None),  # the command setup runs in a new worktree
+    "worktree.after-refresh": ("text", None, "", None),  # the command refresh runs after a transfer without conflicts
+    "worktree.links": ("paths", None, "node_modules, .venv", None),  # folders linked from the main folder
     "process.review-rounds": ("int", None, "5", None),
     "process.light-path": ("choice", ("on", "off"), "on", None),  # off: every code edit goes through a change
     "process.light-path.max-files": ("int", None, "3", None),
@@ -87,6 +94,10 @@ DELIVERY_ITEMS = (("PR title:", "delivery.pr-title"), ("Deploy:", "delivery.depl
 PROJECT_FILE = "solo-sdd/project.md"
 PROJECT_LINES = (("Mode:", "project.stage"), ("Language:", "artifacts.language"))
 OLD_SOURCE = dict((key, "project.md") for _, key in PROJECT_LINES)  # any other old source key: AGENTS.md
+# the «Working copy» items of AGENTS.md read as the old source of a key: item -> key
+WORKING_ITEMS = (("Paths:", "worktree.paths"), ("Prepare:", "worktree.prepare"),
+                 ("After refresh:", "worktree.after-refresh"), ("Shared:", "dispatch.shared"),
+                 ("Orchestrators:", "dispatch.limit"))
 
 
 class SettingsError(ValueError):
@@ -198,6 +209,8 @@ def check_value(key, value, registry=REGISTRY):
     kind, allowed, default = entry(key, registry)[:3]
     v = value.strip()
     if kind == "text":
+        if not v and default == "":
+            return v
         if not v or not v.isprintable() or len(v) > TEXT_MAX:
             raise SettingsError("%s takes one line of printable characters, at most %d characters, not %r"
                                 % (key, TEXT_MAX, v if len(v) <= 60 else v[:60] + "..."))
@@ -319,8 +332,9 @@ def project_lines(root, registry=REGISTRY):
 def agents_delivery(root, registry=REGISTRY):
     """{key: value} of the old sources at root: the project_lines values, and the «## Delivery» section of AGENTS.md:
     the first allowed «Mode:» and «Merge:» items, the first non-empty «PR title:» and «Deploy:» texts trimmed and as
-    written, and the backquoted patterns of every «Owner only:» item; a file that cannot be opened adds nothing."""
-    out, inside = dict(project_lines(root, registry)[0]), False
+    written, and the backquoted patterns of every «Owner only:» item; the working_items values; a file that cannot be
+    opened adds nothing."""
+    out, inside = dict(project_lines(root, registry)[0], **working_items(root, registry)[0]), False
     try:
         with open(os.path.join(root, "AGENTS.md"), encoding="utf-8", errors="replace") as f:  # other readers own the encoding
             lines = f.read().splitlines()
@@ -344,6 +358,52 @@ def agents_delivery(root, registry=REGISTRY):
             elif s.startswith(item) and s[len(item):].strip():
                 out.setdefault(key, s[len(item):].strip())
     return out
+
+
+def working_items(root, registry=REGISTRY):
+    """({key: value}, [line left out]) of AGENTS.md at root, the old source of the WORKING_ITEMS keys and of
+    dispatch.loopback. In «## Working copy»: the backquoted values of every «Paths:» and «Shared:» item (a leading / of
+    a shared path dropped), the first backquoted value of the first «Prepare:» and «After refresh:» item, as written,
+    and the first number of the first «Orchestrators:» item; a list item «Loopback: needed» of «## Working copy» or
+    «## Commands» is `on`. A path or number check_value refuses is left out and named as AGENTS.md:<line> with the
+    reason; a file that cannot be opened: ({}, [])."""
+    try:
+        with open(os.path.join(root, "AGENTS.md"), encoding="utf-8", errors="replace") as f:
+            lines = f.read().splitlines()
+    except OSError:
+        return {}, []
+    out, bad, section = {}, [], ""
+    for n, ln in enumerate(lines, 1):
+        if ln.startswith("## "):
+            section = ln.strip()
+            continue
+        s = ln.strip()
+        if section in ("## Working copy", "## Commands") and s.startswith(("-", "*")) and "dispatch.loopback" in registry \
+                and re.match(r"loopback:\s*needed\b", s.replace("*", "").lstrip("- "), re.I):
+            out["dispatch.loopback"] = "on"
+        s = s.lstrip("-* ").strip()
+        for item, key in WORKING_ITEMS if section == "## Working copy" else ():
+            if not s.startswith(item) or key not in registry or key in out and registry[key][0] not in LIST_KINDS:
+                continue
+            rest = s[len(item):]
+            if key == "dispatch.limit":
+                m = re.search(r"\d+", rest)
+                vals = [m.group()] if m else []
+            else:
+                vals = [v.lstrip("/") if key == "dispatch.shared" else v for v in rest.split("`")[1::2] if v.strip()]
+            if registry[key][0] == "text":  # a command is read as written, without the length limit
+                if vals:
+                    out[key] = vals[0].strip()
+                continue
+            good = []
+            for v in vals:
+                try:
+                    good.append(check_value(key, v, registry))
+                except SettingsError as e:
+                    bad.append("AGENTS.md:%d: %s is left out: %s" % (n, v, e))
+            if good:
+                out[key] = ", ".join(([out[key]] if key in out else []) + good)
+    return out, bad
 
 
 def read_settings(root, registry=REGISTRY):
@@ -375,7 +435,14 @@ ABOUT = {
     "delivery.draft": ("delivery", "Whether a pull request opens as a draft, marked ready for review right before the merge."),
     "delivery.branch-prefix": ("delivery", "The start of every change branch name: the branch of a change is this prefix and the change id."),
     "delivery.plan-prefix": ("delivery", "The start of the branch spec-plan commits a plan on in pull request delivery, before the first change id."),
-    "dispatch.limit": ("dispatch", "The most orchestrators the dispatcher runs at the same time."),
+    "dispatch.limit": ("dispatch", "The most orchestrators the dispatcher runs at the same time; the Orchestrators item of the AGENTS.md section Working copy is read when the file sets none."),
+    "dispatch.shared": ("dispatch", "Paths changes edit often without hindering each other: the dispatch plan sees no conflict on them; a path ending in / shares every file under it."),
+    "dispatch.loopback": ("dispatch", "Whether the project's tests need local sockets: on makes a blocked loopback stop the dispatcher before the first launch."),
+    "dispatch.check-timeout": ("dispatch", "The most seconds each command of sdd-dispatch.py land-local runs; a valid SDD_DISPATCH_TIMEOUT wins."),
+    "worktree.paths": ("dispatch", "Git-ignored files or folders sdd-worktree.py copies into each change worktree besides the process tree and AGENTS.md."),
+    "worktree.prepare": ("dispatch", "The command sdd-worktree.py setup runs in a new worktree, such as installing dependencies."),
+    "worktree.after-refresh": ("dispatch", "The command sdd-worktree.py refresh runs in the worktree after a transfer without conflicts, such as rebuilding ignored files."),
+    "worktree.links": ("dispatch", "Folders linked from the main folder into each worktree: node_modules up to three levels deep, any other at its path from the root."),
     "process.review-rounds": ("process", "The most independent acceptance rounds of one change, plus one extra round for findings on the last fix, before it counts as not done."),
     "process.light-path": ("process", "Whether a small code edit outside every spec may skip the change cycle."),
     "process.light-path.max-files": ("process", "The most files a light path edit may change."),
@@ -556,6 +623,8 @@ def run(args, cwd=".", registry=REGISTRY):
         return 1
     for line in project_lines(root, registry)[1]:
         print("%s: %s" % (PROJECT_FILE, line), file=sys.stderr)
+    for line in working_items(root, registry)[1]:
+        print(line, file=sys.stderr)
     if args == ["list"]:
         for key, (value, source) in values.items():
             print("%s %s %s" % (key, value, source))
