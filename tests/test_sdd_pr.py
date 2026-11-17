@@ -1136,7 +1136,9 @@ class LandOwnerPaths(ShipLand):
         self.assertEqual(e.calls("gh", "api", "-X", "PUT"), [])
 
     def test_land_config_outside_git(self):
-        """Requirement: Owner-only paths gate, scenario The config outside git: a WORKTREE copy with fewer paths waits."""
+        """Requirement: Owner-only paths gate, scenario The config outside git: an ignored WORKTREE copy written after
+        setup (fewer paths) waits."""
+        self.put(self.main, ".git/info/exclude", "solo-sdd/\n")
         self.put(self.main, "solo-sdd/config", "delivery.owner-only: deploy/**\n")
         self.put(self.wt, "solo-sdd/config", "delivery.owner-only: other/**\n")
         e = self.mk(files_json=[frow("feature.txt")])

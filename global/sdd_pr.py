@@ -672,15 +672,29 @@ def gate_patterns(pats):
 def settings_hits(main, files, wt=None):
     """Files matching CI_PATTERN or delivery.owner-only of the main folder's settings (its old source the «Owner only:»
     items of the main AGENTS.md), never of the PR or the worktree, plus the settings file itself when the change edits
-    it or the worktree holds a copy that differs from the main folder's (the transfer after merge would carry it).
-    Broken settings raise SettingsError (OSError): the gate never falls back to fewer paths."""
+    it or the transfer after merge would carry the worktree's copy (carried_config). Broken settings raise
+    SettingsError (OSError): the gate never falls back to fewer paths."""
     value = read_settings(main)["delivery.owner-only"][0] if main else ""
     hits = owner_hits(files, gate_patterns(x.strip() for x in value.split(",")))
-    theirs = wt is not None and os.path.isfile(os.path.join(wt, SETTINGS_FILE))
-    if SETTINGS_FILE not in hits and (SETTINGS_FILE in files or theirs and (
-            read_settings_text(wt) != (read_settings_text(main) if main else None))):
+    if SETTINGS_FILE not in hits and (SETTINGS_FILE in files or wt is not None and carried_config(main, wt)):
         hits.append(SETTINGS_FILE)
     return hits
+
+
+def carried_config(main, wt):
+    """True when sdd-worktree.py transport would carry the worktree's settings file into main: its bytes differ from
+    the setup snapshot <wt>.base, and git ignores it in main (a tracked file comes with the merge, not the transfer);
+    a check-ignore that fails counts as ignored. An owner edit of the main copy alone is no hit."""
+    def raw(path):
+        try:
+            with open(path, "rb") as f:
+                return f.read()
+        except FileNotFoundError:
+            return None
+    mine = raw(os.path.join(wt, SETTINGS_FILE))
+    if mine is None or mine == raw(os.path.join(wt + ".base", SETTINGS_FILE)):
+        return False
+    return not main or sh("git", "-C", main, "check-ignore", "-q", "--", SETTINGS_FILE).returncode != 1
 
 
 def glob_re(pat):
