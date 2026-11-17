@@ -738,6 +738,21 @@ class LocalMergeMethodTest(LandBase):
             g(self.wt, "reset", "-q", "--hard", "HEAD~1")
             g(self.wt, "commit", "-q", "--allow-empty", "-m", "c: empty")
 
+    def test_squash_without_own_commit(self):
+        # Scenario: Squash without an own commit
+        self.branch("squash", own=False)
+        head = g(self.main, "rev-parse", "HEAD")
+        r = self.land()
+        self.assertEqual((r.returncode, r.stdout.strip()), (1, "not merged: merge: no title in the last own commit of the branch"))
+        self.assert_rolled_back(head)
+
+    def test_squash_title_skips_empty_commit(self):
+        # Scenario: Squash: the title rule of land skips the empty commit after `c: done`
+        self.branch("squash")
+        r = self.land()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(g(self.main, "log", "-1", "--format=%s"), "c: done")
+
     def conflict(self, method):
         self.branch(method, readme="change\n")
         self.put(self.main, "README.md", "other\n")
@@ -753,7 +768,7 @@ class LocalMergeMethodTest(LandBase):
         self.assert_rolled_back(head)
         self.assertEqual(g(self.main, "rev-parse", "change/c"), tip)
         self.assertEqual(g(self.wt, "status", "--short"), "")
-        self.assertFalse(os.path.exists(os.path.join(g(self.wt, "rev-parse", "--absolute-git-dir"), "rebase-merge")))
+        self.assertEqual(len(g(self.main, "worktree", "list").splitlines()), 2, "the temporary worktree is removed")
 
     def test_rebase_red_check_rolls_back_main(self):
         # Requirement: Local land after a red check, after a rebase: the main branch goes back, the branch stays

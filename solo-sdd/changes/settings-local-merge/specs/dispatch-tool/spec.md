@@ -64,7 +64,7 @@
 - **THEN** code 1 with "not merged: merge: no title in the last own commit of the branch", the main branch is unchanged
 
 ### Requirement: Local land checks and cleanup
-After the merge and the transfer `land-local` SHALL run every `--check` and `solo-sdd validate --all` once each. All passed: `sdd-worktree.py remove`, `git branch -d change/<id>` (`-D` after `squash` and `rebase`: git does not see the branch as merged), code 0 and the merge hash. A failure of `remove` or the branch deletion does not roll back the merge: code 1 with the line "merged <hash>, not cleaned: <step>: <error>".
+After the merge and the transfer `land-local` SHALL run every `--check` and `solo-sdd validate --all` once each. All passed: `sdd-worktree.py remove`, `git branch -d change/<id>` (`-D` after `squash` and `rebase`: a squashed branch is not merged by hash), code 0 and the merge hash. A failure of `remove` or the branch deletion does not roll back the merge: code 1 with the line "merged <hash>, not cleaned: <step>: <error>".
 
 #### Scenario: Everything passed
 - **WHEN** the merge, the transfer and all checks passed

@@ -399,6 +399,10 @@ def rebase(main, wt, branch, prev):
     """Rebases branch onto prev in a temporary worktree, then moves WORKTREE to the result with `reset --keep`:
     a rebase in WORKTREE would check out prev over its ignored copies (an archive the branch took out of git) and
     replay their removal from its disk. 0 done; 6 a conflict, 1 another failure: the branch and WORKTREE unchanged."""
+    r = git(wt, "symbolic-ref", "-q", "HEAD")  # reset --keep moves the branch WORKTREE has checked out
+    if r.stdout.strip() != "refs/heads/" + branch:
+        print("not merged: rebase: %s is not on %s" % (wt, branch))
+        return 1
     tmp = tempfile.mkdtemp(prefix="sdd-rebase-")
     path = os.path.join(tmp, "wt")
     try:
@@ -412,12 +416,11 @@ def rebase(main, wt, branch, prev):
             return 6 if files else 1
         new = git(path, "rev-parse", "HEAD").stdout.strip()
     finally:
-        git(main, "worktree", "remove", "--force", path)  # an unfinished rebase goes with it
-        git(main, "worktree", "prune")
+        git(main, "worktree", "remove", "--force", path)  # its own entry only; an unfinished rebase goes with it
         shutil.rmtree(tmp, ignore_errors=True)
     r = git(wt, "reset", "-q", "--keep", new)  # touches only the files the rebase changed
     if r.returncode:
-        print("not merged: rebase: reset: " + r.stderr.strip())
+        print("not merged: rebase: reset: " + "; ".join(r.stderr.strip().splitlines()))
         return 1
     return 0
 
