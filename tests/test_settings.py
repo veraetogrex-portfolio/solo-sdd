@@ -602,6 +602,12 @@ class IgnoreListSetting(ConfigDir):
             self.assertEqual(code, 1, value)
             self.assertIn("git.ignore item %s hides %s" % (value, path), out, value)
         self.assertEqual(self.read(), "# keep\n")
+        locked = os.path.join(self.dir, "solo-sdd", "specs")
+        os.chmod(locked, 0)
+        self.addCleanup(os.chmod, locked, 0o755)
+        code, out = self.cli("set", "git.ignore", "node_modules")
+        self.assertEqual((code, "cannot list" in out), (1, True), out)
+        self.assertEqual(self.read(), "# keep\n")
 
     def test_a_broken_file_line(self):
         self.write("# c\ngit.ignore: .env, *.md\n")

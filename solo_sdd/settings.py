@@ -415,12 +415,14 @@ def tree_refusal(root, value):
     """Why a git.ignore value would hide a file or folder of the project's own solo-sdd/ tree (the archive aside) or
     its AGENTS.md or CLAUDE.md, or None: the names a capability, a change or an integration has on disk."""
     paths = ["AGENTS.md", "CLAUDE.md"]
-    top = os.path.join(root, "solo-sdd")
-    for d, dirs, files in os.walk(top):
+    top, failed = os.path.join(root, "solo-sdd"), []
+    for d, dirs, files in os.walk(top, onerror=failed.append):
         rel = os.path.relpath(d, root).replace(os.sep, "/")
         if rel == "solo-sdd/changes":
             dirs[:] = [x for x in dirs if x.lower() != "archive"]
         paths += [rel + "/" + x + "/" for x in dirs] + [rel + "/" + x for x in files]
+    if failed and os.path.isdir(top):  # a folder it cannot list would hide its names: no answer, not an empty one
+        return "%s: cannot list %s to check it: %s" % (IGNORE_KEY, failed[0].filename, failed[0].strerror)
     for item in [i.strip() for i in value.split(",") if i.strip()]:
         hides = ignore_hides(item, paths)
         if hides:
