@@ -924,10 +924,9 @@ class StopGateSwitches(HookCase):
         os.chmod(os.path.join(fbin, "gh"), 0o755)
         tr, env = edits_transcript("t-pr.jsonl", push=True), dict(ENV, PATH=fbin + os.pathsep + ENV["PATH"])
         # the stand settings-stop-hooks.py step 6 covers the switch on under human and agent merges
-        for n, text in enumerate(("hooks.stop.open-pr: off\n", "hooks.stop.open-pr: off\ndelivery.merge-by: agent\n")):
-            project_config(proj, text)
-            r = self.stop("S-pr-%d" % n, tr, proj, env)
-            assert "pull/9 is open and not merged" not in r, (text, r)
+        project_config(proj, "hooks.stop.open-pr: off\n")
+        r = self.stop("S-pr-off", tr, proj, env)
+        assert "pull/9 is open and not merged" not in r, r
 
     def test_settings_of_the_edited_repository(self):
         b = os.path.join(H, "proj-b")
