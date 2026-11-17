@@ -188,7 +188,7 @@ For the methods `squash` and `merge` the commit title of `sdd-pr.py merge` SHALL
 - **THEN** the commit in the main branch is named "Add stats (#7)"
 
 ### Requirement: Owner-only paths gate
-Before the merge request `sdd-pr.py merge` and `land` SHALL check the PR files, including old names of renamed ones, against the "owner only" paths: `.github/workflows/**` and the backquoted patterns of the "Owner only:" item of the "Delivery" section of the main folder's `AGENTS.md` (`*` within a name, `**` across folders). A match or an edit of this item gives code 8 "waits for the owner: <paths>", no merge request, the PR stays open. Unreadable `AGENTS.md` means only `.github/workflows/**`.
+Before the merge request `sdd-pr.py merge` and `land` SHALL check the PR files, old names of renamed ones too, against `.github/workflows/**` and the `delivery.owner-only` patterns of the main folder, never of the PR or WORKTREE (`*` within a name, `**` across folders). A match, an edit of the "Owner only:" item or of `solo-sdd/config` gives code 8 "waits for the owner: <paths>", no merge request, the PR open. Broken settings give code 1; unreadable `AGENTS.md` drops only its item.
 
 #### Scenario: A CI edit
 - **WHEN** a green PR changes `.github/workflows/ci.yml`
@@ -209,6 +209,22 @@ Before the merge request `sdd-pr.py merge` and `land` SHALL check the PR files, 
 #### Scenario: The file list failed
 - **WHEN** the PR files request failed or returned something other than JSON
 - **THEN** code 1, no merge is requested, the PR is open
+
+#### Scenario: Owner paths from the config
+- **WHEN** the main folder's `solo-sdd/config` has `delivery.owner-only: deploy/**`, and a green PR changes `deploy/prod.yml`
+- **THEN** code 8 with `deploy/prod.yml`
+
+#### Scenario: A PR edits the config
+- **WHEN** a green PR changes the line `delivery.merge-by: human` of `solo-sdd/config` to `agent`
+- **THEN** code 8 with `solo-sdd/config`, no merge is requested, also when a checklist covering it is ticked and approved by another account
+
+#### Scenario: The config outside git
+- **WHEN** `solo-sdd/config` is ignored by git, and the WORKTREE copy was edited or deleted after setup
+- **THEN** `land` returns code 8 with `solo-sdd/config`: the transfer after merge would bring the copy into the main folder; an owner edit of the main copy alone, or a tracked config the branch does not change, merges
+
+#### Scenario: Broken settings
+- **WHEN** line 2 of the main folder's `solo-sdd/config` is not `key: value`, and a green PR changes `deploy/prod.yml`
+- **THEN** code 1 naming `solo-sdd/config:2`, no merge is requested, the PR is open: the gate never falls back to fewer paths
 
 ### Requirement: Base branch from settings
 `sdd-pr.py open`, `ship` and `land` and `sdd-worktree.py setup` SHALL use `delivery.base` as the target and the start of a change branch; without the key, the remote's default branch as before. Unreadable settings SHALL exit 1 with the reason, never fall back.
