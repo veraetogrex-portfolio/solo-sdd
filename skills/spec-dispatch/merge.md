@@ -1,7 +1,7 @@
 7. **Merge one at a time**, in acceptance order:
    - One command: `python3 ~/.local/bin/sdd-dispatch.py land-local <MAIN> <WORKTREE> <id> --check "<command>" ...`, one `--check` per command from step 0 (including the added test command).
 
-     The script itself checks that `MAIN` is clean, merges with `--no-ff`, transfers (`sdd-worktree.py transport`), runs the checks and `solo-sdd validate --all` once each, rolls back on failure (`reset --keep` and `undo`) with a rerun of the failed check on main, and cleans up (`remove`, `branch -d`). In `local` mode the dispatcher does not run `git merge`, `reset --keep`, `transport`, `undo`, `remove` or `branch -d` itself.
+     The script itself checks that `MAIN` is clean, merges by `delivery.local-merge` (`merge` with `--no-ff` by default, `squash`, `rebase`), transfers (`sdd-worktree.py transport`), runs the checks and `solo-sdd validate --all` once each, rolls back on failure (`reset --keep` and `undo`) with a rerun of the failed check on main, and cleans up (`remove`, `branch -d`; `-D` after a squash or rebase). In `local` mode the dispatcher does not run `git merge`, `reset --keep`, `transport`, `undo`, `remove` or `branch -d` itself.
 
      Carry the line `not transported: <files>` from the output, with any code, into the report and continue.
    - Code 0: `merged <hash>`, the worktree and branch removed; recalculate by step 2.

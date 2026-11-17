@@ -717,6 +717,68 @@ class LandTest(LandBase):
         self.assertEqual(r.returncode, 2)
 
 
+class LocalMergeMethodTest(LandBase):
+    """Requirement: Local land command and Local land checks and cleanup: the merge by delivery.local-merge of MAIN."""
+
+    def branch(self, method, readme=None, own=True):
+        """change/c with four commits (an empty one among them, the last `c: done`), or only an empty one;
+        delivery.local-merge set in MAIN's untracked config."""
+        if method:
+            self.put(self.main, "solo-sdd/config", "delivery.local-merge: %s\n" % method)
+        self.make_change(rel="README.md" if readme else "feature.txt", text=readme or "new\n")
+        if own:
+            self.put(self.wt, "more.txt", "more\n")
+            g(self.wt, "add", "-A")
+            g(self.wt, "commit", "-q", "-m", "more")
+            self.put(self.wt, "last.txt", "last\n")
+            g(self.wt, "add", "-A")
+            g(self.wt, "commit", "-q", "-m", "c: done")
+            g(self.wt, "commit", "-q", "--allow-empty", "-m", "c: empty")  # not own: the title skips it
+        else:
+            g(self.wt, "reset", "-q", "--hard", "HEAD~1")
+            g(self.wt, "commit", "-q", "--allow-empty", "-m", "c: empty")
+
+    def test_squash_without_own_commit(self):
+        # Scenario: Squash without an own commit
+        self.branch("squash", own=False)
+        head = g(self.main, "rev-parse", "HEAD")
+        r = self.land()
+        self.assertEqual((r.returncode, r.stdout.strip()), (1, "not merged: merge: no title in the last own commit of the branch"))
+        self.assert_rolled_back(head)
+
+    def test_squash_title_skips_empty_commit(self):
+        # Scenario: Squash: the title rule of land skips the empty commit after `c: done`
+        self.branch("squash")
+        r = self.land()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(g(self.main, "log", "-1", "--format=%s"), "c: done")
+
+    def conflict(self, method):
+        self.branch(method, readme="change\n")
+        self.put(self.main, "README.md", "other\n")
+        g(self.main, "commit", "-q", "-am", "other")
+        return g(self.main, "rev-parse", "HEAD"), g(self.main, "rev-parse", "change/c")
+
+    def test_rebase_conflict(self):
+        # Scenario: A rebase conflict
+        head, tip = self.conflict("rebase")
+        r = self.land()
+        self.assertEqual(r.returncode, 6, r.stdout + r.stderr)
+        self.assertIn("not merged: merge conflict: README.md", r.stdout)
+        self.assert_rolled_back(head)
+        self.assertEqual(g(self.main, "rev-parse", "change/c"), tip)
+        self.assertEqual(g(self.wt, "status", "--short"), "")
+        self.assertEqual(len(g(self.main, "worktree", "list").splitlines()), 2, "the temporary worktree is removed")
+
+    def test_rebase_red_check_rolls_back_main(self):
+        # Requirement: Local land after a red check, after a rebase: the main branch goes back, the branch stays
+        self.branch("rebase")
+        head = g(self.main, "rev-parse", "HEAD")
+        r = self.land("--check", "test ! -f last.txt")
+        self.assertEqual(r.returncode, 3, r.stdout + r.stderr)
+        self.assert_rolled_back(head)
+
+
 class ArchiveRemovalLandTest(LandBase):
     """Requirement: Change archive outside git. The merge of the branch that removes solo-sdd/changes/archive/ from the
     index deletes the tracked archive from MAIN's disk and transport puts it back from WORKTREE."""
@@ -771,6 +833,21 @@ class ArchiveRemovalLandTest(LandBase):
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
         self.assertIn("rollback failed: reset", r.stdout)
         self.assert_old_on_disk()
+
+    def test_rebase_keeps_archive_on_disk(self):
+        # Requirement: Local land command, rebase: the branch is rebased away from WORKTREE, whose ignored archive
+        # copies transport puts back after the fast-forward removed MAIN's tracked ones
+        self.put(self.main, ".git/info/exclude", "solo-sdd/config\n")  # the config outside git, as setup copied it
+        for d in (self.main, self.wt, self.wt + ".base"):
+            self.put(d, "solo-sdd/config", "delivery.local-merge: rebase\n")
+        self.put(self.main, "ahead.txt", "ahead\n")
+        g(self.main, "add", "ahead.txt")
+        g(self.main, "commit", "-q", "-m", "ahead")
+        r = self.land()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(g(self.main, "log", "--merges", "--format=%H"), "")
+        self.assert_old_on_disk()
+        self.assertEqual(pathlib.Path(self.main, self.NEW, "tasks.md").read_text(), "t\n")
 
     def test_merge_keeps_archive_on_disk(self):
         r = self.land()

@@ -180,3 +180,10 @@ With `delivery.require-ci: off` a PR whose checks stay empty past `delivery.ci-n
 #### Scenario: A PR switches CI off for itself
 - **WHEN** the WORKTREE `solo-sdd/config` has `delivery.require-ci: off`, the main folder's has none, and the PR has no checks
 - **THEN** `wait` gives `CI: infra` "no checks", `merge` refuses with code 1
+
+### Requirement: Local merge method
+The key `delivery.local-merge` (`merge`, `squash`, `rebase`; default `merge`) SHALL choose how `sdd-dispatch.py land-local` merges the change branch; `delivery.merge` SHALL describe only pull requests. `config describe delivery.merge` SHALL name `delivery.local-merge` for local delivery.
+
+#### Scenario: The default keeps today
+- **WHEN** the file has no `delivery.local-merge`
+- **THEN** `config get delivery.local-merge` prints `merge` with `source: default`

@@ -528,6 +528,23 @@ def main():
             finally:
                 s.close()
         row("CI wait settings: the seven keys, a number entry, a pick, save", ci_wait_keys)
+
+        def local_merge_key():
+            d = project(base)
+            s = Session(d, 40, 120)
+            try:
+                need("delivery.local-merge" in s.term.text(), "the local merge key listed", s.term.text())
+                to(s, "delivery.local-merge")
+                t = s.send("enter")
+                need("Enter set" in flat(t), "a choice key is a pick", t)
+                s.send("down", "enter", "s", "y", "q")
+                need(s.wait() == 0, "saved and quit")
+                listed = sdd(d, "config", "list")[1].splitlines()
+                need({"delivery.local-merge squash file", "delivery.merge squash default"} <= set(listed),
+                     "config list: %s" % listed)
+            finally:
+                s.close()
+        row("Local merge method: the key, a pick, save", local_merge_key)
     finally:
         shutil.rmtree(base, True)
     print("SUMMARY: all rows passed" if all(results) else "SUMMARY: %d of %d rows failed" % (
