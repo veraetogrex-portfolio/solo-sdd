@@ -36,8 +36,10 @@ class Env:
         self.tmp = tempfile.TemporaryDirectory()
         self.proj = os.path.join(self.tmp.name, "proj")
         os.makedirs(self.proj)
-        if git:
-            os.mkdir(os.path.join(self.proj, ".git"))
+        if git:  # a repository whose history git cannot read (log.date): detection says "authors unknown"
+            for args in (("init", "-q", self.proj), ("-C", self.proj, "config", "log.date", "unreadable")):
+                subprocess.run(["git", "-c", "init.defaultBranch=main", *args], check=True, capture_output=True,
+                               stdin=subprocess.DEVNULL)
         self.home = os.path.join(self.tmp.name, "home")
         os.makedirs(self.home)
         self.patch = mock.patch.dict(os.environ, {"PATH": "/usr/bin:/bin", "HOME": self.home})
@@ -166,6 +168,43 @@ class InitTest(unittest.TestCase):
             self.assertEqual(snapshot(e.proj), first)
 
 
+BLOCK = "# solo-sdd:begin\n.claude/worktrees/\n.env\n.env.*\n!.env.example\n# solo-sdd:end\n"
+
+
+class WorktreeFolderIgnored(unittest.TestCase):
+    """Requirement: Built-in worktree folder ignored (solo-sdd init)."""
+
+    def gitignore(self, e):
+        with open(os.path.join(e.proj, ".gitignore"), encoding="utf-8", newline="") as f:
+            return f.read()
+
+    def test_no_line_then_a_repeat(self):
+        with Env() as e:
+            e.write(".gitignore", "node_modules\n")
+            self.assertEqual(e.init()[0], 0)
+            self.assertEqual(self.gitignore(e), "node_modules\n" + BLOCK)
+            r = subprocess.run(["git", "-C", e.proj, "check-ignore", ".claude/worktrees/a"], capture_output=True,
+                               text=True, stdin=subprocess.DEVNULL)
+            self.assertEqual(r.stdout, ".claude/worktrees/a\n")
+            code, out = e.init()
+            self.assertEqual((code, self.gitignore(e).count(".claude/worktrees/\n")), (0, 1), out)
+
+    def test_the_rule_already_exists_as_another_line(self):
+        with Env() as e:
+            e.write(".gitignore", ".claude/\n")
+            self.assertEqual(e.init()[0], 0)
+            self.assertNotIn(".claude/worktrees/", self.gitignore(e))
+
+    def test_a_broken_block_in_init(self):
+        with Env() as e:
+            e.write(".gitignore", "a\n# solo-sdd:begin\nx\n")
+            code, out = e.init("--yes")
+            self.assertEqual(code, 1)
+            self.assertIn(".gitignore:2", out)
+            self.assertTrue(os.path.isdir(os.path.join(e.proj, "solo-sdd", "specs")))
+            self.assertEqual(self.gitignore(e), "a\n# solo-sdd:begin\nx\n")
+
+
 def config_values(text):
     from solo_sdd import settings as conf
     return conf.parse_settings(text)
@@ -199,9 +238,8 @@ class QuestionsAndFlags(unittest.TestCase):
     def test_only_git_and_gh(self):
         """Project detection calls no program besides git and gh: the Env guard records them and refuses any other."""
         with Env() as e:
-            os.rmdir(os.path.join(e.proj, ".git"))
-            for args in (["init", "-q"], ["remote", "add", "origin", "https://example.com/x.git"]):
-                subprocess.run(["git", *args], cwd=e.proj, check=True, stdin=subprocess.DEVNULL)
+            subprocess.run(["git", "remote", "add", "origin", "https://example.com/x.git"], cwd=e.proj, check=True,
+                           stdin=subprocess.DEVNULL)
             self.assertEqual(e.init()[0], 0)
             self.assertEqual(sorted({c[0] for c in e.calls}), ["gh", "git"])
             self.assertIn("branch protection unknown", e.config())
@@ -217,9 +255,8 @@ class QuestionsAndFlags(unittest.TestCase):
             self.assertIn("# delivery.mode: no remote\ndelivery.mode: local\n", text)
 
     def ci_project(self, e, workflow):
-        os.rmdir(os.path.join(e.proj, ".git"))
-        for args in (["init", "-q"], ["remote", "add", "origin", "https://example.com/x.git"]):
-            subprocess.run(["git", *args], cwd=e.proj, check=True, stdin=subprocess.DEVNULL)
+        subprocess.run(["git", "remote", "add", "origin", "https://example.com/x.git"], cwd=e.proj, check=True,
+                       stdin=subprocess.DEVNULL)
         if workflow:
             e.write(".github/workflows/test.yml", "on: push\n")
 

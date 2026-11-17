@@ -299,6 +299,8 @@ def run(folder=".", given=None, yes=False, reconfigure=False, read=None, home=No
         print("%s; the rules block is not written" % e)
         return 1
     code = project_rules(folder, scope, sections)
+    from solo_sdd import cli  # cli imports this module
+    code = cli.ignore(folder, True) or code  # a refusal keeps the tree and names its reason
     print("next: /project-init")
     return code
 

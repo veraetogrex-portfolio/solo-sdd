@@ -557,6 +557,45 @@ class DeliveryItemsInConfig(ConfigDir):
         self.assertEqual(self.get("delivery.deploy"), (0, item + "\n", "source: AGENTS.md\n"))
 
 
+class IgnoreListSetting(ConfigDir):
+    """Requirements: Ignore list setting; Process paths stay tracked."""
+    HINT = "run: solo-sdd ignore --write\n"
+
+    def test_default_group_and_hint(self):
+        self.assertEqual(settings.effective({})["git.ignore"], (".claude/worktrees/, .env, .env.*, !.env.example", "default"))
+        self.assertEqual(self.describe("git.ignore")[1]["git.ignore"]["group"], "git")
+        value = ".claude/worktrees/, .env, solo-sdd/changes/archive/"
+        self.assertEqual(self.cli("set", "git.ignore", value), (0, "git.ignore: %s\n%s" % (value, self.HINT)))
+        code, out = self.cli("unset", "git.ignore")
+        self.assertEqual((code, out.endswith(self.HINT)), (0, True), out)
+        self.assertEqual(self.cli("set", "dispatch.limit", "3"), (0, "dispatch.limit: 3\n"), "only git.ignore hints")
+
+    def test_process_paths_refused(self):
+        self.write("# keep\n")
+        for value, item, path in (("solo-sdd/", "solo-sdd/", "solo-sdd/"), ("*.md", "*.md", "AGENTS.md"),
+                                  (".env, CLAUDE.md", "CLAUDE.md", "CLAUDE.md"), ("project.md", "project.md", "solo-sdd/project.md"),
+                                  ("solo-sdd/changes/", "solo-sdd/changes/", "solo-sdd/changes/"),
+                                  ("solo-sdd/changes/*/", "solo-sdd/changes/*/", "solo-sdd/changes/<change>/"),
+                                  ("solo-sdd/specs/settings/", "solo-sdd/specs/settings/", "solo-sdd/specs/<capability>/"),
+                                  ("*/**/spec.md", "*/**/spec.md", "solo-sdd/specs/<capability>/"), ("s*", "s*", "solo-sdd/"),
+                                  ("solo-sdd/ch[a]nges/", "solo-sdd/ch[a]nges/", "solo-sdd/changes/"),
+                                  ("#x", "#x", "starts with #")):
+            code, out = self.cli("set", "git.ignore", value)
+            self.assertEqual(code, 1, value)
+            self.assertIn("git.ignore item %s" % item, out, value)
+            self.assertIn(path, out, value)
+        self.assertEqual(self.read(), "# keep\n")
+        for value in ("solo-sdd/changes/archive/", "solo-sdd/changes/archive/**", "**/archive/", "node_modules",
+                      "docs/waiting.md", "!AGENTS.md", "settings", "solo-sdd/other.txt"):
+            self.assertEqual(self.cli("set", "git.ignore", value)[0], 0, value)
+
+    def test_a_broken_file_line(self):
+        self.write("# c\ngit.ignore: .env, *.md\n")
+        code, out = self.cli("list")
+        self.assertEqual(code, 1)
+        self.assertIn("solo-sdd/config:2: git.ignore item *.md hides AGENTS.md", out)
+
+
 GIT = ("git", "-c", "init.defaultBranch=main", "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false")
 
 

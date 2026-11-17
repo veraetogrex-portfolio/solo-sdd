@@ -604,7 +604,7 @@ class Screen:
             self.text, self.edits = new, {}
             self.read_integrations()
         self.base = self.values()
-        self.message = "saved: " + ", ".join(done)
+        self.message = "saved: " + ", ".join(done) + ("; " + settings.IGNORE_HINT if settings.IGNORE_KEY in done else "")
         return True
 
     def reload(self):

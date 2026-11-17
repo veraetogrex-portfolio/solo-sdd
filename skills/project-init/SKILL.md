@@ -12,7 +12,11 @@ Done when you can say `/spec-next` in the folder to both agents right away and t
 ## Order
 
 1. **Mode.** Decide by the task: `demo` (a demo, a defence, a prototype) or `prod`. The mode is not given and the task is not about a demo: choose `prod` and record the decision.
-2. **Git.** `git init`, if there is none. An address is given: add a remote. `.gitignore`: `.env`, keys, certificates, working data. Do not put `solo-sdd/`, `AGENTS.md` and `CLAUDE.md` into `.gitignore`. Then `git check-ignore -q .claude/worktrees/x || { [ -n "$(tail -c1 .gitignore 2>/dev/null)" ] && echo >> .gitignore; echo '.claude/worktrees/' >> .gitignore; }` (the folder of built-in Claude Code worktrees must not get into commits). Do not change an existing `.gitignore` except for this line; if it does not hide `.env`, say so in the report.
+2. **Git.** `git init`, if there is none. An address is given: add a remote. What stays out of git is the project setting `git.ignore` (default `.claude/worktrees/, .env, .env.*, !.env.example`; the folder of built-in Claude Code worktrees must not get into commits).
+
+   After the process tree of step 3 add the project's own keys, certificates and working data to it with `solo-sdd config set git.ignore "<the value in effect>, <path>, ..."`, never `solo-sdd/`, `AGENTS.md` or `CLAUDE.md` (the command refuses them), then run `solo-sdd ignore --write`: it writes only the solo-sdd block of `.gitignore` (`# solo-sdd:begin` ... `# solo-sdd:end`), with each listed path no other rule of the repository's `.gitignore` files hides.
+
+   Do not change `.gitignore` outside that block. A tracked path the command names stays tracked: its `git rm --cached` line goes into the report. A refusal (a broken block) changes nothing: name its `.gitignore` line in the report.
 3. **Process tree.** A project with `openspec/` and no `solo-sdd/`: do not create a second tree, name the next step `solo-sdd import openspec` in the report and go on with the other steps. Otherwise, no `solo-sdd/`: run `solo-sdd init` and do not repeat its steps (`solo-sdd/project.md`, `solo-sdd/analyze.md`, `solo-sdd/specs/`, `solo-sdd/changes/`, `docs/waiting.md`); after that edit only `solo-sdd/project.md`. In an existing `solo-sdd/project.md` keep the previous text, add only what is missing. For a new one:
    ```markdown
    # Project
@@ -23,7 +27,7 @@ Done when you can say `/spec-next` in the folder to both agents right away and t
    Intent: <2-3 sentences: what this is and for whom; every new change is checked against it>
    Paid calls to the product model in tests and live acceptance use the cheapest models; review and acceptance use the main model.
    ```
-   Templates of the project checks `solo-sdd/analyze.md` and of `docs/waiting.md` are in `~/.local/share/solo-sdd/templates/`. The whole workflow is `~/.local/share/solo-sdd/ALGORITHM.md`.
+   Templates of the project checks `solo-sdd/analyze.md` and of `docs/waiting.md` are in `~/.local/share/solo-sdd/templates/`. The whole workflow is `~/.local/share/solo-sdd/ALGORITHM.md`. `solo-sdd init` has already run `solo-sdd ignore --write`; then the `git.ignore` items of step 2 and `solo-sdd ignore --write` again, also with an existing tree.
 4. **`.env.example`** with empty fields and a comment on where to get the value. Keep existing `.env` and `.env.example`; add only the missing fields with empty values. If there is no `.env`, create it with empty fields. Do not ask for secret values in chat: name the field to fill in.
 4a. **Codebase map.** Only in an existing project: `git -c core.quotePath=false ls-tree -r --name-only HEAD 2>/dev/null | grep -qv -e '^docs/' -e '^solo-sdd/' -e '^AGENTS\.md$' -e '^CLAUDE\.md$' -e '^\.gitignore$'` succeeds (`HEAD` has files besides docs, specs and what this skill commits itself). Otherwise no `docs/codebase/`. `docs/codebase/` already exists: keep it, skip to the report lines below (refresh only by `/project-init map`).
 
@@ -49,8 +53,8 @@ Done when you can say `/spec-next` in the folder to both agents right away and t
 7. **Check.** `solo-sdd validate --all`, the commands from the AGENTS.md table actually run.
 7a. **Artifact commit.** `git check-ignore -v -- solo-sdd/ AGENTS.md CLAUDE.md`, then by case:
    - `.gitignore` was created by this run: `git add -- .gitignore AGENTS.md CLAUDE.md solo-sdd && git commit -m "project-init: rules and specs" -- .gitignore AGENTS.md CLAUDE.md solo-sdd`;
-   - `.gitignore` already existed, the output is empty: the same two commands, with `.gitignore` among the paths only if this run appended `.claude/worktrees/` to it; otherwise without it (all three already committed without changes: the step is skipped);
-   - `.gitignore` already existed, the output is not empty: do not change `.gitignore` except the line `.claude/worktrees/` (if this run appended it, a separate commit of `.gitignore` alone), and do not commit the artifacts. The report gets: the path, the `.gitignore` line that hides it, and the cost: such artifacts reach a worktree only through `sdd-worktree.py`; in a public repository specs with the user's quotes would be visible to everyone, so the decision is theirs.
+   - `.gitignore` already existed, the output is empty: the same two commands, with `.gitignore` among the paths only if this run changed its solo-sdd block; otherwise without it (all three already committed without changes: the step is skipped);
+   - `.gitignore` already existed, the output is not empty: do not change `.gitignore` except its solo-sdd block (if this run changed it, a separate commit of `.gitignore` alone), and do not commit the artifacts. The report gets: the path, the `.gitignore` line that hides it, and the cost: such artifacts reach a worktree only through `sdd-worktree.py`; in a public repository specs with the user's quotes would be visible to everyone, so the decision is theirs.
    Only the named paths go into the commit: other edits stay uncommitted.
 8. **README.** The project starts from scratch by the README, without knowledge from the chat: installation, `.env` from `.env.example`, the run command, how to tell it works. Go through these steps yourself in a clean shell. If it did not start, fix the README or the project; this is part of the task.
 

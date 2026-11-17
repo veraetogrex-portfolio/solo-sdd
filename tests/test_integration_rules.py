@@ -46,7 +46,8 @@ class Project(unittest.TestCase):
         self.tmp = tempfile.mkdtemp(prefix="integration-rules-")
         self.root, self.home = os.path.join(self.tmp, "proj"), os.path.join(self.tmp, "home")
         os.makedirs(os.path.join(self.root, "solo-sdd", "changes"))
-        os.makedirs(os.path.join(self.root, ".git"))
+        subprocess.run(["git", "-c", "init.defaultBranch=main", "init", "-q", self.root], check=True, capture_output=True,
+                       stdin=subprocess.DEVNULL)
         os.makedirs(self.home)
         self.agents = os.path.join(self.root, "AGENTS.md")
         self.cfg = os.path.join(self.root, "solo-sdd", "config")
