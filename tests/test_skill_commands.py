@@ -237,9 +237,11 @@ class SkillCommandsTest(unittest.TestCase):
                          ("skills/spec-plan/creation.md", "solo-sdd config get ui.widths"),
                          ("skills/spec-plan/SKILL.md", "`ui.widths`"), ("ALGORITHM.md", "solo-sdd config get ui.widths"),
                          ("skills/project-init/SKILL.md", "solo-sdd config get ui.extensions")):
-            text = " ".join((REPO / rel).read_text(encoding="utf-8").split())
+            text = " ".join(skill_text.read(REPO / rel).split())
             self.assertIn(key, text, rel)
             self.assertIsNone(re.search(r"1280 and 390|at 390\b|\.scss \.sass|UI_EXT", text), rel)
+            if rel != "skills/spec-plan/SKILL.md":
+                self.assertIn("no `solo-sdd/` tree, no command or a failed call", text, rel)
 
     def test_light_path_texts(self):
         """Requirements: Light path bounds, record and count: one rule in the rules and the algorithm, the readers."""

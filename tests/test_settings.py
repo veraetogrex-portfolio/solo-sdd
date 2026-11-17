@@ -266,9 +266,9 @@ class StopGateSwitchesAndInterfaceSettings(unittest.TestCase):
     def test_values(self):
         self.assertEqual(settings.check_value("ui.extensions", " .html,.Jinja2 "), ".html, .Jinja2")
         self.assertEqual(settings.check_value("ui.widths", "1440, 0390"), "1440, 390")
-        for key, bad, why in (("ui.extensions", "html", "extensions"), ("ui.extensions", ".a b", "extensions"),
-                              ("ui.extensions", ".a.b", "extensions"), ("ui.extensions", ".", "extensions"),
-                              ("ui.extensions", "", "extensions"), ("ui.widths", "wide", "whole numbers"),
+        # html, .a b and 1280, wide: InterfaceSettingsCommand
+        for key, bad, why in (("ui.extensions", ".a.b", "extensions"), ("ui.extensions", ".", "extensions"),
+                              ("ui.extensions", "", "extensions"),
                               ("ui.widths", "0", "whole numbers"), ("ui.widths", "²", "whole numbers"),
                               ("ui.widths", "", "whole numbers"), ("hooks.auto-claim", "no", "on, off")):
             with self.assertRaisesRegex(settings.SettingsError, "^%s takes .*%s" % (re.escape(key), why), msg=bad):

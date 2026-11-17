@@ -396,14 +396,18 @@ def reply_language(root):
     return value if source == "file" else os.environ.get("SOLO_SDD_REPLY_LANG") or value
 
 
-def gate_setting(root, key):
-    """The value in effect of key in the project at root; no root, or a broken file (with a log line): the default,
-    so every gate stays on."""
+def gate_settings(root):
+    """The settings in effect of the project at root; no root, or a broken file (with a log line): the defaults, so
+    every gate stays on."""
     try:
-        return (read_settings(root) if root else effective({}))[key][0]
+        return read_settings(root) if root else effective({})
     except Exception as e:
         log_error("hook settings %s" % root, e)
-        return effective({})[key][0]
+        return effective({})
+
+
+def gate_setting(root, key):
+    return gate_settings(root)[key][0]
 
 
 def change_project(cdir):
@@ -2662,9 +2666,9 @@ def integration_reasons(by_root):
 
 def ui_file(path):
     """The edited file counts as interface by ui.extensions of its repository, and its ui-check gate is on."""
-    root = git_root(path)
-    exts = tuple(e.strip() for e in gate_setting(root, "ui.extensions").split(",") if e.strip())
-    return path.endswith(exts) and gate_setting(root, "hooks.stop.ui-check") == "on"
+    s = gate_settings(git_root(path))
+    exts = tuple(e.strip() for e in s["ui.extensions"][0].split(",") if e.strip())
+    return path.endswith(exts) and s["hooks.stop.ui-check"][0] == "on"
 
 
 def cmd_stop(inp):
