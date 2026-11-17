@@ -346,6 +346,17 @@ class Command(unittest.TestCase):
             "default": "local", "team default": "pr", "value": "local (default)"}})
         self.assertEqual(self.describe("delivery.base")[1]["delivery.base"]["value"], "(none) (default)")
 
+    def test_local_merge_method(self):
+        """Requirement: Local merge method, scenario The default keeps today."""
+        r = subprocess.run([sys.executable, "-m", "solo_sdd", "config", "get", "delivery.local-merge"], cwd=self.dir,
+                           capture_output=True, text=True, env=dict(os.environ, PYTHONPATH=REPO),
+                           stdin=subprocess.DEVNULL, timeout=60)
+        self.assertEqual((r.returncode, r.stdout, r.stderr), (0, "merge\n", "source: default\n"))
+        self.assertEqual(self.describe("delivery.local-merge")[1]["delivery.local-merge"]["type"], "choice: merge, squash, rebase")
+        about = self.describe("delivery.merge")[1]["delivery.merge"]["about"]
+        self.assertIn("delivery.local-merge", about)
+        self.assertNotIn("local change", about)
+
     def test_describe_all_keys_then_patterns(self):
         """Requirement: Describe a setting, scenario Pattern keys."""
         self.write("checklist.money.paths: billing/**\n")

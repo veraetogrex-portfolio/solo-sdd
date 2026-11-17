@@ -394,6 +394,50 @@ def overwritten(main, branch):
     return [f for f in diff.stdout.split("\0") if f and f not in tracked and os.path.lexists(os.path.join(main, f))], ""
 
 
+def merge_branch(main, wt, branch, how, prev):
+    """Merges branch into MAIN by delivery.local-merge: 0 merged; 6 a conflict, rolled back; 1 another failure."""
+    if how == "squash":  # the title rule of sdd-pr.py land, over the branch's own commits only
+        r = git(main, "log", "-1", "--first-parent", "--no-merges", "--diff-filter=ACDMRTB", "--format=%s",
+                prev + ".." + branch)
+        if r.returncode:
+            print("not merged: log: " + r.stderr.strip())
+            return 1
+        title = r.stdout.strip()
+        if not title:
+            print("not merged: merge: no title in the last own commit of the branch")
+            return 1
+        r = git(main, "merge", "-q", "--squash", branch)
+        if not r.returncode:
+            r = git(main, "commit", "-q", "-m", title)
+    elif how == "rebase":
+        r = git(wt, "rebase", "-q", prev, branch)
+        if r.returncode:
+            files = git(wt, "diff", "--name-only", "--diff-filter=U").stdout.split()
+            git(wt, "rebase", "--abort")  # the branch back on its own commits; MAIN untouched
+            print("not merged: merge conflict: " + ", ".join(files) if files
+                  else "not merged: rebase: " + (r.stderr.strip() or r.stdout.strip()))
+            return 6 if files else 1
+        r = git(main, "merge", "-q", "--ff-only", branch)
+    else:
+        r = git(main, "merge", "-q", "--no-ff", "--no-edit", branch)
+    if not r.returncode:
+        return 0
+    files = git(main, "diff", "--name-only", "--diff-filter=U").stdout.split()
+    if files and how == "merge":
+        git(main, "merge", "--abort")
+        print("not merged: merge conflict: " + ", ".join(files))
+        return 6
+    # a squash conflict (no MERGE_HEAD to abort) or any other failure, a timeout or a hook included: back to prev from
+    # whatever git left (a commit, a staged tree, MERGE_HEAD); MAIN was clean before the merge, nothing transported yet
+    git(main, "merge", "--quit")
+    r2 = git(main, "reset", "--merge", prev)
+    print("not merged: merge conflict: " + ", ".join(files) if files
+          else "not merged: merge: " + (r.stderr.strip() or r.stdout.strip()))
+    if r2.returncode:
+        return stuck(main, "reset: " + r2.stderr.strip())
+    return 6 if files else 1
+
+
 def land_local(main, wt, cid, checks):
     main, wt = os.path.abspath(main), os.path.abspath(wt)
     branch = "change/" + cid
@@ -410,7 +454,8 @@ def land_local(main, wt, cid, checks):
         print("not merged: no sdd-pr.py next to the script")
         return 1
     try:
-        human = pr.read_settings(main)["delivery.merge-by"][0] == "human"
+        values = pr.read_settings(main)
+        human, how = values["delivery.merge-by"][0] == "human", values["delivery.local-merge"][0]
     except (OSError, ValueError) as e:
         print("not merged: settings: %s" % e)
         return 1
@@ -433,19 +478,9 @@ def land_local(main, wt, cid, checks):
     if over:
         print("not merged: merge would overwrite untracked files: " + ", ".join(over))
         return 6
-    r = git(main, "merge", "-q", "--no-ff", "--no-edit", branch)
-    if r.returncode:
-        files = git(main, "diff", "--name-only", "--diff-filter=U").stdout.split()
-        if files:
-            git(main, "merge", "--abort")
-            print("not merged: merge conflict: " + ", ".join(files))
-            return 6
-        # any other failure, a timeout or a hook included: back to prev from whatever git left (a merge commit,
-        # a staged tree, MERGE_HEAD); MAIN was clean before the merge and nothing was transported yet
-        git(main, "merge", "--quit")
-        r2 = git(main, "reset", "--merge", prev)
-        print("not merged: merge: " + (r.stderr.strip() or r.stdout.strip()))
-        return stuck(main, "reset: " + r2.stderr.strip()) if r2.returncode else 1
+    code = merge_branch(main, wt, branch, how, prev)
+    if code:
+        return code
     code, out = wt_run("transport", main, wt)
     if code:
         if code == 3:
@@ -499,9 +534,10 @@ def land_local(main, wt, cid, checks):
     if code:
         print("merged %s, not cleaned: remove: %s" % (h, out.strip()))
         return 1
-    r = git(main, "branch", "-d", branch)
+    flag = "-d" if how == "merge" else "-D"  # git does not see a squashed or rebased branch as merged
+    r = git(main, "branch", flag, branch)
     if r.returncode:
-        print("merged %s, not cleaned: branch -d: %s" % (h, r.stderr.strip()))
+        print("merged %s, not cleaned: branch %s: %s" % (h, flag, r.stderr.strip()))
         return 1
     print("merged " + h)
     return 0

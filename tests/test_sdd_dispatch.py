@@ -717,6 +717,111 @@ class LandTest(LandBase):
         self.assertEqual(r.returncode, 2)
 
 
+class LocalMergeMethodTest(LandBase):
+    """Requirement: Local land command and Local land checks and cleanup: the merge by delivery.local-merge of MAIN."""
+
+    def branch(self, method, readme=None, own=True):
+        """change/c with four commits (an empty one among them, the last `c: done`), or only an empty one;
+        delivery.local-merge set in MAIN's untracked config."""
+        if method:
+            self.put(self.main, "solo-sdd/config", "delivery.local-merge: %s\n" % method)
+        self.make_change(rel="README.md" if readme else "feature.txt", text=readme or "new\n")
+        if own:
+            self.put(self.wt, "more.txt", "more\n")
+            g(self.wt, "add", "-A")
+            g(self.wt, "commit", "-q", "-m", "more")
+            self.put(self.wt, "last.txt", "last\n")
+            g(self.wt, "add", "-A")
+            g(self.wt, "commit", "-q", "-m", "c: done")
+            g(self.wt, "commit", "-q", "--allow-empty", "-m", "c: empty")  # not own: the title skips it
+        else:
+            g(self.wt, "reset", "-q", "--hard", "HEAD~1")
+            g(self.wt, "commit", "-q", "--allow-empty", "-m", "c: empty")
+
+    def parents(self):
+        return g(self.main, "rev-list", "--parents", "-n", "1", "HEAD").split()[1:]
+
+    def test_default_merge(self):
+        # Scenario: The default merge
+        self.branch(None)
+        r = self.land()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(len(self.parents()), 2)
+
+    def test_squash(self):
+        # Scenarios: Squash, Cleanup after squash
+        self.branch("squash")
+        prev = g(self.main, "rev-parse", "HEAD")
+        r = self.land()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(self.parents(), [prev])
+        self.assertEqual(g(self.main, "log", "-1", "--format=%s"), "c: done")
+        self.assertIn("merged " + g(self.main, "rev-parse", "HEAD"), r.stdout)
+        for f in ("feature.txt", "more.txt", "last.txt"):
+            self.assertTrue(os.path.exists(os.path.join(self.main, f)), f)
+        self.assertEqual(g(self.main, "branch", "--list", "change/c"), "")
+        self.assertFalse(os.path.exists(self.wt))
+
+    def test_squash_without_own_commit(self):
+        # Scenario: Squash without an own commit
+        self.branch("squash", own=False)
+        head = g(self.main, "rev-parse", "HEAD")
+        r = self.land()
+        self.assertEqual((r.returncode, r.stdout.strip()), (1, "not merged: merge: no title in the last own commit of the branch"))
+        self.assert_rolled_back(head)
+
+    def test_rebase(self):
+        # Scenario: Rebase
+        self.branch("rebase")
+        self.put(self.main, "ahead.txt", "ahead\n")
+        g(self.main, "add", "ahead.txt")
+        g(self.main, "commit", "-q", "-m", "ahead")
+        ahead = g(self.main, "rev-parse", "HEAD")
+        r = self.land()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(g(self.main, "log", "--merges", "--format=%H"), "")
+        self.assertEqual(g(self.main, "log", "--format=%s", ahead + "..HEAD").split("\n"), ["c: empty", "c: done", "more", "change"])
+        self.assertEqual(g(self.main, "branch", "--list", "change/c"), "")
+        self.assertIn("merged " + g(self.main, "rev-parse", "HEAD"), r.stdout)
+
+    def conflict(self, method):
+        self.branch(method, readme="change\n")
+        self.put(self.main, "README.md", "other\n")
+        g(self.main, "commit", "-q", "-am", "other")
+        return g(self.main, "rev-parse", "HEAD"), g(self.main, "rev-parse", "change/c")
+
+    def test_squash_conflict(self):
+        # Scenario: A squash conflict
+        head, tip = self.conflict("squash")
+        r = self.land()
+        self.assertEqual(r.returncode, 6, r.stdout + r.stderr)
+        self.assertIn("not merged: merge conflict: README.md", r.stdout)
+        self.assert_rolled_back(head)
+        self.assertEqual(g(self.main, "status", "--short", "--untracked-files=no"), "")
+        for f in ("more.txt", "last.txt"):  # the squash staged them: the reset takes them off the disk too
+            self.assertFalse(os.path.exists(os.path.join(self.main, f)), f)
+        self.assertEqual(g(self.main, "rev-parse", "change/c"), tip)
+
+    def test_rebase_conflict(self):
+        # Scenario: A rebase conflict
+        head, tip = self.conflict("rebase")
+        r = self.land()
+        self.assertEqual(r.returncode, 6, r.stdout + r.stderr)
+        self.assertIn("not merged: merge conflict: README.md", r.stdout)
+        self.assert_rolled_back(head)
+        self.assertEqual(g(self.main, "rev-parse", "change/c"), tip)
+        self.assertEqual(g(self.wt, "status", "--short"), "")
+        self.assertFalse(os.path.exists(os.path.join(g(self.wt, "rev-parse", "--absolute-git-dir"), "rebase-merge")))
+
+    def test_rebase_red_check_rolls_back_main(self):
+        # Requirement: Local land after a red check, after a rebase: the main branch goes back, the branch stays
+        self.branch("rebase")
+        head = g(self.main, "rev-parse", "HEAD")
+        r = self.land("--check", "test ! -f last.txt")
+        self.assertEqual(r.returncode, 3, r.stdout + r.stderr)
+        self.assert_rolled_back(head)
+
+
 class ArchiveRemovalLandTest(LandBase):
     """Requirement: Change archive outside git. The merge of the branch that removes solo-sdd/changes/archive/ from the
     index deletes the tracked archive from MAIN's disk and transport puts it back from WORKTREE."""

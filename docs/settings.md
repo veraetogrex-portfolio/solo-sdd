@@ -14,7 +14,8 @@ A line that is not `key: value`, an unknown key or a wrong value makes the comma
 |---|---|---|---|---|
 | `mode` | `solo`, `team` | `solo` | | the team defaults of the other keys |
 | `delivery.mode` | `local`, `pr` | `local` | `pr` | `sdd-dispatch-plan.py` (the `delivery:` line, each value with its source `file`, `AGENTS.md`, `mode` or `default`), `spec-dispatch`, `ship`; the `Mode:` item of the `AGENTS.md` section "Delivery" |
-| `delivery.merge` | `squash`, `merge`, `rebase` | `squash` | | the same; the `Merge:` item of the section "Delivery" |
+| `delivery.merge` | `squash`, `merge`, `rebase` | `squash` | | the same, for a pull request; the `Merge:` item of the section "Delivery" |
+| `delivery.local-merge` | `merge`, `squash`, `rebase` | `merge` | | `sdd-dispatch.py land-local`: `merge` makes a merge commit (`git merge --no-ff`), `squash` one commit titled by the last own commit of the branch, `rebase` rebases the branch in its worktree and fast-forwards; a conflict in any of them rolls back with code 6; the branch is then deleted with `-D` after `squash` and `rebase` |
 | `delivery.merge-by` | `agent`, `human` | `agent` | `human` | `sdd-pr.py merge` and `land` (`human`: code 8 `waits for human merge`, `land --after-merge` finishes after a person merged), `sdd-dispatch.py land-local`, `spec-dispatch`, `ship`, the `stop` hook (no return for an open PR) |
 | `delivery.base` | a branch name | the remote's default branch | | `sdd-worktree.py setup` (the worktree start), `sdd-pr.py open`, `ship`, `land` (the PR target and the update), `spec-dispatch`, `ship` |
 | `delivery.promote` | branch names in order; release/* means the newest release/ branch by version | none | | the `promotion:` line of `sdd-pr.py land`, `spec-dispatch` and `ship` after a merge into the base: the next branch and its `sdd-pr.py promote` command |

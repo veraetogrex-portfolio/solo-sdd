@@ -18,7 +18,8 @@ SETTINGS_FILE = "solo-sdd/config"
 REGISTRY = {
     "mode": ("choice", ("solo", "team"), "solo", None),
     "delivery.mode": ("choice", ("local", "pr"), "local", "pr"),
-    "delivery.merge": ("choice", ("squash", "merge", "rebase"), "squash", None),
+    "delivery.merge": ("choice", ("squash", "merge", "rebase"), "squash", None),  # a pull request
+    "delivery.local-merge": ("choice", ("merge", "squash", "rebase"), "merge", None),  # sdd-dispatch.py land-local
     "delivery.merge-by": ("choice", ("agent", "human"), "agent", "human"),  # who merges into the base
     "delivery.base": ("choice", None, "", None),  # "": the remote's default branch
     "delivery.promote": ("list", None, "", None),  # branches after the base in order; `release/*`: the newest by version
@@ -208,7 +209,8 @@ GROUPS = ("process", "delivery", "dispatch", "agents", "integrations", "checklis
 ABOUT = {
     "mode": ("process", "Solo or team project; a team project takes the team default of every key that has one."),
     "delivery.mode": ("delivery", "How finished work reaches the base branch: a local merge or a pull request."),
-    "delivery.merge": ("delivery", "How a pull request or a local change is merged into the base branch."),
+    "delivery.merge": ("delivery", "How a pull request is merged into the base branch; a local merge follows delivery.local-merge."),
+    "delivery.local-merge": ("delivery", "How sdd-dispatch.py land-local merges a change branch in local delivery: a merge commit, one squashed commit, or a rebase."),
     "delivery.merge-by": ("delivery", "Who merges into the base branch: the agent, or a person while the agent waits."),
     "delivery.base": ("delivery", "The branch worktrees start from and merges go into; empty means the remote's default branch."),
     "delivery.promote": ("delivery", "The branches after the base in order, each promoted from the one before by a pull request."),

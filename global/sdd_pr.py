@@ -117,7 +117,8 @@ SETTINGS_FILE = "solo-sdd/config"
 REGISTRY = {
     "mode": ("choice", ("solo", "team"), "solo", None),
     "delivery.mode": ("choice", ("local", "pr"), "local", "pr"),
-    "delivery.merge": ("choice", ("squash", "merge", "rebase"), "squash", None),
+    "delivery.merge": ("choice", ("squash", "merge", "rebase"), "squash", None),  # a pull request
+    "delivery.local-merge": ("choice", ("merge", "squash", "rebase"), "merge", None),  # sdd-dispatch.py land-local
     "delivery.merge-by": ("choice", ("agent", "human"), "agent", "human"),  # who merges into the base
     "delivery.base": ("choice", None, "", None),  # "": the remote's default branch
     "delivery.promote": ("list", None, "", None),  # branches after the base in order; `release/*`: the newest by version
