@@ -3,7 +3,7 @@
 
 Each row starts `python3 -m solo_sdd settings` of this tree in a temporary git repository prepared by `init --yes`,
 on a pseudo-terminal of the row's size, sends keys and reads the screen through a small vt100 emulator (TERM=vt100,
-so the escape sequences curses sends stay few) and the config file. The rows run at 120x40 and 40x12, each with and
+so the escape sequences curses sends stay few) and the config file. The rows run at 120x60 and 40x12, each with and
 without NO_COLOR; one more row edits and saves under TERM=xterm-256color and checks only the file.
 Prints one PASS or FAIL line per row and `SUMMARY: all rows passed`, exit 1 on a failure.
 """
@@ -435,7 +435,7 @@ def run_size(base, rows, cols, env, tag):
 def main():
     base = tempfile.mkdtemp(prefix="settings-tui-")
     try:
-        for rows, cols in ((40, 120), (12, 40)):
+        for rows, cols in ((60, 120), (12, 40)):  # 60 rows: every key and group on one screen
             for env, tag in (({}, "colour"), ({"NO_COLOR": "1"}, "NO_COLOR")):
                 run_size(base, rows, cols, env, tag)
 
@@ -545,6 +545,31 @@ def main():
             finally:
                 s.close()
         row("Local merge method: the key, a pick, save", local_merge_key)
+
+        def agent_model_keys():
+            d = project(base)
+            s = Session(d, 60, 120)
+            keys = ("agents.orchestrator-model", "agents.review-model", "agents.lookup-model", "agents.test-model",
+                    "agents.dispatcher-effort", "agents.executor")
+            try:
+                t = s.term.text()
+                need(all(k in t for k in keys), "the six agents keys listed", t)
+                to(s, "agents.orchestrator-model")
+                t = s.send("enter")
+                need("Type a value" in flat(t), "a model key is an entry", t)
+                s.send(*["backspace"] * len("opus"), *"fable", "enter")
+                s.send(*["down"] * (settings_ui.KEYS.index("agents.dispatcher-effort") - settings_ui.KEYS.index("agents.orchestrator-model")))
+                t = s.send("enter")
+                need("Enter set" in flat(t), "the effort key is a pick", t)
+                s.send("down", "enter", "s", "y", "q")
+                need(s.wait() == 0, "saved and quit")
+                listed = sdd(d, "config", "list")[1].splitlines()
+                need({"agents.orchestrator-model fable file", "agents.dispatcher-effort medium file",
+                      "agents.lookup-model haiku default", "agents.executor self default"} <= set(listed),
+                     "config list: %s" % listed)
+            finally:
+                s.close()
+        row("Subagent model settings: the six keys, a model entry, an effort pick, save", agent_model_keys)
     finally:
         shutil.rmtree(base, True)
     print("SUMMARY: all rows passed" if all(results) else "SUMMARY: %d of %d rows failed" % (

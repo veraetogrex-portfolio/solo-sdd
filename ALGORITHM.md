@@ -97,7 +97,7 @@ One run closes one change, from selection to archive.
 2. Selection: the named change; else the one with the most done; else the next one with closed dependencies. A change with a `CLAIM` file (taken by another agent) or `WAITING` is skipped.
 3. Claim: `solo-sdd/changes/<id>/CLAIM` in the main project folder with the line `<agent> <date>`; Claude adds `session=<session id>` (`$CLAUDE_CODE_SESSION_ID`), by which the write hook recognises its own `CLAIM`. The hook itself places the marker only on a `tasks.md` edit that checks a new task: analysis and audit that edit artifacts do not take the change.
 4. Check: `spec-analyze` (stage 4).
-5. The lead agent does the tasks from `tasks.md` itself, including code. Subagents are only for acceptance (item 7) and heavy reading (`Lookup:`, Explore). Executors only if the user named `codex-orchestration` (Codex CLI); then the orchestration rules apply:
+5. The lead agent does the tasks from `tasks.md` itself, including code. Subagents are only for acceptance (item 7) and heavy reading (`Lookup:`, Explore). Executors only if the user named `codex-orchestration` (Codex CLI) or the project sets `agents.executor: codex` (`solo-sdd config get agents.executor`); an agent changes `agents.executor` only on the owner's words in the chat; then the orchestration rules apply:
    - Split by file ownership. Independent units go in a parallel wave, units on one file in different waves or separate worktrees.
    - A unit has one proof, at most two or three. If more, the unit is split.
    - The spec for an executor starts with the header "do it yourself, do not ask" and holds own and foreign files, a sample, all literal values, a ban on commits and the report format.
@@ -123,7 +123,7 @@ Several ready changes at once (Claude Code only): `spec-dispatch`: the main sess
 | AI agent quality | `agent-quality`: A versus B on one labelled set, one change per run |
 | A failure in a running service | `debug-profile`: reproduction → version and environment → localisation by logs → one hypothesis. After two failed edits, stop and analyse |
 
-Paid calls to the product model in tests and live acceptance go to the cheapest models; review and acceptance run on the main model. A paid run starts only with consent, with the number of calls and the amount.
+Paid calls to the product model in tests and live acceptance go to the cheapest models (`solo-sdd config get agents.test-model`); review and acceptance run on the main model (`agents.review-model` when it is set). The dispatcher's `/effort low` and the Opus orchestrators are the defaults of `agents.dispatcher-effort` and `agents.orchestrator-model`. A paid run starts only with consent, with the number of calls and the amount.
 
 ### 7. Closing
 

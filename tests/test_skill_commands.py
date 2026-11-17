@@ -135,6 +135,37 @@ class SkillCommandsTest(unittest.TestCase):
                     if ('"Delivery"' in line or "## Delivery" in line) and word in line:
                         self.assertIn("delivery." + key, line, "%s:%d" % (rel, n))
 
+    def test_subagent_model_settings_in_skills_and_rules(self):
+        """Requirement: Subagent model settings: the skills and the rules read the agents keys through
+        `solo-sdd config get`, the fixed opus and /effort low kept as the defaults."""
+        read = lambda rel: " ".join(skill_text.read(REPO / rel).split())
+        get = "`solo-sdd config get agents.%s`"
+        for rel, keys in (("skills/spec-dispatch/SKILL.md", ("orchestrator-model", "dispatcher-effort")),
+                          ("skills/spec-next/SKILL.md", ("review-model", "lookup-model", "executor")),
+                          ("skills/spec-audit/SKILL.md", ("review-model",)),
+                          ("global/AGENTS.md", ("lookup-model", "test-model", "executor")),
+                          ("ALGORITHM.md", ("test-model", "executor"))):
+            text = read(rel)
+            for key in keys:
+                self.assertIn(get % key, text, rel)
+        launch = [l for l in skill_text.read(REPO / "skills/spec-dispatch/SKILL.md").splitlines()
+                  if "`description: Orchestrator <id>`" in l]
+        self.assertEqual(len(launch), 1)
+        self.assertIn("agents.orchestrator-model", launch[0])
+        self.assertIn("`opus` when it is not set", launch[0])
+        self.assertIn("`/effort low`", read("skills/spec-dispatch/SKILL.md"))
+
+    def test_executor_setting_from_the_owner(self):
+        """Requirement: Executor setting from the owner: agents.executor codex counts as the owner naming
+        codex-orchestration; an agent changes the key only on the owner's words."""
+        for rel in ("skills/spec-next/SKILL.md", "skills/codex-orchestration/SKILL.md", "skills/spec-plan/SKILL.md",
+                    "global/AGENTS.md", "ALGORITHM.md"):
+            text = " ".join(skill_text.read(REPO / rel).split())
+            self.assertIn("`agents.executor: codex`", text, rel)
+        for rel in ("global/AGENTS.md", "ALGORITHM.md"):
+            text = " ".join(skill_text.read(REPO / rel).split())
+            self.assertIn("changes `agents.executor` only on the owner's words", text, rel)
+
     def test_light_path_texts(self):
         """Requirements: Light path bounds, record and count: one rule in the rules and the algorithm, the readers."""
         read = lambda rel: skill_text.read(REPO / rel)

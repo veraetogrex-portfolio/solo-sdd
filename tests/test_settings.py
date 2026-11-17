@@ -60,7 +60,7 @@ class SettingsFile(unittest.TestCase):
 
     def test_registry_shape(self):
         for key, (kind, allowed, default, team) in settings.REGISTRY.items():
-            self.assertIn(kind, ("choice", "int", "list", "names", "paths", "text"), key)
+            self.assertIn(kind, ("choice", "int", "list", "model", "names", "paths", "text"), key)
             self.assertEqual(settings.check_value(key, default), default, key)
             if team is not None:
                 self.assertEqual(settings.check_value(key, team), team, key)
@@ -199,6 +199,31 @@ class Readme(unittest.TestCase):
         self.assertEqual(sorted(found), ["checklist.money-safety.file", "checklist.money-safety.paths"])
 
 
+class SubagentModelSettings(unittest.TestCase):
+    """Requirements: Subagent model settings and Executor setting from the owner: the six keys of group agents."""
+    KEYS = {"agents.orchestrator-model": ("model", None, "opus"), "agents.review-model": ("model", None, ""),
+            "agents.lookup-model": ("model", None, "haiku"), "agents.test-model": ("model", None, "haiku"),
+            "agents.dispatcher-effort": ("choice", ("low", "medium", "high"), "low"),
+            "agents.executor": ("choice", ("self", "codex"), "self")}
+
+    def test_the_six_keys(self):
+        for key, (kind, allowed, default) in self.KEYS.items():
+            self.assertEqual(settings.REGISTRY.get(key), (kind, allowed, default, None), key)
+            self.assertEqual(settings.describe(key, {})["group"], "agents", key)
+            self.assertEqual(settings.effective({})[key], (default, "default"), key)
+        with self.assertRaisesRegex(settings.SettingsError, r"agents.executor takes self, codex, not 'claude'"):
+            settings.check_value("agents.executor", "claude")
+
+    def test_model_names(self):
+        for name in ("fable", "claude-opus-4.5", "opus[1m]", "gpt_5.1-mini"):
+            self.assertEqual(settings.check_value("agents.lookup-model", " %s " % name), name)
+        for bad in ("haiku 4", "a:b", "opus,haiku", "x/y", "caf\u00e9", ""):
+            with self.assertRaisesRegex(settings.SettingsError, r"^agents.lookup-model takes one model name of ASCII "
+                                        r"letters, digits, \., -, _, \[ and \], not ", msg=bad):
+                settings.check_value("agents.lookup-model", bad)
+        self.assertEqual(settings.check_value("agents.review-model", ""), "", "empty: the session's main model")
+
+
 class Command(unittest.TestCase):
     """Requirement: Config command."""
 
@@ -283,6 +308,18 @@ class Command(unittest.TestCase):
         self.assertEqual(self.cli("get", "colour")[0], 1)
         self.assertEqual(self.cli("unset", "colour")[0], 1)
         self.assertEqual(self.read(), "# keep\nmode: solo\n")
+
+    def test_model_name_refused(self):
+        """Requirement: Subagent model settings: a model name with a space, and the defaults in config list."""
+        self.write("# keep\nagents.orchestrator-model: fable\n")
+        code, out = self.cli("set", "agents.lookup-model", "haiku 4")
+        self.assertEqual(code, 1)
+        self.assertIn("one model name of ASCII letters, digits, ., -, _, [ and ]", out)
+        self.assertEqual(self.read(), "# keep\nagents.orchestrator-model: fable\n")
+        os.remove(self.cfg)
+        lines = self.cli("list")[1].splitlines()
+        self.assertIn("agents.orchestrator-model opus default", lines)
+        self.assertIn("agents.dispatcher-effort low default", lines)
 
     def test_broken_file_named(self):
         self.write("# c\n\nmode: solo\ndelivery.mode pr\n")
@@ -484,7 +521,10 @@ class DeliveryItemsInConfig(ConfigDir):
         self.assertEqual(self.get("delivery.deploy"), (0, item + "\n", "source: AGENTS.md\n"))
 
 
-VALUES = {k: st.sampled_from(v[1]) if v[1] else st.integers(1, 99).map(str) for k, v in settings.REGISTRY.items()}
+MODELS = st.sampled_from(["claude-opus-4.5", "opus[1m]", "gpt_5.1-mini"]) | st.text(st.sampled_from(settings.MODEL_CHARS),
+                                                                                    min_size=1, max_size=12)
+VALUES = {k: st.sampled_from(v[1]) if v[1] else MODELS if v[0] == "model" else st.integers(1, 99).map(str)
+          for k, v in settings.REGISTRY.items()}
 COMMENT = st.text(st.characters(blacklist_categories=("Cs", "Cc", "Zl", "Zp")), max_size=12).map(lambda s: "# " + s)
 
 

@@ -33,7 +33,7 @@ The guard SHALL determine a subagent's role by an explicit tag at the start of t
 - **THEN** they do not affect the role
 
 ### Requirement: Models allowed per role and caller
-The guard SHALL apply the rules by role and by who launches (`agent_id` in the hook input means a subagent launches, none means the main session); the rules of each role are set by the scenarios.
+The guard SHALL apply the rules by role and by who launches (`agent_id` in the hook input means a subagent launches, none means the main session); the rules of each role are set by the scenarios, and a role model the project sets adds the refusal of Project models within the machine policy (capability `settings`).
 
 #### Scenario: An orchestrator from the main session
 - **WHEN** the main session launches "Orchestrator add-words" with `model: opus`

@@ -13,7 +13,7 @@ from solo_sdd import process_format as pf, providers
 # settings:begin
 # solo-sdd/config: one `key: value` per line, lines starting with # are comments, list values are separated by commas.
 SETTINGS_FILE = "solo-sdd/config"
-# key -> (type: choice | int | list | names | paths | text, allowed values (None: any), default, default under `mode: team` (None: the same));
+# key -> (type: choice | int | list | model | names | paths | text, allowed values (None: any), default, default under `mode: team` (None: the same));
 # a key with the default "" takes an empty value, read as "not set"
 REGISTRY = {
     "mode": ("choice", ("solo", "team"), "solo", None),
@@ -40,6 +40,12 @@ REGISTRY = {
     "reply.language": ("choice", ("ru", "en", "off"), "off", None),
     "agents": ("list", ("claude", "codex", "cursor", "other"), "claude, codex, other", None),
     "rules.scope": ("choice", ("project", "global"), "project", None),  # project: init writes the rules block into AGENTS.md
+    "agents.orchestrator-model": ("model", None, "opus", None),  # spec-dispatch; work_hooks.py keeps it in the main list
+    "agents.review-model": ("model", None, "", None),  # "": the session's main model; work_hooks.py: the main list
+    "agents.lookup-model": ("model", None, "haiku", None),  # work_hooks.py: the cheap list
+    "agents.test-model": ("model", None, "haiku", None),  # paid product calls in tests; the Test model allowlist bounds it
+    "agents.dispatcher-effort": ("choice", ("low", "medium", "high"), "low", None),
+    "agents.executor": ("choice", ("self", "codex"), "self", None),  # codex: as if the owner named codex-orchestration
     "integrations": ("names", None, "", None),  # the enabled integrations, by folder name (solo_sdd/integrations.py)
     "integrations.off": ("names", None, "", None),  # the bundled integrations switched off, by folder name
 }
@@ -49,6 +55,7 @@ PATTERNS = {
     "checklist.<name>.file": ("path", None, "", None),  # a markdown file of `- [ ]` items, from the repository root
 }
 NAME_CHARS = "abcdefghijklmnopqrstuvwxyz0123456789-"
+MODEL_CHARS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-_[]"
 TEXT_MAX = 200
 # the Delivery items of AGENTS.md read as the old source of a text or paths key: item -> key
 DELIVERY_ITEMS = (("PR title:", "delivery.pr-title"), ("Deploy:", "delivery.deploy"), ("Owner only:", "delivery.owner-only"))
@@ -94,6 +101,10 @@ def check_value(key, value, registry=REGISTRY):
             raise SettingsError("%s takes one line of printable characters, at most %d characters, not %r"
                                 % (key, TEXT_MAX, v if len(v) <= 60 else v[:60] + "..."))
         return v
+    if kind == "model":
+        if v and all(c in MODEL_CHARS for c in v) or not v and default == "":
+            return v
+        raise SettingsError("%s takes one model name of ASCII letters, digits, ., -, _, [ and ], not %r" % (key, v))
     if kind == "int":
         if not (v.isascii() and v.isdigit()) or int(v) < 1:
             raise SettingsError("%s takes a whole number from 1, not %r" % (key, v))
@@ -231,12 +242,18 @@ ABOUT = {
     "reply.language": ("agents", "The language the stop hook expects in the agent's final reply; off checks none."),
     "agents": ("agents", "The agents this project is worked on with; doctor warns about one the installation lacks."),
     "rules.scope": ("agents", "Where the agents get the rules: a block in this project's AGENTS.md, or only the global rules."),
+    "agents.orchestrator-model": ("agents", "The model the dispatcher launches each orchestrator on; the guard hook refuses one outside the machine main list."),
+    "agents.review-model": ("agents", "The model of the independent reviewer; empty runs it on the session's main model, the guard hook refuses one outside the machine main list."),
+    "agents.lookup-model": ("agents", "The model of the search subagents; the guard hook refuses one outside the machine cheap list."),
+    "agents.test-model": ("agents", "The model of paid product calls in tests, acceptance and experiments, within the machine test allowlist."),
+    "agents.dispatcher-effort": ("agents", "The effort the dispatcher session is started with."),
+    "agents.executor": ("agents", "Who writes the change code: the lead agent itself, or Codex executors as if the owner named codex-orchestration."),
     "integrations": ("integrations", "The integrations enabled in this project, by folder name."),
     "integrations.off": ("integrations", "The bundled integrations switched off in this project, by folder name."),
     "checklist.<name>.paths": ("checklists", "The files a person checks by this list before merging, as globs."),
     "checklist.<name>.file": ("checklists", "The markdown file of the list's items, from the repository root."),
 }
-KIND_TEXT = {"int": "a whole number from 1", "text": "one line, at most %d characters" % TEXT_MAX, "names": "lowercase letters, digits and -, separated by commas",
+KIND_TEXT = {"int": "a whole number from 1", "model": "one model name of ASCII letters, digits, ., -, _, [ and ]", "text": "one line, at most %d characters" % TEXT_MAX, "names": "lowercase letters, digits and -, separated by commas",
              "paths": "relative paths, separated by commas", "path": "a relative path",
              "choice": "a branch name", "list": "branch names, separated by commas"}
 

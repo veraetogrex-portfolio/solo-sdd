@@ -47,7 +47,7 @@ The result is a set of changes, each of which closes in one `/spec-next` run. No
 8. **Coverage.** Match every input item with a change or with the light path of step 1a (its commit, or `to do` until the commit after step 9). Any other item without a change is an error: create a change or explain in the report why there is none.
 9. **Plan commit.** Read `plan-commit.md` each time this step starts, also after compaction: after gate G1 (steps 7, 7a, 8), the plan commit on `plan/<first id>` under `delivery.mode` `pr` or on the main branch under `local`.
 
-More than five changes: you write the artifacts yourself; Codex executors only if the user named `codex-orchestration`.
+More than five changes: you write the artifacts yourself; Codex executors only if the user named `codex-orchestration` or the project sets `agents.executor: codex`.
 
 ## Writing rules
 

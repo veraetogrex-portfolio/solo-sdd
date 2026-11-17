@@ -6,6 +6,8 @@ A project keeps its settings in `solo-sdd/config`: one `key: value` per line, li
 
 `solo-sdd settings` shows the same keys on a full-screen terminal screen and changes them the same way, one edited line per key: a key whose file value overrides a Delivery item of `AGENTS.md` is marked with that item, picking `delivery.mode: pr` without a CI workflow shows the warning `init` prints, a file changed on disk since the screen read it is not overwritten, and a broken file opens read-only with its line and reason. Its Machine section (`m`) shows the agents laid out, the hooks and the global rules with the layout's source, version and copy counts and the `warn` and `fail` lines of `doctor`, and applies a change by running `solo-sdd uninstall --hooks`, `uninstall --global-rules` and `install --agents …` after it lists them with the folders they change. Its update check switch is saved at once and turns the version check of the home menu and `doctor` off or on ([Update check](cli.md#update-check)); the version line there comes from the cache, without a request.
 
+A model key (`agents.*-model`) takes one model name of ASCII letters, digits, `.`, `-`, `_`, `[` and `]`; a project narrows the models of a role within the machine lists of `~/.claude/hooks/model-policy.json`, never widens them: the `guard` hook refuses a launch on a set orchestrator, review or lookup model outside its list, naming the key and the list, unless the owner set `SOLO_SDD_EXPENSIVE_OK=1`.
+
 A text key (`delivery.pr-title`, `delivery.deploy`) takes one line of printable characters, at most 200, with the ends trimmed; its `AGENTS.md` item is read trimmed and as written, without the limit.
 
 A line that is not `key: value`, an unknown key or a wrong value makes the command and the scripts fail with `solo-sdd/config:<line>` and the reason; the hooks take the defaults and write the reason to `~/.claude/hook-state/errors.log`. The file is read with the standard library only: the hooks run on `/usr/bin/python3` 3.9.
@@ -36,6 +38,12 @@ A line that is not `key: value`, an unknown key or a wrong value makes the comma
 | `reply.language` | `ru`, `en`, `off` | `off` | | the `stop` hook: the language of the final reply, `off` checks none; the `SOLO_SDD_REPLY_LANG` variable |
 | `agents` | `claude`, `codex`, `cursor`, `other` | the detected agents | | `doctor` (`warn project-agents` for an agent the installation lacks) |
 | `rules.scope` | `project`, `global` | `project` | | `init`: `project` writes the rules block into `AGENTS.md`, `global` writes none and names the global rules (`install --global-rules`) |
+| `agents.orchestrator-model` | one model name of ASCII letters, digits, . - _ [ and ] | `opus` | | `spec-dispatch`: the `model` of each orchestrator launch; the `guard` hook refuses a launch on a set model outside the `main` list of the machine's `model-policy.json` |
+| `agents.review-model` | one model name | the session's main model | | `spec-next` step 7a and `spec-audit`: the `model` of the `Review:` subagent, none when empty; the `guard` hook: the `main` list |
+| `agents.lookup-model` | one model name | `haiku` | | `spec-next` and the global rules: the `model` of a `Lookup:` subagent; the `guard` hook: the `cheap` list |
+| `agents.test-model` | one model name | `haiku` | | the global rules: paid product calls in tests, acceptance and experiments; the Test model allowlist of the `guard` hook bounds it |
+| `agents.dispatcher-effort` | `low`, `medium`, `high` | `low` | | `spec-dispatch`: the `/effort` the dispatcher session starts with |
+| `agents.executor` | `self`, `codex` | `self` | | `spec-next`, `spec-plan`, `codex-orchestration`, the algorithm and the global rules: `codex` counts as the owner naming `codex-orchestration`; an agent changes the key only on the owner's words in the chat |
 | `integrations` | integration names, separated by commas | none | | `solo-sdd integrations`: the enabled integrations, see [Integrations](integrations.md) |
 | `integrations.off` | integration names, separated by commas | none | | `solo-sdd integrations`: the bundled integrations switched off, see [Integrations](integrations.md) |
 
