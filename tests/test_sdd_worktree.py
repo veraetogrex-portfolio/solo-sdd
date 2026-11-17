@@ -223,7 +223,7 @@ class SetupTests(unittest.TestCase):
         """Requirement: Working copy settings, scenario Another linked folder."""
         r = Repo(ignore="openspec/\nAGENTS.md\nvendor/\n")
         self.addCleanup(r.close)
-        put(r.main, "solo-sdd/config", "worktree.links: node_modules, vendor/bundle, data\n")
+        put(r.main, "solo-sdd/config", "worktree.links: node_modules, vendor//bundle, ./data, .\n")  # one form per path
         put(r.main, "data/d.csv", "1\n")
         put(r.main, "node_modules/p/i.js", "1\n")
         put(r.main, "vendor/bundle/gem.rb", "g\n")

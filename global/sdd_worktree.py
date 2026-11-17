@@ -603,7 +603,9 @@ def section(main):
             print(migrate_hint(agents, found), file=sys.stderr)
         for ln in bad:
             print(ln, file=sys.stderr)
-    split = lambda key: [v.strip().strip("/") for v in values[key][0].split(",") if v.strip().strip("/")]
+    # one form per path: `./data`, `data/.` and `vendor//bundle` are data and vendor/bundle; `.` alone names no path
+    split = lambda key: [p for p in (os.path.normpath(v.strip()).strip("/") for v in values[key][0].split(",")
+                                     if v.strip()) if p not in ("", ".")]
     return (split("worktree.paths"), values["worktree.prepare"][0] or None, values["worktree.after-refresh"][0] or None,
             split("worktree.links"))
 
@@ -780,7 +782,8 @@ def setup(main, wt):
     extra = [f for f in extra if os.path.isfile(os.path.join(base, f))]
     if extra:
         write(os.path.join(base, LISTED), "\0".join(extra).encode("utf-8"))
-    made = []
+    made = listed_links(wt)
+    before = len(made)
     for rel in find_links(main, linked):
         dst = os.path.join(wt, rel)
         if rel in linked and "/" in rel and not os.path.lexists(dst):  # a named item gets its parent folders
@@ -792,8 +795,7 @@ def setup(main, wt):
         else:
             os.symlink(os.path.abspath(os.path.join(main, rel)), dst)
         made.append(rel)
-    if made:
-        write(wt + ".links", "\0".join(made).encode("utf-8"))
+        write(wt + ".links", "\0".join(made).encode("utf-8"))  # after each link: a setup failing later leaves the record
     add_exclude(main, linked)
     if cmd:
         r = subprocess.run(["sh", "-c", cmd], cwd=wt, stdin=subprocess.DEVNULL)
@@ -801,7 +803,7 @@ def setup(main, wt):
             raise RuntimeError("prepare command exited with code %d: %s" % (r.returncode, cmd))
     if start:
         print("start: " + start)
-    print("copied files %d, link folders %d, command: %s" % (len(copied), len(made), cmd or "none"))
+    print("copied files %d, link folders %d, command: %s" % (len(copied), len(made) - before, cmd or "none"))
     return 0
 
 
@@ -999,14 +1001,18 @@ def undo(main, wt):
     return 0
 
 
+def listed_links(wt):
+    """The folders of the <WORKTREE>.links record, [] without one."""
+    try:
+        return [x for x in read(wt + ".links").decode("utf-8").split("\0") if x]
+    except OSError:
+        return []
+
+
 def unlink_links(wt):
     """Removes the folders setup linked, by its record <WORKTREE>.links (a worktree set up before the record: the
     default node_modules and .venv); never reads the settings, so a broken or changed file does not block cleanup."""
-    try:
-        rels = read(wt + ".links").decode("utf-8").split("\0")
-    except OSError:
-        rels = find_links(wt, ["node_modules", ".venv"])
-    for rel in rels:
+    for rel in listed_links(wt) if os.path.exists(wt + ".links") else find_links(wt, ["node_modules", ".venv"]):
         p = os.path.join(wt, rel)
         if os.path.islink(p):
             os.unlink(p)
