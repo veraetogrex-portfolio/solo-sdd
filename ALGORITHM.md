@@ -47,7 +47,8 @@ Only when the plan cannot be written without it: choosing a technology, a servic
 
 ### Light path: no change
 
-A code edit takes the light path when it changes no behaviour a main spec describes, adds no dependency, touches no data, migration or deploy, and changes at most `process.light-path.max-files` files (default 3); `process.light-path: off` forbids it. The edit, the project's tests, a live check of the edited place and one commit `light: <the request>` are the whole record, `light:` being the plain-text `commit.light-prefix` setting; `spec-plan` coverage names such an item with its commit, `work-status` and `report` count these commits apart from changes. Anything outside the bounds, and a bug in behaviour a spec describes, goes through a change.
+A code edit takes the light path when it changes no behaviour a main spec describes, adds no dependency, touches no data, migration or deploy, and changes at most `process.light-path.max-files` files (default 3); `process.light-path: off` forbids it. The edit, the project's tests, a live check of the edited place and one commit `light: <the request>` are the whole record, `light:` being the plain-text `commit.light-prefix` setting;
+`spec-plan` coverage names such an item with its commit, `work-status` and `report` count these commits apart from changes. Anything outside the bounds, and a bug in behaviour a spec describes, goes through a change.
 
 ### 3. Plan: `spec-plan`
 

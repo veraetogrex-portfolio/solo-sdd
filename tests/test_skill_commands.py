@@ -210,12 +210,18 @@ class SkillCommandsTest(unittest.TestCase):
                 git("commit", "-q", "--allow-empty", "-m", msg)
             env = dict(os.environ, PATH="%s:%s" % (root / "bin", os.environ["PATH"]))
             for rel in ("skills/work-status/SKILL.md", "skills/report/SKILL.md", "skills/spec-plan/SKILL.md"):
-                m = re.search(r"`(git log --format='%s%x09%h'[^`]*)`", skill_text.read(REPO / rel))
+                m = re.search(r"`(LP=[^`]*git log --format='%s%x09%h'[^`]*)`", skill_text.read(REPO / rel))
                 self.assertTrue(m, rel)
                 cmd = re.sub(r"--since=<[^>]+>", "--since=2000-01-01", m.group(1))
-                out = subprocess.run(["bash", "-c", cmd], cwd=root, env=env, capture_output=True, text=True,
-                                     stdin=subprocess.DEVNULL).stdout.splitlines()
-                self.assertEqual([ln.split("\t")[0] for ln in out], ["[quick] fix typo"], rel)
+                count = lambda cwd, env: [ln.split("\t")[0] for ln in subprocess.run(
+                    ["bash", "-c", cmd], cwd=cwd, env=env, capture_output=True, text=True,
+                    stdin=subprocess.DEVNULL).stdout.splitlines()]
+                self.assertEqual(count(root, env), ["[quick] fix typo"], rel)
+                # Defaults keep the names: no tree, then no command, count by `light:`
+                (root / "solo-sdd").rename(root / "away")
+                self.assertEqual(count(root, env), ["light: old"], rel + " without a tree")
+                (root / "away").rename(root / "solo-sdd")
+                self.assertEqual(count(root, dict(env, PATH="/usr/bin:/bin")), ["light: old"], rel + " without a command")
 
     def test_code_bug_path(self):
         """Requirement: Code bug path: the steps in order, no profile first, the description and the rules entry."""

@@ -579,13 +579,17 @@ class BranchAndCommitPrefixes(ConfigDir):
 
     def test_outside_git_passes_a_failed_listing_refuses(self):
         self.assertEqual(self.cli("set", "delivery.branch-prefix", "feat/")[0], 0, "no repository: no branches to keep")
+        fake = os.path.join(self.dir, "bin")  # a git whose branch listing fails: the external program's double
+        os.makedirs(fake)
+        with open(os.path.join(fake, "git"), "w") as f:
+            f.write('#!/bin/sh\ncase "$*" in *for-each-ref*) echo "fatal: bad object HEAD" >&2; exit 128;; esac\n'
+                    'exec %s "$@"\n' % shutil.which("git"))
+        os.chmod(os.path.join(fake, "git"), 0o755)
         from unittest import mock
-        real = settings.git
-        with mock.patch.object(settings, "git", lambda root, *a: (128, "", "fatal: bad object HEAD")
-                               if a[0] == "for-each-ref" else real(root, *a)):
-            out = io.StringIO()
-            with contextlib.redirect_stdout(out):
-                code = settings.run(["set", "delivery.branch-prefix", "team/"], self.dir)
+        out = io.StringIO()
+        with mock.patch.dict(os.environ, {"PATH": fake + os.pathsep + os.environ["PATH"]}), \
+                contextlib.redirect_stdout(out):
+            code = settings.run(["set", "delivery.branch-prefix", "team/"], self.dir)
         self.assertEqual(code, 1)
         self.assertIn("cannot list the branches: fatal: bad object HEAD", out.getvalue())
         self.assertEqual(self.read(), "delivery.branch-prefix: feat/\n")

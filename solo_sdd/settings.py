@@ -322,7 +322,7 @@ def git(root, *args):
     """git in root -> (code, stdout, stderr); a git that cannot run is code 127 with the reason."""
     try:
         r = subprocess.run(["git", "-C", root] + list(args), capture_output=True, text=True, stdin=subprocess.DEVNULL,
-                           timeout=30)
+                           timeout=30, env=dict(os.environ, LC_ALL="C"))  # git's own words: "not a git repository"
     except (OSError, subprocess.SubprocessError) as e:
         return 127, "", str(e)
     return r.returncode, r.stdout, r.stderr.strip()
@@ -339,6 +339,8 @@ def prefix_refusal(root, old, new):
         return "delivery.branch-prefix and delivery.plan-prefix would both be %s: a plan branch would read as a change branch" % now[0]
     for key, a, b in zip(BRANCH_KEYS, was, now):
         code, _, err = git(root, "check-ref-format", "--branch", b + "a") if a != b else (0, "", "")
+        if code == 127:
+            return "%s: cannot run git to check the name: %s" % (key, err)
         if code:
             return "%s: %s is no valid branch name, so %s cannot start one (%s)" % (key, b + "a", b, err)
     if was[0] == now[0]:

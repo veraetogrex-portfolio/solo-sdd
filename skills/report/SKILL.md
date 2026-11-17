@@ -22,7 +22,9 @@ The report only reads. Files do not change unless the user asked to save the rep
 
 1. **Result**: 2-3 sentences: where the project is now and what mattered most in the period.
 2. **What was done**, by result: what the product can do now or what got better.
-3. **Numbers**: a table. Every number has a source, a date or period and a status: confirmed | from an old record | not checked. A "was → became" comparison, if there is something to compare with. The table always has two rows: archived changes (the `solo-sdd/changes/archive` folders of the period) and light commits, each counted apart: the subjects that start with the text of `solo-sdd config get commit.light-prefix` (default `light:`), matched as plain text, one line each from `git log --format='%s%x09%h' --since=<period start> | LP="$(solo-sdd config get commit.light-prefix)" awk 'index($0, ENVIRON["LP"]) == 1'` (with the default prefix the same as `git log --oneline --grep='^light:' --since=<period start>`).
+3. **Numbers**: a table. Every number has a source, a date or period and a status: confirmed | from an old record | not checked. A "was → became" comparison, if there is something to compare with. The table always has two rows: archived changes (the `solo-sdd/changes/archive` folders of the period) and light commits, each counted apart: the subjects that start with the text of `solo-sdd config get commit.light-prefix` (default `light:`; no `solo-sdd/` tree or no command: `light:`), matched as plain text,
+   one line each from `LP="$(solo-sdd config get commit.light-prefix 2>/dev/null)" || LP=light:; git log --format='%s%x09%h' --since=<period start> | LP="$LP" awk 'index($0, ENVIRON["LP"]) == 1'`
+   (the older form for the default prefix: `git log --oneline --grep='^light:' --since=<period start>`).
 4. **What is broken or at risk.**
 5. **What waits**, from `docs/waiting.md`: what, from whom, since when.
 6. **What next**: 1-3 items.
