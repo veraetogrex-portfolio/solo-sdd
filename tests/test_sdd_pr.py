@@ -769,6 +769,35 @@ class OwnerOnlyPaths(Base):
         e, r = self.gate([frow("README.md")])
         self.assertEqual(e.calls("gh", "api", "--paginate", "repos/o/r/pulls/7/files")[0][4], "--jq")
 
+    def gate_config(self, files, config, agents_md=RULE):
+        e = self.env(files_json=files, checks_json=GREEN)
+        (e.d / "main/solo-sdd").mkdir(parents=True)
+        (e.d / "main/solo-sdd/config").write_text(config)
+        if agents_md:
+            (e.d / "main/AGENTS.md").write_text(agents(agents_md))
+        return e, e.run("merge", URL, "squash", "abc123")
+
+    def test_config_paths_replace_the_item(self):
+        """Requirement: Owner-only paths gate (the stand proves Owner paths from the config): the file value replaces
+        the AGENTS.md item, a path outside it merges."""
+        e, r = self.gate_config([frow("global/x.py"), frow("README.md")], "delivery.owner-only: deploy/**\n")
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_a_pr_edits_the_config(self):
+        """Requirement: Owner-only paths gate (the stand proves A PR edits the config): renamed away from it, or matched
+        by a pattern too, it is named once."""
+        e, r = self.gate_config([frow("solo-sdd/old", prev="solo-sdd/config"), frow("docs/a.md")], "")
+        self.waits(e, r, "docs/a.md", "solo-sdd/config")
+        e, r = self.gate_config([frow("solo-sdd/config")], "delivery.owner-only: solo-sdd/**\n", None)
+        self.waits(e, r, "solo-sdd/config")
+
+    def test_broken_settings(self):
+        """Requirement: Owner-only paths gate, scenario Broken settings: code 1, no fall back to fewer paths."""
+        e, r = self.gate_config([frow("deploy/prod.yml")], "delivery.owner-only: deploy/**\nbroken line\n")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("solo-sdd/config:2", r.stderr)
+        self.no_merge(e)
+
     def test_unit_helpers(self):
         self.assertIsNone(sp.owner_rule(None))
         self.assertIsNone(sp.owner_rule("## Other\n- Owner only: `x`\n"))
@@ -1105,6 +1134,19 @@ class LandOwnerPaths(ShipLand):
         r = self.land(e)
         self.assertEqual(r.returncode, 8, r.stderr)
         self.assertEqual(e.calls("gh", "api", "-X", "PUT"), [])
+
+    def test_land_config_outside_git(self):
+        """Requirement: Owner-only paths gate, scenario The config outside git: an ignored WORKTREE copy written after
+        setup (fewer paths) waits."""
+        self.put(self.main, ".git/info/exclude", "solo-sdd/\n")
+        self.put(self.main, "solo-sdd/config", "delivery.owner-only: deploy/**\n")
+        self.put(self.wt, "solo-sdd/config", "delivery.owner-only: other/**\n")
+        e = self.mk(files_json=[frow("feature.txt")])
+        r = self.land(e)
+        self.assertEqual(r.returncode, 8, r.stderr)
+        self.assertIn("waits for the owner: solo-sdd/config", r.stdout)
+        self.assertEqual(e.calls("gh", "api", "-X", "PUT"), [])
+        self.assertTrue(self.wt.is_dir())
 
 
 WT_STUB = f"""#!{sys.executable}
@@ -1667,15 +1709,19 @@ class ChecklistApproval(Base):
         self.refused([review(), {"login": "person", "state": "COMMENTED", "commit_id": None}])
 
     @marks.slow
-    def test_a_settings_edit_needs_the_approval(self):  # an edit of solo-sdd/config is a path of every checklist
+    def test_a_settings_edit_waits_for_the_owner(self):
+        # an edit of solo-sdd/config is a path of every checklist, and by the Owner-only paths gate (MODIFIED in
+        # settings-delivery-items) it waits for the owner even with every item ticked and another account's approval
         e = self.project(files_json=[frow("solo-sdd/config")], view_json=[dict(OPEN, title="T")])
         r = e.run("merge", URL, "squash", "abc123")
-        self.assertEqual((r.returncode, r.stdout.strip()), (8, "PR #7 checklist money-safety: 3 open items"), r.stderr)
+        self.assertEqual((r.returncode, r.stdout.strip()), (8, "PR #7 waits for the owner: solo-sdd/config"), r.stderr)
         self.no_merge(e)
-        for rows, want in (([], 8), ([review()], 0)):
+        for rows, want in (([], 8), ([review()], 8)):
             e = self.project(files_json=[frow("solo-sdd/config")], view_json=[dict(OPEN, title="T", body=body(True, True, True))],
                              reviews_json=rows)
-            self.assertEqual(e.run("merge", URL, "squash", "abc123").returncode, want, rows)
+            r = e.run("merge", URL, "squash", "abc123")
+            self.assertEqual((r.returncode, r.stdout.strip()), (want, "PR #7 waits for the owner: solo-sdd/config"), rows)
+            self.no_merge(e)
 
     def test_no_checklist_path_needs_no_review(self):  # No checklist path
         e = self.project(files_json=[frow("README.md")], view_json=[dict(OPEN, title="T")])

@@ -5,6 +5,7 @@ The block between the settings markers is copied into the scripts of global/ tha
 """
 import json
 import os
+import re
 import sys
 
 from solo_sdd import process_format as pf, providers
@@ -12,7 +13,7 @@ from solo_sdd import process_format as pf, providers
 # settings:begin
 # solo-sdd/config: one `key: value` per line, lines starting with # are comments, list values are separated by commas.
 SETTINGS_FILE = "solo-sdd/config"
-# key -> (type: choice | int | list | names, allowed values (None: any), default, default under `mode: team` (None: the same));
+# key -> (type: choice | int | list | names | paths | text, allowed values (None: any), default, default under `mode: team` (None: the same));
 # a key with the default "" takes an empty value, read as "not set"
 REGISTRY = {
     "mode": ("choice", ("solo", "team"), "solo", None),
@@ -21,6 +22,9 @@ REGISTRY = {
     "delivery.merge-by": ("choice", ("agent", "human"), "agent", "human"),  # who merges into the base
     "delivery.base": ("choice", None, "", None),  # "": the remote's default branch
     "delivery.promote": ("list", None, "", None),  # branches after the base in order; `release/*`: the newest by version
+    "delivery.pr-title": ("text", None, "the change name", None),  # the PR title rule ship and spec-dispatch follow
+    "delivery.deploy": ("text", None, "no", None),  # what a push or merge deploys, and where
+    "delivery.owner-only": ("paths", None, "", None),  # globs a merge waits for the owner on, besides .github/workflows/**
     "dispatch.limit": ("int", None, "2", None),
     "process.review-rounds": ("int", None, "5", None),
     "process.light-path": ("choice", ("on", "off"), "on", None),  # off: every code edit goes through a change
@@ -37,6 +41,9 @@ PATTERNS = {
     "checklist.<name>.file": ("path", None, "", None),  # a markdown file of `- [ ]` items, from the repository root
 }
 NAME_CHARS = "abcdefghijklmnopqrstuvwxyz0123456789-"
+TEXT_MAX = 200
+# the Delivery items of AGENTS.md read as the old source of a text or paths key: item -> key
+DELIVERY_ITEMS = (("PR title:", "delivery.pr-title"), ("Deploy:", "delivery.deploy"), ("Owner only:", "delivery.owner-only"))
 
 
 class SettingsError(ValueError):
@@ -74,6 +81,11 @@ def check_value(key, value, registry=REGISTRY):
     """The normalized value, or SettingsError naming the allowed values."""
     kind, allowed, default = entry(key, registry)[:3]
     v = value.strip()
+    if kind == "text":
+        if not v or not v.isprintable() or len(v) > TEXT_MAX:
+            raise SettingsError("%s takes one line of printable characters, at most %d characters, not %r"
+                                % (key, TEXT_MAX, v if len(v) <= 60 else v[:60] + "..."))
+        return v
     if kind == "int":
         if not (v.isascii() and v.isdigit()) or int(v) < 1:
             raise SettingsError("%s takes a whole number from 1, not %r" % (key, v))
@@ -148,8 +160,9 @@ def read_settings_text(root):
 
 
 def agents_delivery(root, registry=REGISTRY):
-    """{key: value} of the first allowed «Mode:» and «Merge:» items of the «## Delivery» section of AGENTS.md at root,
-    the old source of delivery.mode and delivery.merge; a file that cannot be opened: {}."""
+    """{key: value} of the «## Delivery» section of AGENTS.md at root, the old source of its keys: the first allowed
+    «Mode:» and «Merge:» items, the first non-empty «PR title:» and «Deploy:» texts trimmed and as written, and the
+    backquoted patterns of every «Owner only:» item; a file that cannot be opened: {}."""
     try:
         with open(os.path.join(root, "AGENTS.md"), encoding="utf-8", errors="replace") as f:  # other readers own the encoding
             lines = f.read().splitlines()
@@ -166,6 +179,13 @@ def agents_delivery(root, registry=REGISTRY):
             v = words[0].strip("`.,;").lower() if words else ""
             if v in registry[key][1]:
                 out.setdefault(key, v)
+        for item, key in DELIVERY_ITEMS if inside else ():
+            if s.startswith(item) and key == "delivery.owner-only":
+                found = [p for p in re.findall(r"`([^`]*)`", s) if p.strip()]
+                if found:
+                    out[key] = ", ".join(([out[key]] if key in out else []) + found)
+            elif s.startswith(item) and s[len(item):].strip():
+                out.setdefault(key, s[len(item):].strip())
     return out
 
 
@@ -185,6 +205,9 @@ ABOUT = {
     "delivery.merge-by": ("delivery", "Who merges into the base branch: the agent, or a person while the agent waits."),
     "delivery.base": ("delivery", "The branch worktrees start from and merges go into; empty means the remote's default branch."),
     "delivery.promote": ("delivery", "The branches after the base in order, each promoted from the one before by a pull request."),
+    "delivery.pr-title": ("delivery", "The rule ship and the dispatcher follow for a pull request title."),
+    "delivery.deploy": ("delivery", "What a push or a merge deploys and where, so an agent stops before it and asks."),
+    "delivery.owner-only": ("delivery", "Paths a merge waits for the owner on, as globs, besides the CI workflows and the settings file."),
     "dispatch.limit": ("dispatch", "The most orchestrators the dispatcher runs at the same time."),
     "process.review-rounds": ("process", "The most independent acceptance rounds of one change, plus one extra round for findings on the last fix, before it counts as not done."),
     "process.light-path": ("process", "Whether a small code edit outside every spec may skip the change cycle."),
@@ -197,7 +220,7 @@ ABOUT = {
     "checklist.<name>.paths": ("checklists", "The files a person checks by this list before merging, as globs."),
     "checklist.<name>.file": ("checklists", "The markdown file of the list's items, from the repository root."),
 }
-KIND_TEXT = {"int": "a whole number from 1", "names": "lowercase letters, digits and -, separated by commas",
+KIND_TEXT = {"int": "a whole number from 1", "text": "one line, at most %d characters" % TEXT_MAX, "names": "lowercase letters, digits and -, separated by commas",
              "paths": "relative paths, separated by commas", "path": "a relative path",
              "choice": "a branch name", "list": "branch names, separated by commas"}
 

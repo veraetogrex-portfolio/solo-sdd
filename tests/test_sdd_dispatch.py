@@ -444,6 +444,52 @@ class LandTest(LandBase):
         head = g(self.main, "rev-parse", "HEAD")
         self.assert_waits(self.land(), "AGENTS.md", head)
 
+    def test_owner_path_of_the_main_config_waits(self):
+        # Requirement: Owner-only paths gate (land-local): the main folder's delivery.owner-only, not the worktree's
+        self.make_change(rel="deploy/prod.yml")
+        self.put(self.main, "solo-sdd/config", "delivery.owner-only: deploy/**\n")
+        self.put(self.wt, "solo-sdd/config", "delivery.owner-only: other/**\n")
+        head = g(self.main, "rev-parse", "HEAD")
+        self.assert_waits(self.land(), "deploy/prod.yml", head)
+
+    def test_config_outside_git_waits(self):
+        # Requirement: Owner-only paths gate, scenario The config outside git (land-local): the transfer would carry an
+        # ignored WORKTREE copy edited after setup; an owner edit of the main copy alone merges
+        self.put(self.main, ".git/info/exclude", "solo-sdd/\n")
+        self.put(self.main, "solo-sdd/project.md", "# p\n")  # the solo-sdd process root: transport carries solo-sdd/
+        self.env["PYTHONPATH"] = str(SCRIPT.parents[1])  # its validate runs `python3 -m solo_sdd` where CI has no command
+        self.put(self.main, "solo-sdd/config", "delivery.owner-only: deploy/**\n")
+        self.make_change()
+        self.put(self.main, "solo-sdd/config", "delivery.owner-only: deploy/**, more/**\n")
+        self.put(self.wt, "solo-sdd/config", "delivery.owner-only: other/**\n")
+        head = g(self.main, "rev-parse", "HEAD")
+        self.assert_waits(self.land(), "solo-sdd/config", head)
+        os.unlink(os.path.join(self.wt, "solo-sdd/config"))  # the transfer would delete the main copy
+        self.assert_waits(self.land(), "solo-sdd/config", head)
+        self.put(self.wt, "solo-sdd/config", "delivery.owner-only: deploy/**\n")
+        r = self.land()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        with open(os.path.join(self.main, "solo-sdd/config"), encoding="utf-8") as f:
+            self.assertEqual(f.read(), "delivery.owner-only: deploy/**, more/**\n", "the owner's main copy is kept")
+
+    def test_tracked_config_moved_on_main_lands(self):
+        # Requirement: Owner-only paths gate, scenario The config outside git: a tracked config the branch does not
+        # change merges even when main changed it after the worktree was cut
+        self.put(self.main, "solo-sdd/config", "dispatch.limit: 2\n")
+        g(self.main, "add", "-A")
+        g(self.main, "commit", "-q", "-m", "config")
+        self.make_change()
+        self.put(self.main, "solo-sdd/config", "dispatch.limit: 3\n")
+        g(self.main, "commit", "-q", "-am", "owner edit")
+        r = self.land()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
+    def test_config_edit_waits(self):
+        # Requirement: Owner-only paths gate (land-local): a branch editing solo-sdd/config waits for the owner
+        self.make_change(rel="solo-sdd/config", text="delivery.merge-by: agent\n")
+        head = g(self.main, "rev-parse", "HEAD")
+        self.assert_waits(self.land(), "solo-sdd/config", head)
+
     def test_owner_rule_no_match_lands(self):
         self.owner_main()
         self.make_change()

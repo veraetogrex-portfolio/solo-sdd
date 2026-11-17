@@ -78,6 +78,11 @@ class EditByType(Base):
             ("delivery.merge", "", ["enter", "down", "esc"], ("squash", "default"), False, ""),
             ("dispatch.limit", "", ["r"], ("2", "default"), False, ""),  # a reset of a key not in the file
             ("delivery.mode", "delivery.mode: local\n", ["enter", "enter"], ("local", "file"), False, ""),
+            # Requirement: Text settings: a one-line entry, Esc leaves it unchanged, a longer value is refused
+            ("delivery.pr-title", "delivery.pr-title: old\n", ["enter", "x", "esc"], ("old", "file"), False, ""),
+            ("delivery.deploy", "", ["enter", "backspace", "backspace", *"on", "space", *"merge:", "space", *"Pages",
+                                     "enter"], ("on merge: Pages", "file"), True, ""),
+            ("delivery.deploy", "", ["enter", *("x" * 199), "enter"], ("no", "default"), False, "at most 200 characters"),
         ]
         for key, text, keys, want, edited, message in rows:
             s = self.open(text)

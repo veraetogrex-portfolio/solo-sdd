@@ -9,14 +9,14 @@
    - Code 6: a merge or transfer conflict (the merge is already undone): "Return on conflict" with the files from the output.
    - Code 3: a check is red only with the change: one return to the orchestrator with the command, the failure lines from the output and the same branch update as in "Return on conflict"; a repeated code 3 means "not merged: checks" with the command.
    - Code 4: `main red: <command>`: do not launch or merge new changes, ask the user (step 9) with the command and the failure lines.
-   - Code 8: "waits for the owner: <paths>": the branch touches a path from the "Owner only:" item of the "Delivery" section of the main folder's `AGENTS.md`, `.github/workflows/**` or changes the item itself, or `AGENTS.md` has the old pre-English item (the line names `solo-sdd migrate-agents`: the user does the migration).
+   - Code 8: "waits for the owner: <paths>": the branch touches a path of `solo-sdd config get delivery.owner-only` in `MAIN` (the old source: the "Owner only:" item of the "Delivery" section of the main folder's `AGENTS.md`), `.github/workflows/**` or `solo-sdd/config`, or changes the item itself, or `AGENTS.md` has the old pre-English item (the line names `solo-sdd migrate-agents`: the user does the migration).
 
      The merge has not started, the branch and worktree are in place (the line `not merged: waits for human merge: branch change/<id>` under `delivery.merge-by: human`: the same, the report shows `waits for human merge` and "Needs from you" says merge the branch `change/<id>` by hand). Do not repeat or bypass; the change goes into the report table and into "Needs from you": review and merge the branch `change/<id>`. The other changes go on; those depending on it wait for its archive in the main branch, as with any unmerged change.
    - Code 1: the script's line into the report: "not merged: <step>" or "merged, not cleaned: <step>".
    - Do not rerun checks "until green": a "flaky test" is recognised only with code 4.
    - You do not fix "not merged" yourself: the worktree and branch stay for the user, the other changes continue.
 
-   **`pr` mode** (instead of the local merge above; `local` reads unchanged). If by "Delivery" a merge into main triggers a deploy, ask the user before the first merge (step 9): what rolls out and where.
+   **`pr` mode** (instead of the local merge above; `local` reads unchanged). If `delivery.deploy` (`solo-sdd config get delivery.deploy` in `MAIN`, step 1) says a merge into main triggers a deploy, ask the user before the first merge (step 9): what rolls out and where.
    - Right after an accepted status, as a background Bash command with `run_in_background: true`: `python3 ~/.local/bin/sdd-pr.py ship <MAIN> <WORKTREE> <main> "<title by the rule>"`; the other changes go on, the result arrives as a notification.
 
      From the `ship` launch the change moves from `--running` to `--waiting` and stays there until merge or code 8 `waits for human merge` from `land`, including on repeated `ship` and `wait` without an orchestrator; recalculate by step 2 at once: the freed slot goes to the next change. A return to the orchestrator (conflict, `red`, `codeql`, a build failure after update) puts it back into `--running` until a new `ship`; "not merged" means in no list.
