@@ -888,7 +888,107 @@ class Stop(HookCase):
         os.remove(elog)
 
 
-CODEX_ROLLOUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "codex-rollout.jsonl")
+def edits_transcript(name, *paths, push=False):
+    """A main transcript in H with an Edit of each path, and a git push when push is set."""
+    uses = [{"type": "tool_use", "name": "Edit", "input": {"file_path": p}} for p in paths]
+    uses += [{"type": "tool_use", "name": "Bash", "input": {"command": "git push -u origin HEAD"}}] if push else []
+    tr = os.path.join(H, name)
+    open(tr, "w").write("".join(json.dumps({"type": "assistant", "message": {"content": [u]}}) + "\n" for u in uses))
+    return tr
+
+
+def project_config(root, text):
+    os.makedirs(os.path.join(root, "solo-sdd"), exist_ok=True)
+    open(os.path.join(root, "solo-sdd", "config"), "w").write(text)
+
+
+class StopGateSwitches(HookCase):
+    """Requirement: Stop gate switches: each gate reads the settings of the repository it checks."""
+
+    def stop(self, sid, tr, cwd=None, env=None):
+        o = run("stop", {"session_id": sid, "cwd": cwd or REPO, "transcript_path": tr, "last_assistant_message": "Done."}, env)
+        return o["reason"] if o else ""
+
+    def test_each_gate_off(self):
+        tr, _ = stop_fixture()
+        r = self.stop("S-g0", tr)
+        assert "uncommitted" in r and "not archived" in r and "The interface changed" in r, r
+        for n, (key, gone) in enumerate((("uncommitted", "uncommitted"), ("unarchived", "not archived"),
+                                         ("ui-check", "The interface changed"))):
+            project_config(REPO, "hooks.stop.%s: off\n" % key)
+            r = self.stop("S-g%d" % (n + 1), tr)
+            assert gone not in r and r.count("\n- ") == 2, (key, r)
+        project_config(REPO, "hooks.stop.uncommitted: off\nhooks.stop.unarchived: off\nhooks.stop.ui-check: off\n")
+        assert self.stop("S-g4", tr) == "", "every gate off"
+
+    def test_open_pr_gate(self):
+        proj, fbin = os.path.join(H, "proj-pr"), os.path.join(H, "fake-gh")
+        os.makedirs(fbin)
+        subprocess.run(["git", "init", "-q", proj], check=True)
+        open(os.path.join(fbin, "gh"), "w").write('#!/bin/sh\necho \'{"state": "OPEN", "url": "https://github.com/o/r/pull/9"}\'\n')
+        os.chmod(os.path.join(fbin, "gh"), 0o755)
+        tr, env = edits_transcript("t-pr.jsonl", push=True), dict(ENV, PATH=fbin + os.pathsep + ENV["PATH"])
+        for n, (text, returns) in enumerate((("hooks.stop.open-pr: on\n", True), ("hooks.stop.open-pr: off\n", False),
+                                             ("hooks.stop.open-pr: on\ndelivery.merge-by: human\n", False),
+                                             ("hooks.stop.open-pr: off\ndelivery.merge-by: agent\n", False))):
+            project_config(proj, text)
+            r = self.stop("S-pr-%d" % n, tr, proj, env)
+            assert ("pull/9 is open and not merged" in r) == returns, (text, r)
+
+    def test_settings_of_the_edited_repository(self):
+        b = os.path.join(H, "proj-b")
+        os.makedirs(b)
+        subprocess.run(["git", "init", "-q", b], check=True)
+        open(os.path.join(b, "b.txt"), "w").write("b\n")
+        tr = edits_transcript("t-b.jsonl", os.path.join(b, "b.txt"))
+        project_config(b, "hooks.stop.uncommitted: off\n")
+        assert self.stop("S-b1", tr) == "", "B's file turns B's gate off for a session in A"
+        project_config(b, "")
+        project_config(REPO, "hooks.stop.uncommitted: off\n")
+        r = self.stop("S-b2", tr)
+        assert "proj-b has uncommitted edits" in r, "A's file does not silence B's gate: " + r
+
+    def test_auto_claim_off(self):
+        project_config(REPO, "hooks.auto-claim: off\n")
+        claim = os.path.join(REPO, "openspec/changes/01-a/CLAIM")
+        assert not denied(change_file("tasks.md", old_string="- [ ] two", new_string="- [x] two"))
+        assert not os.path.exists(claim), "a tick creates no CLAIM"
+        open(claim, "w").write("claude 2026-11-09 session=OTHER\n")
+        assert "taken by another agent" in reason(change_file("proposal.md", "Write", content="x")), "a foreign CLAIM"
+        assert denied({"tool_name": "Edit", "tool_input": {"file_path": os.path.join(REPO, "openspec/changes/02-b/tasks.md")}}), "WAITING"
+
+    def test_a_broken_config_keeps_the_gates(self):
+        tr, _ = stop_fixture()
+        project_config(REPO, "hooks.stop.uncommitted off\n")
+        r = self.stop("S-broken", tr)
+        assert "uncommitted" in r and "not archived" in r and "The interface changed" in r, r
+        log = os.path.join(H, ".claude/hook-state/errors.log")
+        assert "solo-sdd/config:1" in open(log).read()
+        os.remove(log)
+        project_config(REPO, "hooks.auto-claim off\n")
+        os.makedirs(os.path.join(REPO, "openspec/changes/03-c"))
+        assert not denied(change_file("tasks.md", "Write", "03-c", content="- [x] a\n"))
+        assert os.path.exists(os.path.join(REPO, "openspec/changes/03-c/CLAIM")), "a broken file keeps auto-claim on"
+        assert "solo-sdd/config:1" in open(log).read()
+        os.remove(log)
+
+
+class InterfaceExtensions(HookCase):
+    """Requirement: Interface settings: ui.extensions decides which edited files count as interface."""
+
+    def test_a_project_extension_counts(self):
+        for name in ("page.jinja", "app.css"):
+            open(os.path.join(REPO, name), "w").write("x\n")
+        tr = edits_transcript("t-ui.jsonl", os.path.join(REPO, "page.jinja"), os.path.join(REPO, "app.css"))
+        stop = {"cwd": REPO, "transcript_path": tr, "last_assistant_message": "Done."}
+        o = run("stop", dict(stop, session_id="S-ui0"))
+        assert o and "The interface changed (app.css)" in o["reason"], ("the default list: css, not jinja", o)
+        project_config(REPO, "ui.extensions: .html, .jinja\n")
+        o = run("stop", dict(stop, session_id="S-ui1"))
+        assert o and "The interface changed (page.jinja)" in o["reason"], o
+
+
+CODEX_ROLLOUT =os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "codex-rollout.jsonl")
 RU_TRANSLATE = "\u041f\u0435\u0440\u0435\u0432\u0435\u0434\u0438 \u043d\u0430 \u0430\u043d\u0433\u043b\u0438\u0439\u0441\u043a\u0438\u0439"
 RU_QUESTION = "\u0410 \u0447\u0442\u043e \u0441 \u0442\u0435\u0441\u0442\u0430\u043c\u0438?"
 EN_400 = ("The change rolls the hooks out to every agent folder on this computer and the tests pass on both runners. " * 4)[:400]

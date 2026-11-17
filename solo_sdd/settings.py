@@ -14,7 +14,7 @@ from solo_sdd import process_format as pf, providers
 # settings:begin
 # solo-sdd/config: one `key: value` per line, lines starting with # are comments, list values are separated by commas.
 SETTINGS_FILE = "solo-sdd/config"
-# key -> (type: choice | int | lang | list | model | names | paths | text, allowed values (None: any), default, default under `mode: team` (None: the same));
+# key -> (type: choice | exts | int | ints | lang | list | model | names | paths | text, allowed values (None: any), default, default under `mode: team` (None: the same));
 # a key with the default "" takes an empty value, read as "not set"
 REGISTRY = {
     "mode": ("choice", ("solo", "team"), "solo", None),
@@ -62,7 +62,15 @@ REGISTRY = {
     "integrations": ("names", None, "", None),  # the enabled integrations, by folder name (solo_sdd/integrations.py)
     "integrations.off": ("names", None, "", None),  # the bundled integrations switched off, by folder name
     "git.ignore": ("paths", None, ".claude/worktrees/, .env, .env.*, !.env.example", None),  # solo-sdd ignore --write
+    "hooks.stop.uncommitted": ("choice", ("on", "off"), "on", None),  # work_hooks.py stop: uncommitted session edits
+    "hooks.stop.unarchived": ("choice", ("on", "off"), "on", None),  # stop: every task checked, not archived
+    "hooks.stop.open-pr": ("choice", ("on", "off"), "on", None),  # stop: an open PR; merge-by human keeps it off
+    "hooks.stop.ui-check": ("choice", ("on", "off"), "on", None),  # stop: an interface edit without a browser check
+    "hooks.auto-claim": ("choice", ("on", "off"), "on", None),  # guard: a tasks.md tick creates CLAIM
+    "ui.extensions": ("exts", None, ".html, .htm, .css, .scss, .sass, .less, .tsx, .jsx, .vue, .svelte", None),
+    "ui.widths": ("ints", None, "1280, 390", None),  # ui-check and spec-plan
 }
+LIST_KINDS = ("exts", "ints", "list", "paths", "names")
 # the lowest value of an int key, 1 when not named: a task limit under 3 fits no change (Acceptance holds two tasks)
 INT_MIN = {"process.max-tasks": 3, "process.bugfix-max-tasks": 3, "process.requirement-max-chars": 100}
 # pattern keys: <name> is lowercase letters, digits and -, not starting with -; set keys show in `config list` as `file`
@@ -207,7 +215,7 @@ def check_value(key, value, registry=REGISTRY):
         if not (v.isascii() and v.isdigit()) or int(v) < low:
             raise SettingsError("%s takes a whole number from %d, not %r" % (key, low, v))
         return str(int(v))
-    items = [i.strip() for i in v.split(",")] if kind in ("list", "paths", "names") else [v]
+    items = [i.strip() for i in v.split(",")] if kind in LIST_KINDS else [v]
     items = [i for i in items if i]
     if not items and (default == "" or key == IGNORE_KEY):  # an empty git.ignore removes the block
         return ""
@@ -217,6 +225,8 @@ def check_value(key, value, registry=REGISTRY):
         if hides:
             raise SettingsError(ignore_refusal(key, i, hides))
     bad = [i for i in items if (bad_path(i) if paths else not good_name(i) if kind == "names" else
+                                not re.fullmatch(r"\.[A-Za-z0-9]+", i) if kind == "exts" else
+                                not (i.isascii() and i.isdigit() and int(i) >= 1) if kind == "ints" else
                                 i not in allowed if allowed else bad_name(i))]
     if kind == "names" and len(set(items)) < len(items):
         raise SettingsError("%s takes each name once, not %r" % (key, v))
@@ -224,10 +234,12 @@ def check_value(key, value, registry=REGISTRY):
         what = ", ".join(allowed) if allowed else (
             "relative paths (no spaces, \\ or .., not starting with / or -)" if paths else
             "names (lowercase letters, digits and -, not starting with -)" if kind == "names" else
+            "file extensions (. and ASCII letters or digits)" if kind == "exts" else
+            "whole numbers from 1" if kind == "ints" else
             "branch names (no spaces, ~^:?[\\ or .., not starting with - or +)") + (
-            ", separated by commas" if kind in ("list", "paths", "names") else "")
+            ", separated by commas" if kind in LIST_KINDS else "")
         raise SettingsError("%s takes %s, not %r" % (key, what, v))
-    return ", ".join(items)
+    return ", ".join(str(int(i)) if kind == "ints" else i for i in items)
 
 
 def parse_settings(text, registry=REGISTRY, name=SETTINGS_FILE):
@@ -341,7 +353,7 @@ def read_settings(root, registry=REGISTRY):
 # The block above is copied into files that cannot import the package: the agents default is the detected ones here.
 REGISTRY["agents"] = REGISTRY["agents"][:2] + (", ".join(providers.detected()), None)
 
-GROUPS = ("process", "delivery", "dispatch", "agents", "git", "integrations", "checklists")
+GROUPS = ("process", "delivery", "dispatch", "agents", "hooks", "ui", "git", "integrations", "checklists")
 # key or pattern -> (group, what it changes); kept out of the block above: the scripts do not show them
 ABOUT = {
     "mode": ("process", "Solo or team project; a team project takes the team default of every key that has one."),
@@ -387,6 +399,13 @@ ABOUT = {
     "agents.dispatcher-effort": ("agents", "The effort the dispatcher session is started with."),
     "agents.executor": ("agents", "Who writes the change code: the lead agent itself, or Codex executors as if the owner named codex-orchestration."),
     "git.ignore": ("git", "What the project keeps out of git: solo-sdd ignore --write puts these .gitignore lines into its block; an item starting with ! keeps a path in."),
+    "hooks.stop.uncommitted": ("hooks", "Whether the stop hook returns the agent for uncommitted edits of the session in this repository."),
+    "hooks.stop.unarchived": ("hooks", "Whether the stop hook returns the agent for a change of this repository with every task checked and no archive."),
+    "hooks.stop.open-pr": ("hooks", "Whether the stop hook returns the agent for an open pull request; delivery.merge-by human keeps it off whatever this says."),
+    "hooks.stop.ui-check": ("hooks", "Whether the stop hook returns the agent for an interface edit in this repository without a browser check."),
+    "hooks.auto-claim": ("hooks", "Whether the first checked task in tasks.md creates the change's CLAIM; another agent's CLAIM and a WAITING are refused either way."),
+    "ui.extensions": ("ui", "The file extensions the stop hook and project-init count as interface files."),
+    "ui.widths": ("ui", "The screen widths in pixels ui-check takes screenshots at and spec-plan names in an interface Live Scenario."),
     "integrations": ("integrations", "The integrations enabled in this project, by folder name."),
     "integrations.off": ("integrations", "The bundled integrations switched off in this project, by folder name."),
     "checklist.<name>.paths": ("checklists", "The files a person checks by this list before merging, as globs."),
@@ -394,7 +413,9 @@ ABOUT = {
 }
 KIND_TEXT = {"lang": "a language code of 2 or 3 lowercase letters", "model": "one model name of ASCII letters, digits, ., -, _, [ and ]", "text": "one line, at most %d characters" % TEXT_MAX, "names": "lowercase letters, digits and -, separated by commas",
              "paths": "relative paths, separated by commas", "path": "a relative path",
-             "choice": "a branch name", "list": "branch names, separated by commas"}
+             "choice": "a branch name", "list": "branch names, separated by commas",
+             "exts": "file extensions (. and ASCII letters or digits), separated by commas",
+             "ints": "whole numbers from 1, separated by commas"}
 
 
 def pattern_of(key, registry=REGISTRY):

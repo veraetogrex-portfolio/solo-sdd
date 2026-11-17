@@ -60,7 +60,7 @@ class SettingsFile(unittest.TestCase):
 
     def test_registry_shape(self):
         for key, (kind, allowed, default, team) in settings.REGISTRY.items():
-            self.assertIn(kind, ("choice", "int", "lang", "list", "model", "names", "paths", "text"), key)
+            self.assertIn(kind, ("choice", "exts", "int", "ints", "lang", "list", "model", "names", "paths", "text"), key)
             self.assertEqual(settings.check_value(key, default), default, key)
             if team is not None:
                 self.assertEqual(settings.check_value(key, team), team, key)
@@ -246,6 +246,33 @@ class ChangeLimitSettings(unittest.TestCase):
         for key, low in (("process.max-tasks", 3), ("process.bugfix-max-tasks", 3),
                          ("process.requirement-max-chars", 100), ("process.audit-every", 1)):
             self.assertIn("a whole number from %d" % low, settings.describe(key, {})["type"], key)
+
+
+class StopGateSwitchesAndInterfaceSettings(unittest.TestCase):
+    """Requirements: Stop gate switches and Interface settings: the seven keys of groups hooks and ui."""
+    UI_DEFAULT = ".html, .htm, .css, .scss, .sass, .less, .tsx, .jsx, .vue, .svelte"
+    KEYS = dict({k: ("choice", ("on", "off"), "on", "hooks") for k in (
+        "hooks.stop.uncommitted", "hooks.stop.unarchived", "hooks.stop.open-pr", "hooks.stop.ui-check",
+        "hooks.auto-claim")}, **{"ui.extensions": ("exts", None, UI_DEFAULT, "ui"), "ui.widths": ("ints", None, "1280, 390", "ui")})
+
+    def test_the_seven_keys(self):
+        for key, (kind, allowed, default, group) in self.KEYS.items():
+            self.assertEqual(settings.REGISTRY.get(key), (kind, allowed, default, None), key)
+            self.assertEqual(settings.describe(key, {})["group"], group, key)
+            self.assertEqual(settings.effective({})[key], (default, "default"), key)
+        self.assertIn("extensions", settings.describe("ui.extensions", {})["type"])
+        self.assertIn("whole numbers from 1", settings.describe("ui.widths", {})["type"])
+
+    def test_values(self):
+        self.assertEqual(settings.check_value("ui.extensions", " .html,.Jinja2 "), ".html, .Jinja2")
+        self.assertEqual(settings.check_value("ui.widths", "1440, 0390"), "1440, 390")
+        for key, bad, why in (("ui.extensions", "html", "extensions"), ("ui.extensions", ".a b", "extensions"),
+                              ("ui.extensions", ".a.b", "extensions"), ("ui.extensions", ".", "extensions"),
+                              ("ui.extensions", "", "extensions"), ("ui.widths", "wide", "whole numbers"),
+                              ("ui.widths", "0", "whole numbers"), ("ui.widths", "²", "whole numbers"),
+                              ("ui.widths", "", "whole numbers"), ("hooks.auto-claim", "no", "on, off")):
+            with self.assertRaisesRegex(settings.SettingsError, "^%s takes .*%s" % (re.escape(key), why), msg=bad):
+                settings.check_value(key, bad)
 
 
 class Command(unittest.TestCase):
@@ -520,6 +547,25 @@ class ChangeLimitCommand(ConfigDir):
         self.assertEqual(self.read(), "# keep\nprocess.max-tasks: 12\n")
 
 
+class InterfaceSettingsCommand(ConfigDir):
+    """Requirement: Interface settings, scenario A width that is not a number; the describe lines of both keys."""
+
+    def test_refused_values_keep_the_file(self):
+        self.write("# keep\nui.widths: 1440\n")
+        for key, bad, why in (("ui.widths", "1280, wide", "whole numbers"), ("ui.extensions", "html", "extensions"),
+                              ("ui.extensions", ".a b", "extensions")):
+            code, out = self.cli("set", key, bad)
+            self.assertEqual(code, 1, bad)
+            self.assertIn(why, out, bad)
+            self.assertIn(repr(bad), out, bad)
+        self.assertEqual(self.read(), "# keep\nui.widths: 1440\n")
+        code, blocks = self.describe("ui.extensions")
+        self.assertEqual((code, blocks["ui.extensions"]["group"]), (0, "ui"))
+        self.assertIn("extensions", blocks["ui.extensions"]["type"])
+        self.assertIn("whole numbers", self.describe("ui.widths")[1]["ui.widths"]["type"])
+        self.assertEqual(self.cli("set", "ui.extensions", ".html, .jinja"), (0, "ui.extensions: .html, .jinja\n"))
+
+
 class DeliveryItemsInConfig(ConfigDir):
     """Requirements: Delivery items in config; Defaults by mode (the key's old source)."""
 
@@ -792,7 +838,9 @@ VALUES = {k: st.sampled_from(v[1]) if v[1] else MODELS if v[0] == "model" else
 VALUES.update({"delivery.branch-prefix": st.sampled_from(["change/", "feat/", "team-1/"]),
                "delivery.plan-prefix": st.sampled_from(["plan/", "plans/"]),
                "commit.light-prefix": st.sampled_from(["light:", "[quick]", "q: x"]),
-               "artifacts.language": st.sampled_from(["en", "ru", "deu"])})
+               "artifacts.language": st.sampled_from(["en", "ru", "deu"]),
+               "ui.extensions": st.sampled_from([".html", ".html, .jinja", ".vue, .tsx, .J2"]),
+               "ui.widths": st.sampled_from(["1280, 390", "1440", "1920, 768, 360"])})
 COMMENT = st.text(st.characters(blacklist_categories=("Cs", "Cc", "Zl", "Zp")), max_size=12).map(lambda s: "# " + s)
 
 

@@ -120,7 +120,7 @@ Several ready changes at once (Claude Code only): `spec-dispatch`: the main sess
 | Any behaviour | A test that fails on the previous code. A shape check ("the field exists") does not count |
 | An invariant, round trip, idempotence | A property-based test (`fast-check`, `Hypothesis`) named after the Requirement. The test must fail on at least one code mutation, the generator must reach boundary states |
 | What a person sees | The `Live Scenario` from `verification.md` on the built artifact or a stand |
-| An interface | `ui-check`: screenshots at 1280 and 390, both themes, the Hard Gate (antislop) with proofs, clicks "element → action → result", "draft without direction" without a `DESIGN.md` with `Dial`, an audit on the word "audit" |
+| An interface | `ui-check`: screenshots at each width of `solo-sdd config get ui.widths` (default `1280, 390`), both themes, the Hard Gate (antislop) with proofs, clicks "element → action → result", "draft without direction" without a `DESIGN.md` with `Dial`, an audit on the word "audit" |
 | AI agent quality | `agent-quality`: A versus B on one labelled set, one change per run |
 | A failure in a running service | `debug-profile`: reproduction → version and environment → localisation by logs → one hypothesis. After two failed edits, stop and analyse |
 

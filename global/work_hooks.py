@@ -25,7 +25,6 @@ HOME = os.path.expanduser("~")
 HERE = os.path.dirname(os.path.realpath(__file__))
 STATE = os.path.join(HOME, ".claude", "hook-state")
 TMP_ROOTS = ("/tmp", "/private/tmp", "/var/folders", "/private/var/folders")
-UI_EXT = (".html", ".htm", ".css", ".scss", ".sass", ".less", ".tsx", ".jsx", ".vue", ".svelte")
 BROWSER_TOOLS = ("mcp__claude-in-chrome__", "mcp__agent-browser__", "mcp__peekaboo__")
 BROWSER_SKILLS = ("ui-check", "agent-browser", "claude-in-chrome", "webapp-testing", "run", "web-perf")
 # Built-in browser signs; the `browser` key of model-policy.json adds to them (browser_signs) and cannot remove one.
@@ -38,7 +37,7 @@ SECRET_WORDS = {"KEY", "TOKEN", "SECRET", "PASSWORD", "PASSWD", "WEBHOOK", "CRED
 # settings:begin
 # solo-sdd/config: one `key: value` per line, lines starting with # are comments, list values are separated by commas.
 SETTINGS_FILE = "solo-sdd/config"
-# key -> (type: choice | int | lang | list | model | names | paths | text, allowed values (None: any), default, default under `mode: team` (None: the same));
+# key -> (type: choice | exts | int | ints | lang | list | model | names | paths | text, allowed values (None: any), default, default under `mode: team` (None: the same));
 # a key with the default "" takes an empty value, read as "not set"
 REGISTRY = {
     "mode": ("choice", ("solo", "team"), "solo", None),
@@ -86,7 +85,15 @@ REGISTRY = {
     "integrations": ("names", None, "", None),  # the enabled integrations, by folder name (solo_sdd/integrations.py)
     "integrations.off": ("names", None, "", None),  # the bundled integrations switched off, by folder name
     "git.ignore": ("paths", None, ".claude/worktrees/, .env, .env.*, !.env.example", None),  # solo-sdd ignore --write
+    "hooks.stop.uncommitted": ("choice", ("on", "off"), "on", None),  # work_hooks.py stop: uncommitted session edits
+    "hooks.stop.unarchived": ("choice", ("on", "off"), "on", None),  # stop: every task checked, not archived
+    "hooks.stop.open-pr": ("choice", ("on", "off"), "on", None),  # stop: an open PR; merge-by human keeps it off
+    "hooks.stop.ui-check": ("choice", ("on", "off"), "on", None),  # stop: an interface edit without a browser check
+    "hooks.auto-claim": ("choice", ("on", "off"), "on", None),  # guard: a tasks.md tick creates CLAIM
+    "ui.extensions": ("exts", None, ".html, .htm, .css, .scss, .sass, .less, .tsx, .jsx, .vue, .svelte", None),
+    "ui.widths": ("ints", None, "1280, 390", None),  # ui-check and spec-plan
 }
+LIST_KINDS = ("exts", "ints", "list", "paths", "names")
 # the lowest value of an int key, 1 when not named: a task limit under 3 fits no change (Acceptance holds two tasks)
 INT_MIN = {"process.max-tasks": 3, "process.bugfix-max-tasks": 3, "process.requirement-max-chars": 100}
 # pattern keys: <name> is lowercase letters, digits and -, not starting with -; set keys show in `config list` as `file`
@@ -231,7 +238,7 @@ def check_value(key, value, registry=REGISTRY):
         if not (v.isascii() and v.isdigit()) or int(v) < low:
             raise SettingsError("%s takes a whole number from %d, not %r" % (key, low, v))
         return str(int(v))
-    items = [i.strip() for i in v.split(",")] if kind in ("list", "paths", "names") else [v]
+    items = [i.strip() for i in v.split(",")] if kind in LIST_KINDS else [v]
     items = [i for i in items if i]
     if not items and (default == "" or key == IGNORE_KEY):  # an empty git.ignore removes the block
         return ""
@@ -241,6 +248,8 @@ def check_value(key, value, registry=REGISTRY):
         if hides:
             raise SettingsError(ignore_refusal(key, i, hides))
     bad = [i for i in items if (bad_path(i) if paths else not good_name(i) if kind == "names" else
+                                not re.fullmatch(r"\.[A-Za-z0-9]+", i) if kind == "exts" else
+                                not (i.isascii() and i.isdigit() and int(i) >= 1) if kind == "ints" else
                                 i not in allowed if allowed else bad_name(i))]
     if kind == "names" and len(set(items)) < len(items):
         raise SettingsError("%s takes each name once, not %r" % (key, v))
@@ -248,10 +257,12 @@ def check_value(key, value, registry=REGISTRY):
         what = ", ".join(allowed) if allowed else (
             "relative paths (no spaces, \\ or .., not starting with / or -)" if paths else
             "names (lowercase letters, digits and -, not starting with -)" if kind == "names" else
+            "file extensions (. and ASCII letters or digits)" if kind == "exts" else
+            "whole numbers from 1" if kind == "ints" else
             "branch names (no spaces, ~^:?[\\ or .., not starting with - or +)") + (
-            ", separated by commas" if kind in ("list", "paths", "names") else "")
+            ", separated by commas" if kind in LIST_KINDS else "")
         raise SettingsError("%s takes %s, not %r" % (key, what, v))
-    return ", ".join(items)
+    return ", ".join(str(int(i)) if kind == "ints" else i for i in items)
 
 
 def parse_settings(text, registry=REGISTRY, name=SETTINGS_FILE):
@@ -385,13 +396,19 @@ def reply_language(root):
     return value if source == "file" else os.environ.get("SOLO_SDD_REPLY_LANG") or value
 
 
-def human_merge(root):
-    """delivery.merge-by of solo-sdd/config is human; a broken file: the defaults (agent) and a log line."""
+def gate_setting(root, key):
+    """The value in effect of key in the project at root; no root, or a broken file (with a log line): the default,
+    so every gate stays on."""
     try:
-        return read_settings(root)["delivery.merge-by"][0] == "human"
+        return (read_settings(root) if root else effective({}))[key][0]
     except Exception as e:
-        log_error("stop settings %s" % root, e)
-        return False
+        log_error("hook settings %s" % root, e)
+        return effective({})[key][0]
+
+
+def change_project(cdir):
+    """The project folder of a change folder <project>/<tree>/changes/<id>."""
+    return os.path.dirname(os.path.dirname(os.path.dirname(cdir)))
 
 
 def sh(args, cwd=None, timeout=5):
@@ -1137,7 +1154,7 @@ def guard_claim(sid, path, tool, ti):
     if os.path.exists(waiting):
         deny("Change %s waits for an external condition (WAITING: %s). Take another change."
              % (name, (read_head(waiting, 300) or "").strip()))
-    if rest != "tasks.md" or not more_done(tool, ti, path):
+    if rest != "tasks.md" or not more_done(tool, ti, path) or gate_setting(change_project(found[0]), "hooks.auto-claim") == "off":
         return
     try:
         fd = os.open(claim, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
@@ -2643,6 +2660,13 @@ def integration_reasons(by_root):
     return out
 
 
+def ui_file(path):
+    """The edited file counts as interface by ui.extensions of its repository, and its ui-check gate is on."""
+    root = git_root(path)
+    exts = tuple(e.strip() for e in gate_setting(root, "ui.extensions").split(",") if e.strip())
+    return path.endswith(exts) and gate_setting(root, "hooks.stop.ui-check") == "on"
+
+
 def cmd_stop(inp):
     if inp.get("stop_hook_active"):
         return
@@ -2665,6 +2689,8 @@ def cmd_stop(inp):
         if r:
             by_root.setdefault(r, set()).add(p)
     for root, files in sorted(by_root.items()):
+        if gate_setting(root, "hooks.stop.uncommitted") == "off":
+            continue
         dirty = sorted(files & dirty_paths(root))
         if dirty:
             names = ", ".join(os.path.relpath(p, root) for p in dirty[:5]) + (" …" if len(dirty) > 5 else "")
@@ -2673,12 +2699,15 @@ def cmd_stop(inp):
 
     for cdir in sorted({c[0] for c in map(change_file, edited) if c and c[1] != "archive"}):
         tasks = read_head(os.path.join(cdir, "tasks.md"), 200000)
-        if tasks and os.path.isdir(cdir) and re.search(r"^\s*- \[[xX]\]", tasks, re.M) and not re.search(r"^\s*- \[ \]", tasks, re.M):
+        if tasks and os.path.isdir(cdir) and re.search(r"^\s*- \[[xX]\]", tasks, re.M) and not re.search(r"^\s*- \[ \]", tasks, re.M) \
+                and gate_setting(change_project(cdir), "hooks.stop.unarchived") == "on":
             reasons.append("Change %s: every task is checked but it is not archived. Run verify, sync, archive and remove the CLAIM, "
                            "or say what is missing." % os.path.basename(cdir))
 
     root = git_root(cwd)
-    if pushed and root and not human_merge(main_checkout(root)):  # a person merges: an open PR is the expected end
+    main = main_checkout(root) if pushed and root else None
+    if main and gate_setting(main, "hooks.stop.open-pr") == "on" and gate_setting(main, "delivery.merge-by") != "human":
+        # a person merges: an open PR is the expected end, whatever the switch says
         pr = sh(["gh", "pr", "view", "--json", "state,url"], cwd=root, timeout=10)
         try:
             pr = json.loads(pr) if pr else {}
@@ -2688,7 +2717,7 @@ def cmd_stop(inp):
             reasons.append("PR %s is open and not merged. Merge it and update the main branch (/ship) if the merge does not start "
                            "a production deploy. If it does, ask the user." % pr.get("url"))
 
-    ui = sorted(p for p in edited if p.endswith(UI_EXT) and not re.search(r"\.(test|spec)\.", p))
+    ui = sorted(p for p in edited if not re.search(r"\.(test|spec)\.", p) and ui_file(p))
     if ui and not browser:
         reasons.append("The interface changed (%s) but the session had no browser check. Check on desktop and phone "
                        "(/ui-check) or say why the check is impossible." % ", ".join(os.path.basename(p) for p in ui[:4]))

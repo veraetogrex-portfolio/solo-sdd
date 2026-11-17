@@ -116,7 +116,7 @@ Next: /spec-next | /spec-next after the merge of <PR url> | the light path items
 | A scenario without a WHEN/GIVEN or THEN step, a section like `## DEPRECATED Requirements` in a delta | Steps `**WHEN**` (or `**GIVEN**`) and `**THEN**` in every scenario; only the sections ADDED, MODIFIED, REMOVED, RENAMED Requirements |
 | Dials derived from the user's words | Only a `Dial` line with three numbers, otherwise 1/1/1 and the mark "draft without direction" |
 | Invented reviews or numbers in tasks | The placeholder `[data needed: …]` and `Needs` |
-| The Live Scenario of a UI change described in general words | A list "element → action → result", widths 1280 and 390, every theme |
+| The Live Scenario of a UI change described in general words | A list "element → action → result", each `ui.widths` width, every theme |
 | The change reads foreign input, and there is no task on hostile input | One test task with the applicable items of the list from step 5 |
 | Read the whole `docs/codebase/` for every unit | Only the files of the unit's type row from step 2a |
 | Stopped or refreshed the map because it is stale | The `Map stale` line in the report, planning goes on |
