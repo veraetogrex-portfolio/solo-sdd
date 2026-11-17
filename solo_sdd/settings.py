@@ -25,6 +25,13 @@ REGISTRY = {
     "delivery.pr-title": ("text", None, "the change name", None),  # the PR title rule ship and spec-dispatch follow
     "delivery.deploy": ("text", None, "no", None),  # what a push or merge deploys, and where
     "delivery.owner-only": ("paths", None, "", None),  # globs a merge waits for the owner on, besides .github/workflows/**
+    "delivery.ci-timeout": ("int", None, "1200", None),  # seconds sdd-pr.py wait gives CI as a whole
+    "delivery.ci-stuck": ("int", None, "300", None),  # seconds a required check may stay missing or not started
+    "delivery.ci-no-checks": ("int", None, "180", None),  # seconds a PR may show no checks at all
+    "delivery.require-ci": ("choice", ("on", "off"), "on", None),  # off: a PR without checks merges (CI: none)
+    "delivery.code-scanning": ("choice", ("gate", "warn", "off"), "gate", None),  # open alerts: code 8, a warning, not asked
+    "delivery.delete-branch": ("choice", ("on", "off"), "on", None),  # off: a merged PR keeps its branch
+    "delivery.draft": ("choice", ("on", "off"), "off", None),  # on: a PR opens as a draft, marked ready before the merge
     "dispatch.limit": ("int", None, "2", None),
     "process.review-rounds": ("int", None, "5", None),
     "process.light-path": ("choice", ("on", "off"), "on", None),  # off: every code edit goes through a change
@@ -208,6 +215,13 @@ ABOUT = {
     "delivery.pr-title": ("delivery", "The rule ship and the dispatcher follow for a pull request title."),
     "delivery.deploy": ("delivery", "What a push or a merge deploys and where, so an agent stops before it and asks."),
     "delivery.owner-only": ("delivery", "Paths a merge waits for the owner on, as globs, besides the CI workflows and the settings file."),
+    "delivery.ci-timeout": ("delivery", "The most seconds sdd-pr.py wait and ship give CI before the result infra; a --timeout flag wins."),
+    "delivery.ci-stuck": ("delivery", "The seconds a required check may stay missing or not started after the others finished; a --stuck flag wins."),
+    "delivery.ci-no-checks": ("delivery", "The seconds a pull request may show no checks at all before the wait ends."),
+    "delivery.require-ci": ("delivery", "Whether a pull request needs checks: off merges one without any, as CI: none, while the base branch requires none."),
+    "delivery.code-scanning": ("delivery", "What open code scanning alerts do after green checks: gate waits for a fix, warn prints them and merges, off skips them."),
+    "delivery.delete-branch": ("delivery", "Whether merge and land delete the branch of a merged pull request."),
+    "delivery.draft": ("delivery", "Whether a pull request opens as a draft, marked ready for review right before the merge."),
     "dispatch.limit": ("dispatch", "The most orchestrators the dispatcher runs at the same time."),
     "process.review-rounds": ("process", "The most independent acceptance rounds of one change, plus one extra round for findings on the last fix, before it counts as not done."),
     "process.light-path": ("process", "Whether a small code edit outside every spec may skip the change cycle."),

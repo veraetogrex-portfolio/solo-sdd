@@ -102,6 +102,18 @@ class SkillCommandsTest(unittest.TestCase):
         for rule in ("## Purpose", "MODIFIED", "Specs: none", "Acceptance", "Live Scenario", "Depends On", "property"):
             self.assertIn(rule, text)
 
+    def test_ci_wait_settings_in_ship_and_dispatch(self):
+        """Requirement: CI wait settings and Merge gate settings: ship names delivery.ci-timeout instead of a fixed
+        limit and the CI: none outcome; spec-dispatch lands on none as on green and reports none."""
+        ship = " ".join(skill_text.read(REPO / "skills/ship/SKILL.md").split())
+        self.assertIn("`delivery.ci-timeout`", ship)
+        self.assertNotIn("1200 s", ship)
+        self.assertIn("`CI: none`", ship)
+        merge = " ".join(skill_text.read(REPO / "skills/spec-dispatch/merge.md").split())
+        self.assertIn("`green` or `none`: one at a time", merge)
+        report = " ".join(skill_text.read(REPO / "skills/spec-dispatch/report.md").split())
+        self.assertIn("`green`, `none`, `red`, `infra` or `codeql`", report)
+
     def test_delivery_items_through_config(self):
         """Requirement: Delivery items in config: ship, spec-dispatch and project-init read the PR title, the deploy and
         the owner paths through `solo-sdd config get`, the "Delivery" item of AGENTS.md named as the old source."""

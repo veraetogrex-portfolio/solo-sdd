@@ -503,6 +503,31 @@ def main():
             finally:
                 s.close()
         row("Delivery items: the three keys, a text entry, Esc, save", delivery_items)
+
+        def ci_wait_keys():
+            d = project(base)
+            s = Session(d, 40, 120)
+            keys = ("delivery.ci-timeout", "delivery.ci-stuck", "delivery.ci-no-checks", "delivery.require-ci",
+                    "delivery.code-scanning", "delivery.delete-branch", "delivery.draft")
+            try:
+                t = s.term.text()
+                need(all(k in t for k in keys), "the seven CI wait, merge gate and PR shape keys listed", t)
+                to(s, "delivery.ci-timeout")
+                t = s.send("enter")
+                need("Type a value" in flat(t), "a number key is an entry", t)
+                s.send(*["backspace"] * len("1200"), *"3600", "enter")
+                s.send(*["down"] * (settings_ui.KEYS.index("delivery.require-ci") - settings_ui.KEYS.index("delivery.ci-timeout")))
+                t = s.send("enter")
+                need("Enter set" in flat(t), "a choice key is a pick", t)
+                s.send("down", "enter", "s", "y", "q")
+                need(s.wait() == 0, "saved and quit")
+                listed = sdd(d, "config", "list")[1].splitlines()
+                need({"delivery.ci-timeout 3600 file", "delivery.require-ci off file", "delivery.ci-stuck 300 default",
+                      "delivery.code-scanning gate default", "delivery.draft off default"} <= set(listed),
+                     "config list: %s" % listed)
+            finally:
+                s.close()
+        row("CI wait settings: the seven keys, a number entry, a pick, save", ci_wait_keys)
     finally:
         shutil.rmtree(base, True)
     print("SUMMARY: all rows passed" if all(results) else "SUMMARY: %d of %d rows failed" % (

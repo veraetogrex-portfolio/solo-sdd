@@ -26,13 +26,15 @@ USAGE = """usage:
     then «checklist <name>: no approval on <sha>» until another account than the PR author approved the head commit
   delivery.base of solo-sdd/config in the main folder replaces <main branch>; broken settings: code 1
   promote opens (or prints the open) PR <from> -> <to> and never merges it; <to> `release/*`: the newest release/ branch
-  wait codes: 0 green, 3 red, 4 infra, 8 codeql (checks passed, code scanning alerts are open)
+  delivery.ci-timeout, .ci-stuck and .ci-no-checks of the main folder's solo-sdd/config set the wait limits (a flag wins);
+    delivery.require-ci: off gives CI: none (code 0) and merges a PR without checks while the base requires none;
+    delivery.code-scanning: warn prints the alerts as green, off asks for none; delivery.delete-branch: off keeps the
+    branch; delivery.draft: on opens a draft PR and marks it ready right before the merge request
+  wait codes: 0 green or none, 3 red, 4 infra, 8 codeql (checks passed, code scanning alerts are open)
   merge codes: 0 merged, 1 error, 5 main moved ahead (PR is behind), 8 waits for the owner (delivery.owner-only paths, .github/workflows or solo-sdd/config), a human merge or checklist items
-  ship codes: 0 green, 1 step failed, 3 red, 4 infra, 6 conflict, 8 codeql
+  ship codes: 0 green or none, 1 step failed, 3 red, 4 infra, 6 conflict, 8 codeql
   land codes: 0 all done, 1 merge failed, 5 main moved ahead, 7 merged, a step after merge failed, 8 waits for the owner (delivery.owner-only paths, .github/workflows or solo-sdd/config), a human merge or checklist items"""
 SIGNS = ("FAIL:", "ERROR:", "FAILED", "AssertionError", "failed")
-NO_CHECKS_SEC = 180
-STUCK_SEC = 300
 REVIEWS_SEC = 60
 LOG_LINES = 20
 LOG_RETRY_SEC = 5
@@ -122,6 +124,13 @@ REGISTRY = {
     "delivery.pr-title": ("text", None, "the change name", None),  # the PR title rule ship and spec-dispatch follow
     "delivery.deploy": ("text", None, "no", None),  # what a push or merge deploys, and where
     "delivery.owner-only": ("paths", None, "", None),  # globs a merge waits for the owner on, besides .github/workflows/**
+    "delivery.ci-timeout": ("int", None, "1200", None),  # seconds sdd-pr.py wait gives CI as a whole
+    "delivery.ci-stuck": ("int", None, "300", None),  # seconds a required check may stay missing or not started
+    "delivery.ci-no-checks": ("int", None, "180", None),  # seconds a PR may show no checks at all
+    "delivery.require-ci": ("choice", ("on", "off"), "on", None),  # off: a PR without checks merges (CI: none)
+    "delivery.code-scanning": ("choice", ("gate", "warn", "off"), "gate", None),  # open alerts: code 8, a warning, not asked
+    "delivery.delete-branch": ("choice", ("on", "off"), "on", None),  # off: a merged PR keeps its branch
+    "delivery.draft": ("choice", ("on", "off"), "off", None),  # on: a PR opens as a draft, marked ready before the merge
     "dispatch.limit": ("int", None, "2", None),
     "process.review-rounds": ("int", None, "5", None),
     "process.light-path": ("choice", ("on", "off"), "on", None),  # off: every code edit goes through a change
@@ -302,6 +311,28 @@ def delivery(root):
     return s["delivery.base"][0], [x.strip() for x in s["delivery.promote"][0].split(",") if x.strip()]
 
 
+def pr_settings(root):
+    """Settings in effect of the main folder at root; broken settings: exit 1 naming the line."""
+    try:
+        return read_settings(root)
+    except (OSError, ValueError) as e:
+        die("settings: %s" % e)
+
+
+LIMITS = (("timeout", "delivery.ci-timeout"), ("stuck", "delivery.ci-stuck"), ("no checks", "delivery.ci-no-checks"))
+
+
+def ci_limits(s, timeout=None, stuck=None):
+    """([timeout, stuck, no checks] in seconds, the stderr line naming each with its source): a flag wins over the
+    setting; the line is None while none of the three keys is set, so a run on the defaults prints nothing."""
+    out, named = [], []
+    for (label, key), flag in zip(LIMITS, (timeout, stuck, None)):
+        value, source = (flag, "flag") if flag is not None else (float(s[key][0]), s[key][1])
+        out.append(value)
+        named.append("%s %s s (%s)" % (label, ("%d" if value.is_integer() else "%g") % value, source))
+    return out, ("limits: " + ", ".join(named) if any(s[k][1] != "default" for _, k in LIMITS) else None)
+
+
 def merge_by(root):
     """delivery.merge-by of the project at root: agent or human; broken settings: exit 1 naming the line."""
     try:
@@ -462,6 +493,7 @@ def number(url):
 
 def open_pr(wt, base, title, root):
     lists = checklists(root)  # a broken checklist stops before the push
+    draft = ["--draft"] if pr_settings(root)["delivery.draft"][0] == "on" else []
     p = sh("git", "-C", wt, "push", "-u", "origin", "HEAD")
     if p.returncode:
         die("push: " + p.stderr.strip())
@@ -474,7 +506,7 @@ def open_pr(wt, base, title, root):
         n, url = prs[0]["number"], prs[0]["url"]
     else:
         p = sh("gh", "pr", "create", "--base", base, "--head", branch, "--title", title,
-               "--body", f"Branch {branch}, opened by sdd-pr.py", cwd=wt)
+               "--body", f"Branch {branch}, opened by sdd-pr.py", *draft, cwd=wt)
         if p.returncode:
             die("gh pr create: " + p.stderr.strip())
         url = p.stdout.strip().splitlines()[-1]
@@ -495,11 +527,13 @@ def brief(text):
 
 
 def checks(url):
+    """The PR check rows; [] when gh reports no checks, None when the request failed otherwise (a failure is never
+    "no checks": under delivery.require-ci: off that would merge without seeing a red check)."""
     p = sh("gh", "pr", "checks", url, "--json", "name,state,bucket,link")
     try:
         return json.loads(p.stdout)
     except ValueError:
-        return []  # gh without checks prints an error, not JSON
+        return [] if "no checks reported" in p.stderr else None  # gh without checks prints an error, not JSON
 
 
 def failed_log(rows):
@@ -596,47 +630,59 @@ def ci_verdict(rows, required, stuck_sec, limit):
     return "green" if rows and not any(r.get("bucket") == "pending" for r in rows) else None
 
 
-def cmd_wait(url, timeout=1200.0, interval=15.0, limit=STUCK_SEC):
+def cmd_wait(url, timeout=1200.0, interval=15.0, limit=300.0, root=None, no_checks=None):
+    """The CI summary of the PR; delivery.* of the main folder at root (default: the one of the current folder) set
+    the no-checks limit, whether no checks is none and what open code scanning alerts do."""
+    s = pr_settings(root or main_folder() or ".")
+    no_checks = ci_limits(s)[0][2] if no_checks is None else no_checks
+    optional, scan = s["delivery.require-ci"][0] == "off", s["delivery.code-scanning"][0]
     n = number(url)
     head = f"PR #{n} {url} CI: "
     required = required_checks(url)
-    if required is None:
+    known = required is not None  # unread rules may hide a required check: then no checks is never none
+    if not known:
         print("warning: branch rules not read, required checks not checked", file=sys.stderr)
         required = set()
     start = time.monotonic()  # the deadline is for CI, reading the rules is not part of it
     since = None  # from which poll there is nothing to wait for but the stuck ones
     while True:
         rows = checks(url)
+        unread, rows = rows is None, rows or []
         now = time.monotonic()
         elapsed = now - start
         stuck = stuck_checks(rows, required)
         since = (since or now) if stuck else None
         verdict = ci_verdict(rows, required, now - since if stuck else 0, limit)
         if verdict == "green":
-            alerts = scan_alerts(url)
-            if alerts:
+            alerts = scan_alerts(url) if scan != "off" else []
+            if alerts and scan == "gate":
                 print(head + "codeql")
                 print("\n".join(alerts[:LOG_LINES]))
                 return 8
             print(head + "green")
-            if alerts is None:
-                print(SCAN_UNCHECKED)
+            lines = [SCAN_UNCHECKED] if alerts is None else alerts[:LOG_LINES]  # warn: the alerts, the merge goes on
+            if lines:
+                print("\n".join(lines))
             return 0
         if verdict == "bad":  # a failed check is the summary at once
             test, lines = failed_log([r for r in rows if r.get("bucket") in ("fail", "cancel")])
             print(head + ("red" if test else "infra"))
             print("\n".join(lines))
             return 3 if test else 4
-        if verdict == "stuck" or elapsed >= timeout or (not rows and not required and elapsed >= min(NO_CHECKS_SEC, timeout)):
+        no_rows_end = not rows and not required and elapsed >= min(no_checks, timeout)
+        if no_rows_end and optional and known and not unread:
+            print(head + "none")
+            return 0
+        if verdict == "stuck" or elapsed >= timeout or no_rows_end:
             print(head + "infra")
             print("\n".join(f"required check did not start: {x}" for x in stuck)
-                  or ("no checks" if not rows else "timeout: checks did not finish"))
+                  or ("checks not read" if unread else "no checks" if not rows else "timeout: checks did not finish"))
             return 4
         time.sleep(interval)
 
 
 def view(url):
-    p = sh("gh", "pr", "view", url, "--json", "headRefOid,headRefName,baseRefName,state,title,isCrossRepository,body,author")
+    p = sh("gh", "pr", "view", url, "--json", "headRefOid,headRefName,baseRefName,state,title,isCrossRepository,body,author,isDraft")
     if p.returncode:
         die("gh pr view: " + p.stderr.strip())
     try:
@@ -788,7 +834,8 @@ def cmd_merge(url, how, sha, title=None, main=None, wt=None):
     if v["state"] == "MERGED":
         print(f"PR #{n} merged (already)")
         return 0
-    if merge_by(main or main_folder() or ".") == "human":  # a person merges: the PR stays open
+    s = pr_settings(main or main_folder() or ".")
+    if s["delivery.merge-by"][0] == "human":  # a person merges: the PR stays open
         print(f"PR #{n} {HUMAN}: {url}")
         return 8
     if v["headRefOid"] != sha:
@@ -824,16 +871,22 @@ def cmd_merge(url, how, sha, title=None, main=None, wt=None):
         print(f"PR #{n} behind {behind}: main moved ahead")
         return 5
     rows = checks(url)
+    if rows is None:
+        die(f"PR #{n} CI not green: checks not read")
     bad = [f"{r.get('name')} ({r.get('bucket')})" for r in rows if r.get("bucket") not in ("pass", "skipping")]
-    if not rows or bad:
+    if bad or not rows and (s["delivery.require-ci"][0] == "on" or required_checks(url) != set()):
         die(f"PR #{n} CI not green: " + (", ".join(bad) or "no checks"))
     repo = owner_repo.group(1)
+    if v.get("isDraft") and s["delivery.draft"][0] == "on":  # after every gate: a gated PR stays a draft
+        p = sh("gh", "pr", "ready", url)
+        if p.returncode:
+            die(f"PR #{n} not merged: ready: " + ((p.stderr or p.stdout).strip() or "gh pr ready failed"))
     extra = ["-f", f"commit_title={title} (#{n})"] if how != "rebase" else []
     p = sh("gh", "api", "-X", "PUT", f"repos/{repo}/pulls/{n}/merge", "-f", f"merge_method={how}", "-f", f"sha={sha}", *extra)
     if p.returncode:
         die((p.stderr or p.stdout).strip() or "merge refused")
     print(f"PR #{n} {url} merged ({how})")
-    if v.get("isCrossRepository"):  # the branch lives in a fork: the same name in the base repository is someone else's branch
+    if v.get("isCrossRepository") or s["delivery.delete-branch"][0] == "off":  # a fork's branch is someone else's
         return 0
     branch = v["headRefName"]
     p = sh("gh", "api", "-X", "DELETE", f"repos/{repo}/git/refs/heads/{branch}")
@@ -874,11 +927,15 @@ def cmd_ship(main, wt, base, title):
         # stderr before stdout: the command summary line "After update:" stays last in the tail
         die("refresh: " + brief("\n".join(x for x in (p.stderr, p.stdout) if x.strip())))
     n, url = open_pr(wt, base, title, main)
-    return cmd_wait(url)
+    (timeout, stuck, no_checks), line = ci_limits(pr_settings(main))
+    if line:
+        print(line, file=sys.stderr)
+    return cmd_wait(url, timeout, 15.0, stuck, main, no_checks)
 
 
 def cmd_land(main, wt, url, how):
     base, promote = delivery(main)
+    keep = pr_settings(main)["delivery.delete-branch"][0] == "off"  # read before the merge: a broken file merges nothing
     n, v = number(url), view(url)
     if v["state"] != "MERGED" and (how == AFTER or merge_by(main) == "human"):  # before Land after green: nothing merges
         print(f"PR #{n} {HUMAN}: {url}")
@@ -921,7 +978,7 @@ def cmd_land(main, wt, url, how):
             if sub == "transport":
                 print(p.stdout, end="")  # the dispatcher reads the «not transported: …» line
     branch = v["headRefName"]
-    if branch.startswith("change/") and sh("git", "-C", main, "show-ref", "--verify", "--quiet",
+    if not keep and branch.startswith("change/") and sh("git", "-C", main, "show-ref", "--verify", "--quiet",
                                            "refs/heads/" + branch).returncode == 0:
         p = sh("git", "-C", main, "branch", "-D", branch)
         if p.returncode:
@@ -994,7 +1051,7 @@ def main(a):
             and (len(a) == 4 or a[4] == "--title"):
         return cmd_merge(*a[1:4], *a[5:])
     if a[:1] == ["wait"] and len(a) >= 2:
-        opt, rest = {"--timeout": 1200.0, "--interval": 15.0, "--stuck": float(STUCK_SEC)}, a[2:]
+        opt, rest = {"--timeout": None, "--interval": 15.0, "--stuck": None}, a[2:]
         try:  # ValueError is caught only while parsing arguments: a gh failure inside the command is code 1, not 2
             while rest:
                 if rest[0] not in opt or len(rest) < 2:
@@ -1002,7 +1059,10 @@ def main(a):
                 opt[rest[0]], rest = float(rest[1]), rest[2:]
         except ValueError:
             die(USAGE, 2)
-        return cmd_wait(a[1], opt["--timeout"], opt["--interval"], opt["--stuck"])
+        (timeout, stuck, _), line = ci_limits(pr_settings(main_folder() or "."), opt["--timeout"], opt["--stuck"])
+        if line:
+            print(line, file=sys.stderr)
+        return cmd_wait(a[1], timeout, opt["--interval"], stuck)
     die(USAGE, 2)
 
 

@@ -65,6 +65,13 @@ REGISTRY = {
     "delivery.pr-title": ("text", None, "the change name", None),  # the PR title rule ship and spec-dispatch follow
     "delivery.deploy": ("text", None, "no", None),  # what a push or merge deploys, and where
     "delivery.owner-only": ("paths", None, "", None),  # globs a merge waits for the owner on, besides .github/workflows/**
+    "delivery.ci-timeout": ("int", None, "1200", None),  # seconds sdd-pr.py wait gives CI as a whole
+    "delivery.ci-stuck": ("int", None, "300", None),  # seconds a required check may stay missing or not started
+    "delivery.ci-no-checks": ("int", None, "180", None),  # seconds a PR may show no checks at all
+    "delivery.require-ci": ("choice", ("on", "off"), "on", None),  # off: a PR without checks merges (CI: none)
+    "delivery.code-scanning": ("choice", ("gate", "warn", "off"), "gate", None),  # open alerts: code 8, a warning, not asked
+    "delivery.delete-branch": ("choice", ("on", "off"), "on", None),  # off: a merged PR keeps its branch
+    "delivery.draft": ("choice", ("on", "off"), "off", None),  # on: a PR opens as a draft, marked ready before the merge
     "dispatch.limit": ("int", None, "2", None),
     "process.review-rounds": ("int", None, "5", None),
     "process.light-path": ("choice", ("on", "off"), "on", None),  # off: every code edit goes through a change

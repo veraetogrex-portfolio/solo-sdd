@@ -101,6 +101,23 @@ class SettingsFile(unittest.TestCase):
         with self.assertRaisesRegex(settings.SettingsError, r"delivery.merge-by takes agent, human, not 'bot'"):
             settings.check_value("delivery.merge-by", "bot")
 
+    def test_ci_wait_merge_gate_pr_shape_keys(self):
+        """Requirement: CI wait settings, Merge gate settings, PR shape settings: the seven delivery keys."""
+        want = {"delivery.ci-timeout": ("int", None, "1200"), "delivery.ci-stuck": ("int", None, "300"),
+                "delivery.ci-no-checks": ("int", None, "180"), "delivery.require-ci": ("choice", ("on", "off"), "on"),
+                "delivery.code-scanning": ("choice", ("gate", "warn", "off"), "gate"),
+                "delivery.delete-branch": ("choice", ("on", "off"), "on"), "delivery.draft": ("choice", ("on", "off"), "off")}
+        for key, (kind, allowed, default) in want.items():
+            self.assertEqual(settings.REGISTRY.get(key), (kind, allowed, default, None), key)
+            self.assertEqual(settings.describe(key, {})["group"], "delivery", key)
+            self.assertEqual(settings.effective({})[key], (default, "default"), key)
+        found = settings.parse_settings("delivery.ci-timeout: 3600\ndelivery.code-scanning: warn\n")
+        self.assertEqual(settings.effective(found)["delivery.ci-timeout"], ("3600", "file"))
+        with self.assertRaisesRegex(settings.SettingsError, r"delivery.code-scanning takes gate, warn, off, not 'on'"):
+            settings.check_value("delivery.code-scanning", "on")
+        with self.assertRaisesRegex(settings.SettingsError, r"delivery.ci-stuck takes a whole number from 1"):
+            settings.check_value("delivery.ci-stuck", "0")
+
     def test_light_path(self):
         """Requirement: Light path bounds: on and 3 files by default, off and the file limit from the file."""
         values = settings.effective({})
