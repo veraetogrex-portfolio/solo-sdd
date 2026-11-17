@@ -262,23 +262,13 @@ class ChangeSizeLimits(Base):
                                          + "\n## 2. Acceptance\n\n- [ ] a\n- [ ] b\n"})
 
     def test_limits_and_sources(self):
+        """The stand tests/stands/settings-change-limits.py proves the default task limit, a larger file limit and a
+        file length limit on a delta; here a file task limit and the length limit on a main spec."""
         self.tasks(12)
-        self.assertEqual(cli(self.root, "demo"), (1, "solo-sdd/changes/demo/tasks.md: too many tasks: 12 > 10 (default)\n"
-                                                      "1 errors\n"))
-        self.config("process.max-tasks: 14\n")
-        self.assertEqual(cli(self.root, "demo"), (0, "0 errors\n"))
-        self.config("process.max-tasks: 11\n")
-        self.assertEqual(self.errs(), [("solo-sdd/changes/demo/tasks.md", "too many tasks", "12 > 11 (file)")])
-        self.tasks(3)
-        self.config("process.requirement-max-chars: 300\n")
-        put_change(self.root, "demo", **{"specs/foo/spec.md": PURPOSE + "## ADDED Requirements\n\n"
-                                         + REQ % ("Long", "a" * 382)})
-        self.assertEqual(self.errs(), [("solo-sdd/changes/demo/specs/foo/spec.md", "requirement too long",
-                                        "Long: 400 > 300 (file)")])
+        self.config("process.max-tasks: 11\nprocess.requirement-max-chars: 300\n")
         write(self.root, "solo-sdd/specs/bar/spec.md", MAIN.replace("do y", "b" * 290))
-        self.assertEqual(self.rules(), [("solo-sdd/specs/bar/spec.md", "requirement too long"),
-                                        ("solo-sdd/changes/demo/specs/foo/spec.md", "requirement too long")],
-                         "the main specs take the same limit")
+        self.assertEqual(self.errs(), [("solo-sdd/specs/bar/spec.md", "requirement too long", "Y: 308 > 300 (file)"),
+                                       ("solo-sdd/changes/demo/tasks.md", "too many tasks", "12 > 11 (file)")])
 
     def test_broken_config(self):
         self.config("# c\nprocess.max-tasks: 2\n")

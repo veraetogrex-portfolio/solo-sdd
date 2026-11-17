@@ -172,7 +172,8 @@ class SkillCommandsTest(unittest.TestCase):
             for key in keys:
                 self.assertIn(get % key, text, "%s: %s" % (rel, key))
         for rel in ("skills/spec-plan/SKILL.md", "skills/spec-next/SKILL.md", "ALGORITHM.md"):
-            self.assertIn("changes the `process` limits and `process.analyze` only on the owner's words", read(rel), rel)
+            self.assertIn("changes `process.max-tasks`, `process.bugfix-max-tasks`, `process.requirement-max-chars`, "
+                          "`process.audit-every` and `process.analyze` only on the owner's words", read(rel), rel)
         for rel in ("skills/spec-plan/SKILL.md", "skills/spec-next/SKILL.md"):
             self.assertIn("`Analyze: off (solo-sdd/config)`", read(rel), rel)
         # Scenario Analyze switched off, Audit every three archives: the spec-next lines that hold the gate and the audit

@@ -273,7 +273,7 @@ ABOUT = {
     "checklist.<name>.paths": ("checklists", "The files a person checks by this list before merging, as globs."),
     "checklist.<name>.file": ("checklists", "The markdown file of the list's items, from the repository root."),
 }
-KIND_TEXT = {"int": "a whole number from 1", "model": "one model name of ASCII letters, digits, ., -, _, [ and ]", "text": "one line, at most %d characters" % TEXT_MAX, "names": "lowercase letters, digits and -, separated by commas",
+KIND_TEXT = {"model": "one model name of ASCII letters, digits, ., -, _, [ and ]", "text": "one line, at most %d characters" % TEXT_MAX, "names": "lowercase letters, digits and -, separated by commas",
              "paths": "relative paths, separated by commas", "path": "a relative path",
              "choice": "a branch name", "list": "branch names, separated by commas"}
 
@@ -295,8 +295,8 @@ def describe(key, values, registry=REGISTRY):
     kind, allowed, default, team = registry.get(name) or PATTERNS[name]
     group, about = ABOUT.get(name, ("", ""))  # a key of a registry passed to run, described nowhere
     row = {"key": key, "group": group, "about": about,
-           "type": "%s: %s" % (kind, ", ".join(allowed) if allowed else
-                               "a whole number from %d" % INT_MIN.get(name, 1) if kind == "int" else KIND_TEXT[kind]),
+           "type": "%s: %s" % (kind, ", ".join(allowed) if allowed else KIND_TEXT[kind] if kind != "int" else
+                               "a whole number from %d" % INT_MIN.get(name, 1)),
            "allowed": list(allowed) if allowed else None, "default": default, "team_default": team}
     if key not in PATTERNS:
         row["value"], row["source"] = values.get(key, ("", "default"))

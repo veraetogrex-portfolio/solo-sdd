@@ -237,12 +237,14 @@ class ChangeLimitSettings(unittest.TestCase):
             self.assertEqual(settings.effective({})[key], (default, "default"), key)
 
     def test_lower_bounds(self):
-        for key, low in (("process.max-tasks", 3), ("process.bugfix-max-tasks", 3),
-                         ("process.requirement-max-chars", 100), ("process.audit-every", 1)):
+        # the command refuses process.max-tasks 2 and process.requirement-max-chars 99 (ChangeLimitCommand)
+        for key, low in (("process.bugfix-max-tasks", 3), ("process.audit-every", 1)):
             self.assertEqual(settings.check_value(key, str(low)), str(low), key)
             with self.assertRaisesRegex(settings.SettingsError, r"^%s takes a whole number from %d, not '%d'"
                                         % (re.escape(key), low, low - 1), msg=key):
                 settings.check_value(key, str(low - 1))
+        for key, low in (("process.max-tasks", 3), ("process.bugfix-max-tasks", 3),
+                         ("process.requirement-max-chars", 100), ("process.audit-every", 1)):
             self.assertIn("a whole number from %d" % low, settings.describe(key, {})["type"], key)
 
 
