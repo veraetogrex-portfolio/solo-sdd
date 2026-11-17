@@ -53,7 +53,11 @@
 
 #### Scenario: A rebase conflict
 - **WHEN** `delivery.local-merge` is `rebase` and rebasing `change/b` onto the main branch gives a conflict in `README.md`
-- **THEN** `rebase --abort` in WORKTREE, code 6 names `README.md`, the main branch and `change/b` are on their previous commits
+- **THEN** the rebase runs in a temporary worktree that is removed, code 6 names `README.md`, the main branch, `change/b` and WORKTREE are on their previous commits
+
+#### Scenario: Rebase keeps ignored copies
+- **WHEN** `delivery.local-merge` is `rebase`, the main branch moved ahead, and `change/b` takes `solo-sdd/changes/archive/` out of git while `MAIN` tracks it
+- **THEN** code 0, the archive files are on the disk of `MAIN` after the transfer: WORKTREE moves to the rebased commit with `reset --keep` and keeps its ignored copies
 
 #### Scenario: Squash without an own commit
 - **WHEN** `delivery.local-merge` is `squash` and `change/b` has no own commit along the first parent other than merge and empty commits

@@ -8,6 +8,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 
 USAGE = """usage:
   sdd-dispatch.py accept <status file>
@@ -394,6 +395,33 @@ def overwritten(main, branch):
     return [f for f in diff.stdout.split("\0") if f and f not in tracked and os.path.lexists(os.path.join(main, f))], ""
 
 
+def rebase(main, wt, branch, prev):
+    """Rebases branch onto prev in a temporary worktree, then moves WORKTREE to the result with `reset --keep`:
+    a rebase in WORKTREE would check out prev over its ignored copies (an archive the branch took out of git) and
+    replay their removal from its disk. 0 done; 6 a conflict, 1 another failure: the branch and WORKTREE unchanged."""
+    tmp = tempfile.mkdtemp(prefix="sdd-rebase-")
+    path = os.path.join(tmp, "wt")
+    try:
+        r = git(main, "worktree", "add", "-q", "--detach", path, branch)
+        if not r.returncode:
+            r = git(path, "rebase", "-q", prev)
+        if r.returncode:
+            files = git(path, "diff", "--name-only", "--diff-filter=U").stdout.split() if os.path.isdir(path) else []
+            print("not merged: merge conflict: " + ", ".join(files) if files
+                  else "not merged: rebase: " + (r.stderr.strip() or r.stdout.strip()))
+            return 6 if files else 1
+        new = git(path, "rev-parse", "HEAD").stdout.strip()
+    finally:
+        git(main, "worktree", "remove", "--force", path)  # an unfinished rebase goes with it
+        git(main, "worktree", "prune")
+        shutil.rmtree(tmp, ignore_errors=True)
+    r = git(wt, "reset", "-q", "--keep", new)  # touches only the files the rebase changed
+    if r.returncode:
+        print("not merged: rebase: reset: " + r.stderr.strip())
+        return 1
+    return 0
+
+
 def merge_branch(main, wt, branch, how, prev):
     """Merges branch into MAIN by delivery.local-merge: 0 merged; 6 a conflict, rolled back; 1 another failure."""
     if how == "squash":  # the title rule of sdd-pr.py land, over the branch's own commits only
@@ -410,13 +438,9 @@ def merge_branch(main, wt, branch, how, prev):
         if not r.returncode:
             r = git(main, "commit", "-q", "-m", title)
     elif how == "rebase":
-        r = git(wt, "rebase", "-q", prev, branch)
-        if r.returncode:
-            files = git(wt, "diff", "--name-only", "--diff-filter=U").stdout.split()
-            git(wt, "rebase", "--abort")  # the branch back on its own commits; MAIN untouched
-            print("not merged: merge conflict: " + ", ".join(files) if files
-                  else "not merged: rebase: " + (r.stderr.strip() or r.stdout.strip()))
-            return 6 if files else 1
+        code = rebase(main, wt, branch, prev)
+        if code:
+            return code
         r = git(main, "merge", "-q", "--ff-only", branch)
     else:
         r = git(main, "merge", "-q", "--no-ff", "--no-edit", branch)
@@ -456,7 +480,7 @@ def land_local(main, wt, cid, checks):
     try:
         values = pr.read_settings(main)
         human, how = values["delivery.merge-by"][0] == "human", values["delivery.local-merge"][0]
-    except (OSError, ValueError) as e:
+    except (OSError, ValueError, KeyError) as e:  # KeyError: an older sdd-pr.py next to the script
         print("not merged: settings: %s" % e)
         return 1
     if human:  # a person merges the branch; it and the worktree stay
@@ -534,7 +558,7 @@ def land_local(main, wt, cid, checks):
     if code:
         print("merged %s, not cleaned: remove: %s" % (h, out.strip()))
         return 1
-    flag = "-d" if how == "merge" else "-D"  # git does not see a squashed or rebased branch as merged
+    flag = "-d" if how == "merge" else "-D"  # a squashed branch is not merged by hash; rebase deletes the same way
     r = git(main, "branch", flag, branch)
     if r.returncode:
         print("merged %s, not cleaned: branch %s: %s" % (h, flag, r.stderr.strip()))

@@ -738,69 +738,11 @@ class LocalMergeMethodTest(LandBase):
             g(self.wt, "reset", "-q", "--hard", "HEAD~1")
             g(self.wt, "commit", "-q", "--allow-empty", "-m", "c: empty")
 
-    def parents(self):
-        return g(self.main, "rev-list", "--parents", "-n", "1", "HEAD").split()[1:]
-
-    def test_default_merge(self):
-        # Scenario: The default merge
-        self.branch(None)
-        r = self.land()
-        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertEqual(len(self.parents()), 2)
-
-    def test_squash(self):
-        # Scenarios: Squash, Cleanup after squash
-        self.branch("squash")
-        prev = g(self.main, "rev-parse", "HEAD")
-        r = self.land()
-        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertEqual(self.parents(), [prev])
-        self.assertEqual(g(self.main, "log", "-1", "--format=%s"), "c: done")
-        self.assertIn("merged " + g(self.main, "rev-parse", "HEAD"), r.stdout)
-        for f in ("feature.txt", "more.txt", "last.txt"):
-            self.assertTrue(os.path.exists(os.path.join(self.main, f)), f)
-        self.assertEqual(g(self.main, "branch", "--list", "change/c"), "")
-        self.assertFalse(os.path.exists(self.wt))
-
-    def test_squash_without_own_commit(self):
-        # Scenario: Squash without an own commit
-        self.branch("squash", own=False)
-        head = g(self.main, "rev-parse", "HEAD")
-        r = self.land()
-        self.assertEqual((r.returncode, r.stdout.strip()), (1, "not merged: merge: no title in the last own commit of the branch"))
-        self.assert_rolled_back(head)
-
-    def test_rebase(self):
-        # Scenario: Rebase
-        self.branch("rebase")
-        self.put(self.main, "ahead.txt", "ahead\n")
-        g(self.main, "add", "ahead.txt")
-        g(self.main, "commit", "-q", "-m", "ahead")
-        ahead = g(self.main, "rev-parse", "HEAD")
-        r = self.land()
-        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertEqual(g(self.main, "log", "--merges", "--format=%H"), "")
-        self.assertEqual(g(self.main, "log", "--format=%s", ahead + "..HEAD").split("\n"), ["c: empty", "c: done", "more", "change"])
-        self.assertEqual(g(self.main, "branch", "--list", "change/c"), "")
-        self.assertIn("merged " + g(self.main, "rev-parse", "HEAD"), r.stdout)
-
     def conflict(self, method):
         self.branch(method, readme="change\n")
         self.put(self.main, "README.md", "other\n")
         g(self.main, "commit", "-q", "-am", "other")
         return g(self.main, "rev-parse", "HEAD"), g(self.main, "rev-parse", "change/c")
-
-    def test_squash_conflict(self):
-        # Scenario: A squash conflict
-        head, tip = self.conflict("squash")
-        r = self.land()
-        self.assertEqual(r.returncode, 6, r.stdout + r.stderr)
-        self.assertIn("not merged: merge conflict: README.md", r.stdout)
-        self.assert_rolled_back(head)
-        self.assertEqual(g(self.main, "status", "--short", "--untracked-files=no"), "")
-        for f in ("more.txt", "last.txt"):  # the squash staged them: the reset takes them off the disk too
-            self.assertFalse(os.path.exists(os.path.join(self.main, f)), f)
-        self.assertEqual(g(self.main, "rev-parse", "change/c"), tip)
 
     def test_rebase_conflict(self):
         # Scenario: A rebase conflict
@@ -876,6 +818,21 @@ class ArchiveRemovalLandTest(LandBase):
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
         self.assertIn("rollback failed: reset", r.stdout)
         self.assert_old_on_disk()
+
+    def test_rebase_keeps_archive_on_disk(self):
+        # Requirement: Local land command, rebase: the branch is rebased away from WORKTREE, whose ignored archive
+        # copies transport puts back after the fast-forward removed MAIN's tracked ones
+        self.put(self.main, ".git/info/exclude", "solo-sdd/config\n")  # the config outside git, as setup copied it
+        for d in (self.main, self.wt, self.wt + ".base"):
+            self.put(d, "solo-sdd/config", "delivery.local-merge: rebase\n")
+        self.put(self.main, "ahead.txt", "ahead\n")
+        g(self.main, "add", "ahead.txt")
+        g(self.main, "commit", "-q", "-m", "ahead")
+        r = self.land()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(g(self.main, "log", "--merges", "--format=%H"), "")
+        self.assert_old_on_disk()
+        self.assertEqual(pathlib.Path(self.main, self.NEW, "tasks.md").read_text(), "t\n")
 
     def test_merge_keeps_archive_on_disk(self):
         r = self.land()

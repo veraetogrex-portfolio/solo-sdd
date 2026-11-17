@@ -7,7 +7,7 @@ Under `delivery.mode: local` the change branch is always merged with `git merge 
 ## What Changes
 
 - A key `delivery.local-merge` (`merge`, `squash`, `rebase`; default `merge`, the behaviour of today).
-- `sdd-dispatch.py land-local` merges by it: `merge` as now; `squash` makes one commit with the first line of the branch's last own commit, the rule `land` uses for a PR title (no such commit: code 1, nothing merged); `rebase` rebases the branch onto the main branch in the worktree and fast-forwards. A conflict in any of them aborts (`merge --abort`, a reset of the squash, `rebase --abort` in the worktree) and gives code 6 as now; rollback after a red check is the same `reset --keep`.
+- `sdd-dispatch.py land-local` merges by it: `merge` as now; `squash` makes one commit with the first line of the branch's last own commit, the rule `land` uses for a PR title (no such commit: code 1, nothing merged); `rebase` rebases the branch onto the main branch in a temporary worktree, moves WORKTREE to the result with `reset --keep` (its ignored copies stay) and fast-forwards. A conflict in any of them aborts (`merge --abort`, a reset of the squash, the temporary worktree removed) and gives code 6 as now; rollback after a red check is the same `reset --keep`.
 - After `squash` and `rebase` the cleanup deletes the branch with `-D`, since git does not see it as merged.
 - The description of `delivery.merge` names only pull requests.
 
