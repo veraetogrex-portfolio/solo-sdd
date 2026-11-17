@@ -6,8 +6,7 @@ removed OpenSpec-tree tests enforced. An error is `(file, rule, item)`."""
 import json, pathlib, re, stat
 
 TREE = "solo-sdd"
-MAX_LEN = 500
-MAX_TASKS = 10
+TASKS_KEY, LENGTH_KEY = "process.max-tasks", "process.requirement-max-chars"
 MIN_PURPOSE = 50
 ARTIFACTS = ("proposal.md", "verification.md", "tasks.md")
 PROPOSAL = ("Why", "What Changes", "Impact", "Out of Scope", "Depends On", "Source")
@@ -197,8 +196,17 @@ def has_step(lines, mask, patterns):
     return any(not m and any(p.search(line) for p in patterns) for line, m in zip(lines, mask))
 
 
-def check_spec(path, rel, is_delta, skip=frozenset()):
-    """Errors of one main spec or delta: length, scenario presence and steps, delta section, header space."""
+def limit(key, values=None):
+    """(the int limit, its source) of a settings key: values is the `settings.effective` dict, None for the defaults."""
+    from solo_sdd import settings  # settings imports this module
+    value, source = (values or settings.effective({}))[key]
+    return int(value), source
+
+
+def check_spec(path, rel, is_delta, skip=frozenset(), max_len=None):
+    """Errors of one main spec or delta: length, scenario presence and steps, delta section, header space;
+    max_len is (limit, source), the default limit when None."""
+    max_len = max_len or limit(LENGTH_KEY)
     lines = read_lines(path)
     mask = fence_mask(lines)
     errs = []
@@ -206,8 +214,8 @@ def check_spec(path, rel, is_delta, skip=frozenset()):
     for name, a, b in blocks:
         if name not in skip:
             n = req_length(lines[a:b], mask[a:b], name)
-            if n > MAX_LEN:
-                errs.append((rel, "requirement too long", "%s: %d > %d" % (name, n, MAX_LEN)))
+            if n > max_len[0]:
+                errs.append((rel, "requirement too long", "%s: %d > %d (%s)" % (name, n, max_len[0], max_len[1])))
         if not any(not m and SCENARIO.match(l) for l, m in zip(lines[a:b], mask[a:b])):
             errs.append((rel, "no scenario", name))
     section, req = None, ""
@@ -254,11 +262,12 @@ def check_sections(path, rel, names):
     return errs, found
 
 
-def check_tasks(path, rel):
+def check_tasks(path, rel, max_tasks=None):
+    max_tasks = max_tasks or limit(TASKS_KEY)
     lines = read_doc(path)
     mask = fence_mask(lines)
     count = sum(1 for l, m in zip(lines, mask) if not m and TASK.match(l))
-    errs = [(rel, "too many tasks", "%d > %d" % (count, MAX_TASKS))] if count > MAX_TASKS else []
+    errs = [(rel, "too many tasks", "%d > %d (%s)" % (count, max_tasks[0], max_tasks[1]))] if count > max_tasks[0] else []
     groups = [name for name, _, _ in sections(lines, mask)]
     last = groups[-1] if groups else ""
     if re.sub(r"^\d+(\.\d+)*\.?\s*", "", last) != "Acceptance":
@@ -284,7 +293,8 @@ def has_delta(path):
     return any(not m and (DELTA_REQ.match(l) or RENAMED_FROM.match(l)) for l, m in zip(lines, fence_mask(lines)))
 
 
-def check_change(change, tree):
+def check_change(change, tree, limits=(None, None)):
+    """Errors of one open change; limits is (task limit, length limit), each (limit, source) or None for the default."""
     root = tree.parent
     errs = []
     for name in ARTIFACTS:
@@ -305,11 +315,11 @@ def check_change(change, tree):
     if _is_file(change / "verification.md"):
         errs += guarded(lambda p, r: check_sections(p, r, VERIFICATION)[0], change / "verification.md", root)
     if _is_file(change / "tasks.md"):
-        errs += guarded(check_tasks, change / "tasks.md", root)
+        errs += guarded(check_tasks, change / "tasks.md", root, limits[0])
     deps = dependencies(change, tree)  # archived before this change
     provided = {p.parent.name for dep in deps for p in dep.glob("specs/*/spec.md")}
     for d in deltas:
-        found = guarded(check_spec, d, root, True)
+        found = guarded(check_spec, d, root, True, frozenset(), limits[1])
         errs += found
         cap = d.parent.name
         if any(r == "unreadable" for _, r, _ in found):
@@ -394,9 +404,23 @@ def changed_by_open(changes):
 
 
 def validate(tree, change_id=None):
-    """Errors of the whole tree (project.md, main specs, open changes; not the archive) or of one change."""
+    """Errors of the whole tree (project.md, main specs, open changes; not the archive) or of one change; the limits
+    come from the project's settings, a settings file that cannot be read is the only error."""
+    from solo_sdd import settings  # settings imports this module
     tree = pathlib.Path(tree)
     root = tree.parent
+    limits = []
+
+    def read_limits():
+        """[] once the limits are in `limits`, else the one error of a settings file that cannot be read."""
+        try:
+            values = settings.read_settings(str(root))
+        except OSError as e:
+            return [(settings.SETTINGS_FILE, "unreadable", type(e).__name__)]
+        except ValueError as e:  # SettingsError names the file and line
+            return [(settings.SETTINGS_FILE, "settings", str(e))]
+        limits.extend((limit(TASKS_KEY, values), limit(LENGTH_KEY, values)))
+        return []
 
     def safe(fn, path):
         try:
@@ -408,19 +432,23 @@ def validate(tree, change_id=None):
         c = tree / "changes" / change_id
         found = safe(lambda: [] if CHANGE_ID.match(change_id) and change_id != "archive" and _is_dir(c) else
                      [("%s/changes/%s" % (TREE, change_id), "no change", change_id)], tree / "changes")
-        return found or safe(lambda: check_change(c, tree), c)
+        return found or read_limits() or safe(lambda: check_change(c, tree, limits), c)
     project = tree / "project.md"
     errs = safe(lambda: [] if _is_file(project) else [(project.relative_to(root).as_posix(), "missing file", "project.md")], tree)
     if errs and errs[0][1] == "unreadable":
         return errs
+    bad = read_limits()
+    if bad:
+        return errs + bad
     changes = []
     errs += safe(lambda: changes.extend(open_changes(tree)) or [], tree / "changes")
     changed = changed_by_open(changes)
     errs += safe(lambda: [e for p in sorted((tree / "specs").glob("*/spec.md"))
-                          for e in guarded(check_spec, p, root, False, changed.get(p.parent.name, frozenset()))],
+                          for e in guarded(check_spec, p, root, False, changed.get(p.parent.name, frozenset()),
+                                           limits[1])],
                  tree / "specs")
     for c in changes:
-        errs += safe(lambda: check_change(c, tree), c)
+        errs += safe(lambda: check_change(c, tree, limits), c)
     return errs
 
 

@@ -224,6 +224,30 @@ class SubagentModelSettings(unittest.TestCase):
         self.assertEqual(settings.check_value("agents.review-model", ""), "", "empty: the session's main model")
 
 
+class ChangeLimitSettings(unittest.TestCase):
+    """Requirements: Change size limits and Process cadence settings: the five keys of group process."""
+    KEYS = {"process.max-tasks": ("int", None, "10"), "process.bugfix-max-tasks": ("int", None, "5"),
+            "process.requirement-max-chars": ("int", None, "500"), "process.audit-every": ("int", None, "5"),
+            "process.analyze": ("choice", ("on", "off"), "on")}
+
+    def test_the_five_keys(self):
+        for key, (kind, allowed, default) in self.KEYS.items():
+            self.assertEqual(settings.REGISTRY.get(key), (kind, allowed, default, None), key)
+            self.assertEqual(settings.describe(key, {})["group"], "process", key)
+            self.assertEqual(settings.effective({})[key], (default, "default"), key)
+
+    def test_lower_bounds(self):
+        # the command refuses process.max-tasks 2 and process.requirement-max-chars 99 (ChangeLimitCommand)
+        for key, low in (("process.bugfix-max-tasks", 3), ("process.audit-every", 1)):
+            self.assertEqual(settings.check_value(key, str(low)), str(low), key)
+            with self.assertRaisesRegex(settings.SettingsError, r"^%s takes a whole number from %d, not '%d'"
+                                        % (re.escape(key), low, low - 1), msg=key):
+                settings.check_value(key, str(low - 1))
+        for key, low in (("process.max-tasks", 3), ("process.bugfix-max-tasks", 3),
+                         ("process.requirement-max-chars", 100), ("process.audit-every", 1)):
+            self.assertIn("a whole number from %d" % low, settings.describe(key, {})["type"], key)
+
+
 class Command(unittest.TestCase):
     """Requirement: Config command."""
 
@@ -484,6 +508,18 @@ class TextSettings(ConfigDir):
         self.assertIn("solo-sdd/config:1: delivery.deploy takes", out)
 
 
+class ChangeLimitCommand(ConfigDir):
+    """Requirement: Change size limits, scenario A limit no change can meet."""
+
+    def test_a_limit_no_change_can_meet(self):
+        self.write("# keep\nprocess.max-tasks: 12\n")
+        for key, value, low in (("process.max-tasks", "2", "3"), ("process.requirement-max-chars", "99", "100")):
+            code, out = self.cli("set", key, value)
+            self.assertEqual(code, 1, key)
+            self.assertIn("from %s" % low, out, key)
+        self.assertEqual(self.read(), "# keep\nprocess.max-tasks: 12\n")
+
+
 class DeliveryItemsInConfig(ConfigDir):
     """Requirements: Delivery items in config; Defaults by mode (the key's old source)."""
 
@@ -642,7 +678,8 @@ class PrefixChangeGuardProperty(ConfigDir):
 
 MODELS = st.sampled_from(["claude-opus-4.5", "opus[1m]", "gpt_5.1-mini"]) | st.text(st.sampled_from(settings.MODEL_CHARS),
                                                                                     min_size=1, max_size=12)
-VALUES = {k: st.sampled_from(v[1]) if v[1] else MODELS if v[0] == "model" else st.integers(1, 99).map(str)
+VALUES = {k: st.sampled_from(v[1]) if v[1] else MODELS if v[0] == "model" else
+          st.integers(settings.INT_MIN.get(k, 1), settings.INT_MIN.get(k, 1) + 98).map(str)
           for k, v in settings.REGISTRY.items()}
 VALUES.update({"delivery.branch-prefix": st.sampled_from(["change/", "feat/", "team-1/"]),
                "delivery.plan-prefix": st.sampled_from(["plan/", "plans/"]),

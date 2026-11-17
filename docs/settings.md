@@ -37,6 +37,11 @@ A line that is not `key: value`, an unknown key or a wrong value makes the comma
 | `process.review-rounds` | a whole number from 1 | `5` | | `spec-next`: the most independent acceptance rounds, plus one extra round after the second or later when every open `Important` lies only in the lines of the last rework |
 | `process.light-path` | `on`, `off` | `on` | | the global rules and `spec-plan`: `off` sends every code edit through a change |
 | `process.light-path.max-files` | a whole number from 1 | `3` | | the global rules and `spec-plan`: the most files a light path edit changes |
+| `process.max-tasks` | a whole number from 3 | `10` | | `solo-sdd validate` (`too many tasks: <n> > <limit> (<source>)`), `spec-plan`, `spec-analyze` and the algorithm: the most tasks of one change |
+| `process.bugfix-max-tasks` | a whole number from 3 | `5` | | `spec-plan` and `spec-analyze`: the most tasks of a bug fix change; the smaller of it and `process.max-tasks` holds |
+| `process.requirement-max-chars` | a whole number from 100 | `500` | | `solo-sdd validate` (`requirement too long: <name>: <n> > <limit> (<source>)`), `spec-plan` and `spec-analyze`: the most characters of one requirement text |
+| `process.audit-every` | a whole number from 1 | `5` | | `spec-next`: `Time for: /spec-audit on the main specs` when the archive count after its archive is a multiple of it |
+| `process.analyze` | `on`, `off` | `on` | | `spec-plan` and `spec-next`: `off` skips the `spec-analyze` pass and the report holds `Analyze: off (solo-sdd/config)`; the `Depends On` check stays. An agent changes `process.max-tasks`, `process.bugfix-max-tasks`, `process.requirement-max-chars`, `process.audit-every` and `process.analyze` only on the owner's words |
 | `commit.light-prefix` | one line, at most 200 characters | `light:` | | the global rules, the algorithm, `spec-plan`, `work-status` and `report`: a light path commit subject starts with it, matched as plain text, not a pattern |
 | `reply.language` | `ru`, `en`, `off` | `off` | | the `stop` hook: the language of the final reply, `off` checks none; the `SOLO_SDD_REPLY_LANG` variable |
 | `agents` | `claude`, `codex`, `cursor`, `other` | the detected agents | | `doctor` (`warn project-agents` for an agent the installation lacks) |

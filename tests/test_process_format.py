@@ -155,7 +155,7 @@ class Tasks(Base):
     def test_eleven_tasks(self):
         text = "## 1. Code\n\n" + "".join("- [ ] 1.%d t\n" % i for i in range(9)) + "\n## 2. Acceptance\n\n- [x] a\n- [ ] b\n"
         put_change(self.root, "demo", **{"tasks.md": text})
-        self.assertEqual(self.errs(), [("solo-sdd/changes/demo/tasks.md", "too many tasks", "11 > 10")])
+        self.assertEqual(self.errs(), [("solo-sdd/changes/demo/tasks.md", "too many tasks", "11 > 10 (default)")])
 
     def test_ten_tasks_pass(self):
         text = "## 1. Code\n\n" + "".join("- [ ] 1.%d t\n" % i for i in range(8)) + "\n## 2. Acceptance\n\n- [x] a\n- [ ] b\n"
@@ -181,7 +181,7 @@ class RequirementFormat(Base):
 
     def test_long_requirement(self):
         got = self.delta("## ADDED Requirements\n\n" + REQ % ("Long", "a" * 483))
-        self.assertEqual(got, [("solo-sdd/changes/demo/specs/foo/spec.md", "requirement too long", "Long: 501 > 500")])
+        self.assertEqual(got, [("solo-sdd/changes/demo/specs/foo/spec.md", "requirement too long", "Long: 501 > 500 (default)")])
 
     def test_scenario_without_then(self):
         got = self.delta("## ADDED Requirements\n\n### Requirement: X\nThe system SHALL x.\n\n#### Scenario: E\n- **WHEN** a\n")
@@ -249,6 +249,33 @@ class RequirementFormat(Base):
                       "# foo\n\n## Requirements\n\n### Requirement: R\n%s\n\n#### Scenario: S\n- **WHEN** a\n- **THEN** b\n" % text)
             fired = [e for e in pf.check_spec(p, "x", False) if e[1] == "requirement too long"]
         self.assertEqual(bool(fired), n > 500, (n, k))
+
+
+class ChangeSizeLimits(Base):
+    """Requirement: Change size limits: validate takes both limits from solo-sdd/config and names the limit's source."""
+
+    def config(self, text):
+        write(self.root, "solo-sdd/config", text)
+
+    def tasks(self, n):
+        put_change(self.root, "demo", **{"tasks.md": "## 1. Code\n\n" + "".join("- [ ] 1.%d t\n" % i for i in range(n - 2))
+                                         + "\n## 2. Acceptance\n\n- [ ] a\n- [ ] b\n"})
+
+    def test_limits_and_sources(self):
+        """The stand tests/stands/settings-change-limits.py proves the default task limit, a larger file limit and a
+        file length limit on a delta; here a file task limit and the length limit on a main spec."""
+        self.tasks(12)
+        self.config("process.max-tasks: 11\nprocess.requirement-max-chars: 300\n")
+        write(self.root, "solo-sdd/specs/bar/spec.md", MAIN.replace("do y", "b" * 290))
+        self.assertEqual(self.errs(), [("solo-sdd/specs/bar/spec.md", "requirement too long", "Y: 308 > 300 (file)"),
+                                       ("solo-sdd/changes/demo/tasks.md", "too many tasks", "12 > 11 (file)")])
+
+    def test_broken_config(self):
+        self.config("# c\nprocess.max-tasks: 2\n")
+        code, out = cli(self.root, "--all")
+        self.assertEqual(code, 1)
+        self.assertIn("solo-sdd/config:2", out)
+        self.assertEqual(cli(self.root, "demo")[0], 1)
 
 
 class Purpose(Base):
