@@ -57,6 +57,7 @@ REGISTRY = {
     "agents.executor": ("choice", ("self", "codex"), "self", None),  # codex: as if the owner named codex-orchestration
     "integrations": ("names", None, "", None),  # the enabled integrations, by folder name (solo_sdd/integrations.py)
     "integrations.off": ("names", None, "", None),  # the bundled integrations switched off, by folder name
+    "git.ignore": ("paths", None, ".claude/worktrees/, .env, .env.*, !.env.example", None),  # solo-sdd ignore --write
 }
 # the lowest value of an int key, 1 when not named: a task limit under 3 fits no change (Acceptance holds two tasks)
 INT_MIN = {"process.max-tasks": 3, "process.bugfix-max-tasks": 3, "process.requirement-max-chars": 100}
@@ -74,6 +75,79 @@ DELIVERY_ITEMS = (("PR title:", "delivery.pr-title"), ("Deploy:", "delivery.depl
 
 class SettingsError(ValueError):
     pass
+
+
+IGNORE_KEY = "git.ignore"
+# the process paths no git.ignore item may hide (a trailing / marks a folder, or a path that may be either); placeholders:
+# <capability> any folder name, <change> any but archive (the change archive may stay out of git), <top> any but changes,
+# <...> one or more names of any kind
+KEPT = ("AGENTS.md", "CLAUDE.md", "solo-sdd/", "solo-sdd/project.md", "solo-sdd/analyze.md", "solo-sdd/config",
+        "solo-sdd/rules-block", "solo-sdd/integrations/", "solo-sdd/specs/", "solo-sdd/specs/<capability>/",
+        "solo-sdd/specs/<capability>/spec.md", "solo-sdd/changes/", "solo-sdd/changes/<change>/",
+        "solo-sdd/<top>/", "solo-sdd/<top>/<...>/", "solo-sdd/changes/<change>/<...>/") + tuple(
+    "solo-sdd/changes/<change>/" + f for f in ("proposal.md", "design.md", "tasks.md", "verification.md", "CLAIM",
+                                               "WAITING", "specs/", "specs/<capability>/", "specs/<capability>/spec.md"))
+NOT_NAMED = {"<change>": "archive", "<top>": "changes"}
+
+
+def ignore_part_re(part):
+    """A regular expression of one gitignore pattern part: * and ? within a name; a [...] class counts as any one
+    character. Matched without case, as git does on a case-insensitive file system: a superset of git's match, so
+    the check below never misses what git hides."""
+    out, i = "", 0
+    while i < len(part):
+        c = part[i]
+        if c == "[":
+            j = i + (2 if part[i + 1:i + 2] in ("!", "^") else 1) + 1
+            j = part.find("]", j)
+            out, i = out + "[^/]", (j + 1 if j > 0 else i + 1)
+            continue
+        out, i = out + ("[^/]*" if c == "*" else "[^/]" if c == "?" else re.escape(c)), i + 1
+    return out
+
+
+def ignore_hits(parts, names, named):
+    """Whether the parts of an anchored pattern match the path names as git's wildmatch does; named: a placeholder
+    (<...>) matches a part, except the literal name NOT_NAMED gives it, and <...> any rest of the parts."""
+    if not parts:
+        return not names
+    if parts[0] == "**":
+        return bool(names) if len(parts) == 1 else any(ignore_hits(parts[1:], names[k:], named) for k in range(len(names) + 1))
+    if not names:
+        return False
+    name = names[0]
+    if name == "<...>":
+        return named
+    if name.startswith("<"):
+        ok = named and parts[0].lower() != NOT_NAMED.get(name, "/")
+    else:
+        ok = re.fullmatch(ignore_part_re(parts[0]), name, re.I) is not None
+    return ok and ignore_hits(parts[1:], names[1:], named)
+
+
+def ignore_hides(item, paths=KEPT):
+    """The first of paths a git.ignore item hides by git's matching (a matched folder hides what is under it), or
+    None; a ! item re-includes and hides none. A placeholder counts only for a pattern of two or more names."""
+    if item.startswith("!"):
+        return None
+    folder = item.endswith("/")
+    body = item[:-1] if folder else item
+    parts = ["**" if p and set(p) == {"*"} and len(p) > 1 else p for p in body.split("/")]
+    anchored = "/" in body
+    named = anchored and sum(p != "**" for p in parts) > 1
+    for path in paths:
+        names = path.rstrip("/").split("/")
+        if folder and not path.endswith("/"):
+            continue
+        if anchored and ignore_hits(parts, names, named) or not anchored and not names[-1].startswith("<") and \
+                re.fullmatch(ignore_part_re(body), names[-1], re.I):
+            return path
+    return None
+
+
+def ignore_refusal(key, item, hides):
+    return "%s item %s %s; solo-sdd/ (but solo-sdd/changes/archive/), AGENTS.md and CLAUDE.md stay in git" % (
+        key, item, hides if hides.startswith("starts") else "hides " + hides)
 
 
 def bad_name(name):
@@ -123,9 +197,13 @@ def check_value(key, value, registry=REGISTRY):
         return str(int(v))
     items = [i.strip() for i in v.split(",")] if kind in ("list", "paths", "names") else [v]
     items = [i for i in items if i]
-    if not items and default == "":
+    if not items and (default == "" or key == IGNORE_KEY):  # an empty git.ignore removes the block
         return ""
     paths = kind in ("path", "paths")
+    for i in items if key == IGNORE_KEY else ():
+        hides = "starts with #: git reads it as a comment" if i.startswith("#") else ignore_hides(i)
+        if hides:
+            raise SettingsError(ignore_refusal(key, i, hides))
     bad = [i for i in items if (bad_path(i) if paths else not good_name(i) if kind == "names" else
                                 i not in allowed if allowed else bad_name(i))]
     if kind == "names" and len(set(items)) < len(items):
@@ -227,7 +305,7 @@ def read_settings(root, registry=REGISTRY):
 # The block above is copied into files that cannot import the package: the agents default is the detected ones here.
 REGISTRY["agents"] = REGISTRY["agents"][:2] + (", ".join(providers.detected()), None)
 
-GROUPS = ("process", "delivery", "dispatch", "agents", "integrations", "checklists")
+GROUPS = ("process", "delivery", "dispatch", "agents", "git", "integrations", "checklists")
 # key or pattern -> (group, what it changes); kept out of the block above: the scripts do not show them
 ABOUT = {
     "mode": ("process", "Solo or team project; a team project takes the team default of every key that has one."),
@@ -268,6 +346,7 @@ ABOUT = {
     "agents.test-model": ("agents", "The model of paid product calls in tests, acceptance and experiments, within the machine test allowlist."),
     "agents.dispatcher-effort": ("agents", "The effort the dispatcher session is started with."),
     "agents.executor": ("agents", "Who writes the change code: the lead agent itself, or Codex executors as if the owner named codex-orchestration."),
+    "git.ignore": ("git", "What the project keeps out of git: solo-sdd ignore --write puts these .gitignore lines into its block; an item starting with ! keeps a path in."),
     "integrations": ("integrations", "The integrations enabled in this project, by folder name."),
     "integrations.off": ("integrations", "The bundled integrations switched off in this project, by folder name."),
     "checklist.<name>.paths": ("checklists", "The files a person checks by this list before merging, as globs."),
@@ -329,6 +408,26 @@ def set_text(text, key, value):
     return text + ("" if not text or text.endswith(("\n", "\r")) else end) + "%s: %s%s" % (key, value, end)
 
 
+IGNORE_HINT = "run: solo-sdd ignore --write"
+
+
+def tree_refusal(root, value):
+    """Why a git.ignore value would hide a file or folder of the project's own solo-sdd/ tree (the archive aside) or
+    its AGENTS.md or CLAUDE.md, or None: the names a capability, a change or an integration has on disk."""
+    paths = ["AGENTS.md", "CLAUDE.md"]
+    top, failed = os.path.join(root, "solo-sdd"), []
+    for d, dirs, files in os.walk(top, onerror=failed.append):
+        rel = os.path.relpath(d, root).replace(os.sep, "/")
+        if rel == "solo-sdd/changes":
+            dirs[:] = [x for x in dirs if x.lower() != "archive"]
+        paths += [rel + "/" + x + "/" for x in dirs] + [rel + "/" + x for x in files]
+    if failed and os.path.isdir(top):  # a folder it cannot list would hide its names: no answer, not an empty one
+        return "%s: cannot list %s to check it: %s" % (IGNORE_KEY, failed[0].filename, failed[0].strerror)
+    for item in [i.strip() for i in value.split(",") if i.strip()]:
+        hides = ignore_hides(item, paths)
+        if hides:
+            return ignore_refusal(IGNORE_KEY, item, hides)
+    return None
 BRANCH_KEYS = ("delivery.branch-prefix", "delivery.plan-prefix")
 
 
@@ -425,7 +524,8 @@ def run(args, cwd=".", registry=REGISTRY):
             print(e)
             return 1
     new = set_text(text, args[1], value)
-    why = prefix_refusal(root, values, effective(parse_settings(new, registry), registry, agents))
+    why = prefix_refusal(root, values, effective(parse_settings(new, registry), registry, agents)) or (
+        tree_refusal(root, value) if args[1] == IGNORE_KEY and value else None)
     if why:
         print(why)
         return 1
@@ -438,5 +538,7 @@ def run(args, cwd=".", registry=REGISTRY):
             return 1
     print("%s: %s" % (args[1], value) if value is not None else "%s: removed, in effect %s" % (
         args[1], effective(parse_settings(new, registry), registry, agents).get(args[1], ("",))[0]))
+    if args[1] == IGNORE_KEY:
+        print(IGNORE_HINT)
     return 0
 

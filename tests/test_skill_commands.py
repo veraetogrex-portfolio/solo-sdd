@@ -477,5 +477,38 @@ class StepFiles(unittest.TestCase):
             self.assertEqual(skill_text.skill("spec-next", root), "# n\n9. **Closing.** Archive.\nRead `tasks.md`.\n")
 
 
+class ProjectInitIgnore(unittest.TestCase):
+    """project-init writes .gitignore only through the solo-sdd block of `solo-sdd ignore --write`."""
+
+    def steps(self):
+        text = " ".join(skill_text.read(REPO / "skills/project-init/SKILL.md").split())
+        return {n: text.split("%d. **" % n, 1)[1].split(" %d. **" % (n + 1), 1)[0] for n in (2, 3)}, \
+            text.split("7a. **Artifact commit.**", 1)[1].split(" 8. **", 1)[0]
+
+    def test_built_in_worktree_folder_ignored(self):
+        """Requirement: Built-in worktree folder ignored: the block from git.ignore after the process tree, no shell line."""
+        steps = self.steps()[0]
+        for words in ("`git.ignore`", "`.claude/worktrees/", "After the process tree of step 3",
+                      "`solo-sdd config set git.ignore", "then run `solo-sdd ignore --write`",
+                      "Do not change `.gitignore` outside that block."):
+            self.assertIn(words, steps[2])
+        self.assertIn("`solo-sdd init` has already run `solo-sdd ignore --write`", steps[3])
+        self.assertNotIn(">> .gitignore", " ".join(steps.values()), "the old appended shell line is gone")
+
+    def test_process_artifacts_in_git(self):
+        """Requirement: Process artifacts in git: never ignored, .gitignore committed when its block changed."""
+        steps, commit = self.steps()
+        self.assertIn("never `solo-sdd/`, `AGENTS.md` or `CLAUDE.md` (the command refuses them)", steps[2])
+        self.assertIn("with `.gitignore` among the paths only if this run changed its solo-sdd block", commit)
+        self.assertNotIn("appended `.claude/worktrees/`", commit)
+
+    def test_hidden_process_artifacts(self):
+        """Requirement: Hidden process artifacts: only the solo-sdd block may change, in a commit of its own."""
+        commit = self.steps()[1]
+        self.assertIn("do not change `.gitignore` except its solo-sdd block (if this run changed it, a separate commit "
+                      "of `.gitignore` alone), and do not commit the artifacts", commit)
+        self.assertIn("reach a worktree only through `sdd-worktree.py`", commit)
+
+
 if __name__ == "__main__":
     sys.exit(0 if unittest.main(exit=False).result.wasSuccessful() else 1)

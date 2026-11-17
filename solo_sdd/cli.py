@@ -1,5 +1,5 @@
 """solo-sdd entry point: command parsing."""
-import difflib, os, sys
+import difflib, os, shlex, subprocess, sys, tempfile
 
 from solo_sdd import __version__, doctor, hooks, import_openspec, integration_run, integrations, keywords, layout, process_cli, process_format, providers, settings, settings_ui
 from solo_sdd import init as project_init
@@ -52,7 +52,137 @@ COMMANDS = """solo-sdd commands:
   check --point review|audit [--changed] [--tag <tag>]
                                      run nothing: one MATERIAL <name>: <path> line per enabled integration of the point;
                                      --tag: per enabled one with the tag, the bundled ones included, also outside a project
-  import openspec [folder] [--write] plan of converting openspec/ into solo-sdd/; --write creates solo-sdd/, openspec/ stays"""
+  import openspec [folder] [--write] plan of converting openspec/ into solo-sdd/; --write creates solo-sdd/, openspec/ stays
+  ignore [--write]                   the git.ignore lines no rule of the repository's .gitignore files outside the solo-sdd
+                                     block hides (every ! line too) and the tracked files they hide; --write puts them
+                                     between # solo-sdd:begin and # solo-sdd:end of .gitignore, other bytes kept"""
+
+
+IGNORE_BEGIN, IGNORE_END = "# solo-sdd:begin", "# solo-sdd:end"
+# git variables that would point a git call at another repository than its -C folder
+GIT_PLACE = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY")
+
+
+def ignore_block(text):
+    """(start, end) offsets of the solo-sdd block of a .gitignore text (end after its end line), None without one;
+    ValueError naming .gitignore:<line> for a begin without its end, an end without its begin or a second block."""
+    found, start, offset = None, None, 0
+    for n, line in enumerate(text.split("\n"), 1):
+        mark = line.rstrip("\r")
+        if mark == IGNORE_BEGIN and (start is not None or found):
+            raise ValueError(".gitignore:%d: a second %s; nothing written" % (n, IGNORE_BEGIN))
+        if mark == IGNORE_BEGIN:
+            start = (n, offset)
+        elif mark == IGNORE_END and start is None:
+            raise ValueError(".gitignore:%d: %s without %s; nothing written" % (n, IGNORE_END, IGNORE_BEGIN))
+        elif mark == IGNORE_END:
+            found, start = (start[1], min(offset + len(line) + 1, len(text))), None
+        offset += len(line) + 1
+    if start is not None:
+        raise ValueError(".gitignore:%d: %s without %s; nothing written" % (start[0], IGNORE_BEGIN, IGNORE_END))
+    return found
+
+
+def ignore_text(text, lines):
+    """The .gitignore text with the solo-sdd block holding lines (no lines: no block), every other byte kept; a new
+    block goes at the end after one added line break, with the file's CRLF line endings; an existing block keeps the
+    line ending of its begin line (the break added before it can make a CRLF of a lone CR)."""
+    span = ignore_block(text)
+    eol = "\r\n" if ("\r\n" in text if span is None else text.startswith(IGNORE_BEGIN + "\r\n", span[0])) else "\n"
+    block = "".join(ln + eol for ln in [IGNORE_BEGIN] + lines + [IGNORE_END]) if lines else ""
+    if span:
+        return text[:span[0]] + block + text[span[1]:]
+    return text + (eol if text and block and not text.endswith("\n") else "") + block
+
+
+def ignore_hidden(top, text, items):
+    """{item: '<file>:<line>: <pattern>'} of the items a rule of the repository's .gitignore files outside the block
+    hides; a fresh repository holds copies of the .gitignore files on each item's way, so .git/info/exclude and the
+    global excludes file, which do not travel with the repository, never count."""
+    span = ignore_block(text)
+    outside = text[:span[0]] + text[span[1]:] if span else text
+    env = {k: v for k, v in os.environ.items() if k not in GIT_PLACE}
+    with tempfile.TemporaryDirectory() as tmp:
+        subprocess.run(["git", "init", "-q", "--template=", tmp], env=env, check=True, capture_output=True,
+                       stdin=subprocess.DEVNULL)
+        for item in items:
+            folders = item.rstrip("/").split("/")[:-1]
+            for k in range(len(folders) + 1):
+                rel = os.path.join(*(folders[:k] + [".gitignore"]))
+                src, dst = os.path.join(top, rel), os.path.join(tmp, rel)
+                if os.path.isfile(src) and not os.path.lexists(dst):
+                    os.makedirs(os.path.dirname(dst), exist_ok=True)
+                    if k == 0:
+                        with open(dst, "w", encoding="utf-8", newline="") as f:
+                            f.write(outside)
+                    else:
+                        with open(src, "rb") as f, open(dst, "wb") as g:
+                            g.write(f.read())
+        r = subprocess.run(["git", "-C", tmp, "-c", "core.excludesFile=" + os.devnull, "check-ignore", "-v", "-n", "-z",
+                            "--no-index", "--stdin"], input="".join(i + "\0" for i in items), env=env,
+                           capture_output=True, text=True)
+    if r.returncode > 1:
+        raise ValueError("git check-ignore: " + r.stderr.strip())
+    f = r.stdout.split("\0")
+    return {f[i + 3]: "%s:%s: %s" % tuple(f[i:i + 3]) for i in range(0, len(f) - 3, 4)
+            if f[i] and not f[i + 2].startswith("!")}
+
+
+def ignore(folder=".", write=False):
+    """`solo-sdd ignore [--write]`: the git.ignore lines no rule outside the solo-sdd block of .gitignore hides, put
+    into that block with --write; a refusal changes no file. The exit code."""
+    r = subprocess.run(["git", "-C", folder, "rev-parse", "--show-toplevel"], capture_output=True, text=True,
+                       stdin=subprocess.DEVNULL, env=dict(os.environ, LC_ALL="C"))
+    if r.returncode:
+        print("not a git repository: %s; nothing written" % (r.stderr.strip() or folder))
+        return 1
+    top = r.stdout.rstrip("\n")
+    path = os.path.join(top, ".gitignore")
+    try:
+        value = settings.read_settings(top)[settings.IGNORE_KEY][0]
+        why = settings.tree_refusal(top, value)
+        if why:
+            raise ValueError("%s: %s" % (settings.SETTINGS_FILE, why))
+        items = [i for i in value.split(", ") if i]
+        with open(path, encoding="utf-8", newline="") as f:
+            text = f.read()
+    except FileNotFoundError:
+        text = ""
+    except (OSError, ValueError) as e:
+        print("%s; nothing written" % e)
+        return 1
+    try:
+        hidden = ignore_hidden(top, text, [i for i in items if not i.startswith("!")])
+        lines = [i for i in items if i not in hidden]
+        new = ignore_text(text, lines)
+    except (OSError, ValueError, subprocess.SubprocessError) as e:
+        print(e)
+        return 1
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".exclude") as f:
+        f.write("".join(i + "\n" for i in items))
+        f.flush()
+        r = subprocess.run(["git", "-C", top, "ls-files", "-z", "-c", "-i", "--exclude-from=" + f.name],
+                           capture_output=True, text=True, stdin=subprocess.DEVNULL)
+    if r.returncode:  # a failed listing is no answer: the tracked paths it would name stay unknown
+        print("cannot list the tracked files: %s; nothing written" % r.stderr.strip())
+        return 1
+    for item in items:
+        print("%s: already hidden by %s, not in the block" % (item, hidden[item]) if item in hidden else item)
+    for tracked in sorted(p for p in r.stdout.split("\0") if p):
+        print("git tracks %s, the block does not remove it: git rm --cached -r -- %s" % (tracked, shlex.quote(tracked)))
+    if new == text:
+        print("no change")
+    elif not write:
+        print("not written: solo-sdd ignore --write writes it")
+    else:
+        try:
+            with open(path, "w", encoding="utf-8", newline="") as f:
+                f.write(new)
+        except OSError as e:
+            print("cannot write .gitignore: %s" % e.strerror)
+            return 1
+        print("wrote the solo-sdd block of .gitignore" if lines else "removed the solo-sdd block of .gitignore")
+    return 0
 
 
 def upgrade_hint(prefix, root):
@@ -264,6 +394,8 @@ def _main(argv=None):
         code = integration_run.run(argv[1:])
         if code is not None:
             return code
+    if argv in (["ignore"], ["ignore", "--write"]):
+        return ignore(".", len(argv) == 2)
     if argv and argv[0] == "import":
         code = import_openspec.main(argv[1:])
         if code is not None:

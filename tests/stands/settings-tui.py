@@ -625,6 +625,30 @@ def main():
             finally:
                 s.close()
         row("Change size limits: the five keys, a refused limit, an entry, a pick, save", change_limit_keys)
+
+        def ignore_list_key():
+            d = project(base)
+            s = Session(d, 60, 120)
+            old = settings.REGISTRY["git.ignore"][2]
+            try:
+                t = s.term.text()
+                need("git.ignore" in t, "the ignore list key listed", t)
+                to(s, "git.ignore")
+                t = s.send("enter")
+                need("Type a value" in flat(t), "the ignore list is an entry", t)
+                t = s.send(*["backspace"] * len(old), *"*.md", "enter")
+                need("git.ignore item *.md hides AGENTS.md" in flat(t) and "unsaved" not in t,
+                     "a list that hides AGENTS.md refused, nothing edited", t)
+                s.send("enter", *["backspace"] * len(old), *".claude/worktrees/, docs/waiting.md", "enter")
+                t = s.send("s", "y")
+                need("saved: git.ignore; run: solo-sdd ignore --write" in flat(t), "the save names the command", t)
+                s.send("q")
+                need(s.wait() == 0, "saved and quit")
+                listed = sdd(d, "config", "list")[1].splitlines()
+                need("git.ignore .claude/worktrees/, docs/waiting.md file" in listed, "config list: %s" % listed)
+            finally:
+                s.close()
+        row("Ignore list setting: a refused item, an entry, save with the hint", ignore_list_key)
     finally:
         shutil.rmtree(base, True)
     print("SUMMARY: all rows passed" if all(results) else "SUMMARY: %d of %d rows failed" % (

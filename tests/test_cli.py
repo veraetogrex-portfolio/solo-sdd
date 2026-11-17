@@ -2025,6 +2025,247 @@ class Keywords(unittest.TestCase):
         self.assertEqual(keywords.migrate_agents(out)[1], [])
 
 
+DEFAULT_BLOCK = "# solo-sdd:begin\n.claude/worktrees/\n.env\n.env.*\n!.env.example\n# solo-sdd:end\n"
+
+
+class IgnoreRepo(unittest.TestCase):
+    """A temporary git repository with its own home, global config and no system config."""
+
+    def setUp(self):
+        self.tmp = os.path.realpath(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.repo, home = os.path.join(self.tmp, "repo"), os.path.join(self.tmp, "home")
+        os.makedirs(home)
+        self.globalconfig = os.path.join(self.tmp, "gitconfig")
+        open(self.globalconfig, "w").close()
+        patch = mock.patch.dict(os.environ, {"HOME": home, "GIT_CONFIG_GLOBAL": self.globalconfig,
+                                             "GIT_CONFIG_NOSYSTEM": "1", "LC_ALL": "C"})
+        patch.start()
+        self.addCleanup(patch.stop)
+        subprocess.run(["git", "-c", "init.defaultBranch=main", "init", "-q", self.repo], check=True,
+                       capture_output=True, stdin=subprocess.DEVNULL)
+
+    def git(self, *args):
+        return subprocess.run(["git", "-C", self.repo, "-c", "user.name=t", "-c", "user.email=t@t", "-c",
+                               "commit.gpgsign=false", *args], capture_output=True, text=True, stdin=subprocess.DEVNULL)
+
+    def put(self, rel, text):
+        path = os.path.join(self.repo, rel)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8", newline="") as f:
+            f.write(text)
+
+    def gitignore(self):
+        try:
+            with open(os.path.join(self.repo, ".gitignore"), encoding="utf-8", newline="") as f:
+                return f.read()
+        except FileNotFoundError:
+            return None
+
+    def ignore(self, *flags, folder=None):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = cli.ignore(folder or self.repo, "--write" in flags)
+        return code, out.getvalue()
+
+
+class IgnoreCommand(IgnoreRepo):
+    """Requirements: Ignore command; Ignore command refusals."""
+
+    def test_a_rule_outside_the_block(self):
+        self.put(".gitignore", "x\n# solo-sdd:begin\n.claude/worktrees/\n# solo-sdd:end\n.claude/\n")
+        code, out = self.ignore("--write")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.gitignore(), "x\n# solo-sdd:begin\n.env\n.env.*\n!.env.example\n# solo-sdd:end\n.claude/\n")
+        self.put(".gitignore", "*\n")
+        self.ignore("--write")
+        self.assertEqual(self.gitignore(), "*\n# solo-sdd:begin\n!.env.example\n# solo-sdd:end\n", "a ! item is always written")
+
+    def test_global_excludes_and_info_exclude_do_not_count(self):
+        excludes = os.path.join(self.tmp, "excludes")
+        with open(excludes, "w") as f:
+            f.write(".env\n")
+        with open(self.globalconfig, "w") as f:
+            f.write("[core]\n\texcludesFile = %s\n" % excludes)
+        with open(os.path.join(self.repo, ".git", "info", "exclude"), "a") as f:
+            f.write(".claude/\n.env.*\n")
+        self.assertEqual(self.git("check-ignore", "-q", ".env").returncode, 0, "git itself reads the global file")
+        self.assertEqual(self.ignore("--write")[0], 0)
+        self.assertEqual(self.gitignore(), DEFAULT_BLOCK)
+
+    def test_a_tracked_path_is_named_and_kept(self):
+        self.put("docs/waiting.md", "w\n")
+        self.put("docs/it's.md", "q\n")
+        self.put(".env.example", "A=\n")
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "x")
+        self.put("solo-sdd/config", "git.ignore: .claude/worktrees/, docs/waiting.md, docs/it's.md, !.env.example\n")
+        code, out = self.ignore("--write")
+        self.assertEqual(code, 0, out)
+        self.assertIn("git rm --cached -r -- docs/waiting.md", out)
+        self.assertIn("git rm --cached -r -- 'docs/it'\"'\"'s.md'", out)
+        self.assertNotIn(".env.example", out.split("!.env.example", 1)[1], "a re-included tracked file is not named")
+        self.assertEqual(self.git("ls-files", "docs/waiting.md").stdout, "docs/waiting.md\n")
+        self.assertNotIn(".env\n", self.gitignore())
+
+    def test_an_empty_list_removes_the_block(self):
+        self.put(".gitignore", "a\n" + DEFAULT_BLOCK + "b\n")
+        self.put("solo-sdd/config", "git.ignore:\n")
+        code, out = self.ignore("--write")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.gitignore(), "a\nb\n")
+        self.assertEqual(self.ignore("--write")[1].splitlines()[-1], "no change")
+
+    def test_crlf_line_endings_kept(self):
+        self.put(".gitignore", "a\r\nb\r\n")
+        self.ignore("--write")
+        self.assertEqual(self.gitignore(), "a\r\nb\r\n" + DEFAULT_BLOCK.replace("\n", "\r\n"))
+
+    def test_broken_blocks_refused(self):
+        for text, line in (("a\nb\n# solo-sdd:begin\n.env\n", 3), ("a\n# solo-sdd:end\n", 2),
+                           (DEFAULT_BLOCK + "x\n" + DEFAULT_BLOCK, 8), ("# solo-sdd:begin\n# solo-sdd:begin\n# solo-sdd:end\n", 2)):
+            self.put(".gitignore", text)
+            for flags in ((), ("--write",)):
+                code, out = self.ignore(*flags)
+                self.assertEqual(code, 1, (text, flags))
+                self.assertIn(".gitignore:%d" % line, out, text)
+                self.assertEqual(self.gitignore(), text)
+
+    def test_a_lone_cr_file_written_once(self):
+        self.put(".gitignore", "a\rb\r")
+        self.assertEqual(self.ignore("--write")[0], 0)
+        first = self.gitignore()
+        self.assertEqual(self.ignore("--write")[1].splitlines()[-1], "no change")
+        self.assertEqual(self.gitignore(), first)
+
+    def test_a_failed_listing_refused(self):
+        self.put("docs/w.md", "w\n")
+        self.git("add", "-A")
+        self.put("solo-sdd/config", "git.ignore: docs/\n")
+        with open(os.path.join(self.repo, ".git", "index"), "wb") as f:
+            f.write(b"not an index")
+        code, out = self.ignore("--write")
+        self.assertEqual(code, 1)
+        self.assertIn("cannot list the tracked files", out)
+        self.assertIsNone(self.gitignore())
+
+    def test_a_folder_of_the_tree_refused(self):
+        os.makedirs(os.path.join(self.repo, "solo-sdd", "changes", "foo"))
+        self.put("solo-sdd/config", "git.ignore: foo\n")
+        code, out = self.ignore("--write")
+        self.assertEqual(code, 1)
+        self.assertIn("git.ignore item foo hides solo-sdd/changes/foo/", out)
+        self.assertIsNone(self.gitignore())
+
+    def test_a_broken_config_refused(self):
+        self.put("solo-sdd/config", "git.ignore: *.md\n")
+        code, out = self.ignore("--write")
+        self.assertEqual(code, 1)
+        self.assertIn("solo-sdd/config:1: git.ignore item *.md hides AGENTS.md", out)
+        self.assertIsNone(self.gitignore())
+
+    def test_outside_git_refused(self):
+        bare = os.path.join(self.tmp, "plain")
+        os.makedirs(bare)
+        code, out = self.ignore("--write", folder=bare)
+        self.assertEqual(code, 1)
+        self.assertIn("not a git repository", out)
+        self.assertEqual(os.listdir(bare), [])
+
+    def test_arguments(self):
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(cli.main(["ignore", "--bogus"]), 2)
+            self.assertEqual(cli.main(["ignore", "--write", "--write"]), 2)
+
+
+
+IGNORE_LINES = st.lists(st.text(st.sampled_from("ab#*!/. \r"), max_size=6).filter(
+    lambda ln: ln not in (cli.IGNORE_BEGIN, cli.IGNORE_END)), max_size=4)
+
+
+def check_ignore_text(ignore_text, lines, eol, final, items):
+    """The block and the one line break added before it removed give the original; a second write changes nothing."""
+    text = eol.join(lines) + (eol if final and lines else "")
+    new = ignore_text(text, items)
+    span = cli.ignore_block(new)
+    if not items:
+        assert new == text and span is None, (text, new)
+        return
+    eol = "\r\n" if "\r\n" in text else "\n"  # a file without CRLF gets LF lines
+    rest = new[:span[0]] + new[span[1]:]
+    assert rest == text or (rest == text + eol and text and not text.endswith("\n")), (text, new)
+    assert new[span[0]:span[1]].split(eol)[:-1] == [cli.IGNORE_BEGIN] + items + [cli.IGNORE_END], new
+    assert ignore_text(new, items) == new, new
+
+
+def lf_rewrite(text, items):
+    """A mutant of ignore_text that rewrites the line endings. The property must reject it."""
+    return cli.ignore_text(text.replace("\r\n", "\n"), items)
+
+
+class IgnoreCommandProperty(unittest.TestCase):
+    """Requirement: Ignore command (property)."""
+    ARGS = (IGNORE_LINES, st.sampled_from(["\n", "\r\n"]), st.booleans(),
+            st.lists(st.sampled_from([".env", ".claude/worktrees/", "!.env.example", "docs/x.md"]), unique=True))
+
+    @settings(max_examples=50, deadline=None)
+    @given(*ARGS)
+    def test_ignore_command_property(self, lines, eol, final, items):
+        check_ignore_text(cli.ignore_text, lines, eol, final, items)
+
+    def test_line_ending_rewrite_fails_the_property(self):
+        @settings(max_examples=50, deadline=None, database=None, report_multiple_bugs=False)
+        @given(*self.ARGS)
+        def mutant(lines, eol, final, items):
+            check_ignore_text(lf_rewrite, lines, eol, final, items)
+        with self.assertRaises(AssertionError):
+            mutant()
+
+
+IGNORE_ITEMS = st.lists(st.lists(st.sampled_from(["*", "?", "/", "!", "solo-sdd", "AGENTS.md", "CLAUDE.md", "changes",
+                                                  "archive", "agents.md", "Solo-SDD", "Archive"]), min_size=1, max_size=5).map("".join), min_size=1, max_size=3)
+
+
+def by_name_only(item, paths=None):
+    """A mutant of settings.ignore_hides that refuses only the three names. The property must reject it."""
+    return item.rstrip("/") if item.rstrip("/") in ("solo-sdd", "AGENTS.md", "CLAUDE.md") else None
+
+
+class ProcessPathsStayTrackedProperty(IgnoreRepo):
+    """Requirement: Process paths stay tracked (property)."""
+
+    def check(self, items):
+        from solo_sdd import settings as conf
+        value = ", ".join(items)
+        try:
+            conf.check_value("git.ignore", value)
+        except conf.SettingsError:
+            return
+        self.put("solo-sdd/config", "git.ignore: %s\n" % value)
+        if os.path.exists(os.path.join(self.repo, ".gitignore")):
+            os.remove(os.path.join(self.repo, ".gitignore"))
+        with contextlib.redirect_stdout(io.StringIO()):
+            assert cli.ignore(self.repo, True) == 0, value
+        for path in ("AGENTS.md", "CLAUDE.md", "solo-sdd/project.md"):
+            assert self.git("check-ignore", "-q", path).returncode == 1, (value, path)
+
+    @marks.slow
+    @settings(max_examples=30, deadline=None)
+    @given(IGNORE_ITEMS)
+    def test_process_paths_stay_tracked_property(self, items):
+        self.check(items)
+
+    @marks.slow
+    def test_refusal_by_name_only_fails_the_property(self):
+        from solo_sdd import settings as conf
+
+        @settings(max_examples=30, deadline=None, database=None, report_multiple_bugs=False)
+        @given(IGNORE_ITEMS)
+        def mutant(items):
+            self.check(items)
+        with mock.patch.object(conf, "ignore_hides", by_name_only), self.assertRaises(AssertionError):
+            mutant()
+
 
 if __name__ == "__main__":
     unittest.main()
