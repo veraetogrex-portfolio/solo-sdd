@@ -15,7 +15,7 @@ Delivery: <by ship> | push not done: no remote | waits for deploy consent: <what
 git log --oneline --graph -20: <output>
 git worktree list: <output>
 git status --short: <output or "empty">
-Needs from you: <action; the `promotion:` line (`land` in `pr`, `ship` in `local`), once; step 0 left the mode answer unrecorded: the ready text of the "Delivery" section; "Leftovers:" lines with the change name; a change with code 8: the PR with the link or the branch `change/<id>`> | nothing
+Needs from you: <action; the `promotion:` line (`land` in `pr`, `ship` in `local`), once; step 0 left the mode answer unrecorded: the ready text of the "Delivery" section; "Leftovers:" lines with the change name; a change with code 8: the PR with the link or the branch `change/<id>` (`delivery.branch-prefix`)> | nothing
 ```
 
 "Launch" is the launch sequence number. The CI result in the Merge column is `green`, `none`, `red`, `infra` or `codeql`; a change with code 8 shows "waits for the owner: <paths>" or `waits for human merge` with the PR URL (in `local`, the branch). An unmerged change in the table comes with its worktree path and branch: the user sorts them out.

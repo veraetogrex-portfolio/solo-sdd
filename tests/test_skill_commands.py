@@ -3,6 +3,7 @@ rules other tests here name by their Requirement (the light path, debugging, the
 
 Every line of `skills/*/SKILL.md` with its step files, `ALGORITHM.md` and `global/AGENTS.md` that names OpenSpec (any case: a command,
 an `openspec/` path, the word) fails, except a line with the import hint `solo-sdd import openspec`."""
+import os
 import pathlib
 import re
 import subprocess
@@ -180,6 +181,41 @@ class SkillCommandsTest(unittest.TestCase):
         self.assertLess(plan.index("**Creation.**"), plan.index("with the light path of step 1a"))
         for rel in ("skills/work-status/SKILL.md", "skills/report/SKILL.md"):
             self.assertIn("--grep='^light:'", read(rel), rel)
+
+    def test_branch_prefixes_in_skills(self):
+        """Requirement: Branch and commit prefixes: every skill line naming change/<…> or plan/<…> names its setting."""
+        bare = ["%s:%d" % (path.relative_to(REPO), n) for path in sorted(REPO.glob("skills/*/*.md"))
+                for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
+                if re.search(r"change/<|plan/<", line) and not re.search(r"delivery\.(branch|plan)-prefix", line)]
+        self.assertEqual(bare, [])
+        for rel in ("global/AGENTS.md", "ALGORITHM.md"):
+            self.assertIn("commit.light-prefix", skill_text.read(REPO / rel), rel)
+
+    def test_a_light_prefix_with_pattern_characters(self):
+        """Requirement: Branch and commit prefixes, scenario A light prefix with pattern characters: the count command
+        of work-status, report and spec-plan, run on a project with `commit.light-prefix: [quick]`, finds one commit."""
+        with tempfile.TemporaryDirectory() as root:
+            root = pathlib.Path(root)
+            (root / "bin").mkdir()
+            (root / "bin" / "solo-sdd").write_text('#!/bin/sh\nPYTHONPATH="%s" exec "%s" -m solo_sdd "$@"\n'
+                                                   % (REPO, sys.executable))
+            (root / "bin" / "solo-sdd").chmod(0o755)
+            (root / "solo-sdd" / "changes").mkdir(parents=True)
+            (root / "solo-sdd" / "config").write_text("commit.light-prefix: [quick]\n")
+            git = lambda *a: subprocess.run(("git", "-c", "user.name=t", "-c", "user.email=t@t", "-c",
+                                             "commit.gpgsign=false") + a, cwd=root, check=True, capture_output=True,
+                                            stdin=subprocess.DEVNULL)
+            git("init", "-q")
+            for msg in ("[quick] fix typo", "q fix", "light: old", "x [quick] y"):
+                git("commit", "-q", "--allow-empty", "-m", msg)
+            env = dict(os.environ, PATH="%s:%s" % (root / "bin", os.environ["PATH"]))
+            for rel in ("skills/work-status/SKILL.md", "skills/report/SKILL.md", "skills/spec-plan/SKILL.md"):
+                m = re.search(r"`(git log --format='%s%x09%h'[^`]*)`", skill_text.read(REPO / rel))
+                self.assertTrue(m, rel)
+                cmd = re.sub(r"--since=<[^>]+>", "--since=2000-01-01", m.group(1))
+                out = subprocess.run(["bash", "-c", cmd], cwd=root, env=env, capture_output=True, text=True,
+                                     stdin=subprocess.DEVNULL).stdout.splitlines()
+                self.assertEqual([ln.split("\t")[0] for ln in out], ["[quick] fix typo"], rel)
 
     def test_code_bug_path(self):
         """Requirement: Code bug path: the steps in order, no profile first, the description and the rules entry."""

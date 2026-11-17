@@ -500,6 +500,19 @@ class UncommittedChangeArtifacts(Base):
         self.assertIn("\n  a — not merged: branch change/a", out)
         self.assertNotIn("not committed", out)
 
+    def test_a_team_prefix(self):
+        # Requirement: Branch and commit prefixes, scenario A team prefix
+        p = self.project()
+        put(p.main, "solo-sdd/config", "delivery.branch-prefix: feat/\n")
+        p.change("a")
+        p.change("b")
+        git(p.main, "branch", "change/a")
+        git(p.main, "branch", "feat/b")
+        _, out = p.run()
+        self.assertIn("launch: a\n", out)
+        self.assertIn("\n  b — not merged: branch feat/b", out)
+        self.assertNotIn("change/a", out)
+
     def test_uncommitted_before_unarchived_dependency(self):
         p = self.project()
         p.change("a", deps="`base`", commit=False)

@@ -964,6 +964,13 @@ class LandLocalMerges(unittest.TestCase):
         self.assertEqual(self.merges("merged abc123"), {"abc123": "T"})
         self.assertEqual(self.merges("merged abc123, not cleaned: remove: x"), {"abc123": "T"})
 
+    def test_a_team_prefix_merge_counted(self):
+        # Requirement: Branch and commit prefixes: a merge of a feat/ change branch counts as the change/ one did
+        objs = [{"message": {"content": [{"type": "tool_use", "id": "b", "name": "Bash",
+                                          "input": {"command": "git merge -q --no-ff --no-edit feat/foo"}}]}},
+                {"timestamp": "T", "message": {"content": [{"type": "tool_result", "tool_use_id": "b", "content": "exit 0"}]}}]
+        self.assertEqual(ev.merges(objs), {"feat/foo": "T"})
+
     def test_land_local_refused_not_counted(self):
         self.assertEqual(self.merges("not merged: merge conflict: f"), {})
 

@@ -493,7 +493,7 @@ def cmd_run(a):
 COUNTERS = ("input", "cache_5m", "cache_1h", "cache_read", "output")
 HERE = os.path.dirname(os.path.abspath(__file__))
 REJECT = "Status not accepted by the hook"
-MERGE_CMD = re.compile(r"merge -q --no-ff --no-edit change/(\S+)")
+MERGE_CMD = re.compile(r"merge -q --no-ff --no-edit (\S+)")  # the branch whatever its delivery.branch-prefix
 
 
 def find_session(sid):

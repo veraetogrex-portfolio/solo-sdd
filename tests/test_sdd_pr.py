@@ -1995,6 +1995,17 @@ class ShipLandSettings(ShipLandRepo):
         self.assertIn("change/x", g(self.main, "branch", "--list", "change/x"))
         self.assertEqual(len(self.worktrees()), 1)
 
+    def test_land_deletes_a_team_prefix_branch(self):
+        # Requirement: Branch and commit prefixes: land deletes the local <delivery.branch-prefix><id>, no other branch
+        g(self.main, "branch", "-m", "change/x", "feat/x")
+        head = self.head()
+        for config, gone in (("", False), ("delivery.branch-prefix: feat/\n", True)):
+            self.put(self.main, "solo-sdd/config", config)
+            e = self.mk(view_json=[dict(OPEN, headRefOid=head, headRefName="feat/x", state="MERGED")])
+            r = self.land(e)
+            self.assertEqual((r.returncode, r.stdout.splitlines()[-1]), (0, f"PR #7 {URL} land: done"), r.stderr)
+            self.assertEqual(g(self.main, "branch", "--list", "feat/x") == "", gone, config)
+
     def test_a_repeated_land_with_the_branch_kept(self):
         self.put(self.main, "solo-sdd/config", "delivery.delete-branch: off\n")
         head = self.head()

@@ -9,7 +9,7 @@ The answer is exactly the five lines below, in the user's language, without an i
 
 Before answering check the facts, not memory: the list of background processes and tasks, `git status`, `tasks.md` of the current change.
 
-"Done" counts `light:` commits apart from changes: `light: <n> commits` from `git log --oneline --grep='^light:' --since=<the session's first message time>`, and names the archived changes by id.
+"Done" counts light commits apart from changes, and names the archived changes by id: `light: <n> commits`, the subjects that start with the text of `solo-sdd config get commit.light-prefix` (default `light:`), matched as plain text, one line each from `git log --format='%s%x09%h' --since=<the session's first message time> | LP="$(solo-sdd config get commit.light-prefix)" awk 'index($0, ENVIRON["LP"]) == 1'`; with the default prefix the same as `git log --oneline --grep='^light:' --since=<the session's first message time>`.
 
 ```
 Done: <what is finished and checked>

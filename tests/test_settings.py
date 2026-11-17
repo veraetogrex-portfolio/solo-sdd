@@ -521,10 +521,128 @@ class DeliveryItemsInConfig(ConfigDir):
         self.assertEqual(self.get("delivery.deploy"), (0, item + "\n", "source: AGENTS.md\n"))
 
 
+GIT = ("git", "-c", "init.defaultBranch=main", "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false")
+
+
+class BranchAndCommitPrefixes(ConfigDir):
+    """Requirements: Branch and commit prefixes; Prefix change guard."""
+
+    def repo(self, *branches, archived=(), opened=()):
+        """self.dir as a git repository with one commit, the branches, archived and open change folders."""
+        for cid in opened:
+            os.makedirs(os.path.join(self.dir, "solo-sdd", "changes", cid))
+        for cid in archived:
+            os.makedirs(os.path.join(self.dir, "solo-sdd", "changes", "archive", "2026-01-01-" + cid))
+        for args in (("init", "-q"), ("commit", "-q", "--allow-empty", "-m", "x")) + tuple(("branch", b) for b in branches):
+            subprocess.run(GIT + ("-C", self.dir) + args, check=True, capture_output=True, stdin=subprocess.DEVNULL)
+
+    def test_defaults_and_describe(self):
+        values = settings.effective({})
+        self.assertEqual([values[k] for k in ("delivery.branch-prefix", "delivery.plan-prefix", "commit.light-prefix")],
+                         [("change/", "default"), ("plan/", "default"), ("light:", "default")])
+        code, blocks = self.describe("delivery.branch-prefix")
+        self.assertEqual((code, blocks["delivery.branch-prefix"]["group"], blocks["delivery.branch-prefix"]["default"]),
+                         (0, "delivery", "change/"))
+        self.assertEqual(self.describe("commit.light-prefix")[1]["commit.light-prefix"]["group"], "process")
+        self.assertEqual(self.cli("set", "commit.light-prefix", "[quick]"), (0, "commit.light-prefix: [quick]\n"))
+
+    def test_a_leftover_change_branch(self):
+        self.repo("change/a", opened=["a"])
+        self.write("# keep\n")
+        code, out = self.cli("set", "delivery.branch-prefix", "feat/")
+        self.assertEqual(code, 1)
+        self.assertIn("change/a", out)
+        self.assertEqual((self.read(), self.get("delivery.branch-prefix")[1]), ("# keep\n", "change/\n"))
+
+    def test_unset_guarded_too(self):
+        self.repo("feat/a", opened=["a"])
+        self.write("delivery.branch-prefix: feat/\n")
+        code, out = self.cli("unset", "delivery.branch-prefix")
+        self.assertEqual(code, 1)
+        self.assertIn("feat/a", out)
+        self.assertEqual(self.read(), "delivery.branch-prefix: feat/\n")
+
+    def test_a_branch_of_an_archived_change(self):
+        self.repo("change/old", "change/b", archived=["old"])  # b: a branch of no change at all
+        self.assertEqual(self.cli("set", "delivery.branch-prefix", "feat/")[0], 0)
+        self.assertEqual(self.get("delivery.branch-prefix")[1], "feat/\n")
+
+    def test_equal_prefixes_and_a_prefix_git_refuses(self):
+        for key, value, why in (("delivery.plan-prefix", "change/", "delivery.branch-prefix"),
+                                ("delivery.branch-prefix", "plan/", "delivery.plan-prefix"),
+                                ("delivery.branch-prefix", "feat/*", "valid branch name"),
+                                ("delivery.plan-prefix", "p.lock/", "valid branch name")):
+            code, out = self.cli("set", key, value)
+            self.assertEqual(code, 1, value)
+            self.assertIn(why, out, value)
+            self.assertFalse(os.path.exists(self.cfg), value)
+
+    def test_outside_git_passes_a_failed_listing_refuses(self):
+        self.assertEqual(self.cli("set", "delivery.branch-prefix", "feat/")[0], 0, "no repository: no branches to keep")
+        from unittest import mock
+        real = settings.git
+        with mock.patch.object(settings, "git", lambda root, *a: (128, "", "fatal: bad object HEAD")
+                               if a[0] == "for-each-ref" else real(root, *a)):
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                code = settings.run(["set", "delivery.branch-prefix", "team/"], self.dir)
+        self.assertEqual(code, 1)
+        self.assertIn("cannot list the branches: fatal: bad object HEAD", out.getvalue())
+        self.assertEqual(self.read(), "delivery.branch-prefix: feat/\n")
+
+
+PREFIXES = st.text(st.sampled_from("ab/.-*~@{}:?[\\ ^_"), min_size=1, max_size=8) | st.sampled_from(
+    ["feat/", "x/", "a//", "a/.b/", "a.lock/", "@{", "a/", "feat/*", "/a", "a.", "-a/", "plan/", "change/"])
+
+
+def no_ref_check(root, old, new):
+    """A mutant of prefix_refusal without the ref check. The property must reject it."""
+    now = [new.get(k, ("",))[0] for k in settings.BRANCH_KEYS]
+    return "equal" if now[0] == now[1] else None
+
+
+def check_prefix_guard(d, prefix):
+    """config set of the branch prefix exits 1 with the file unchanged, or git takes <prefix>a as a branch name."""
+    with open(os.path.join(d, settings.SETTINGS_FILE), "w", encoding="utf-8") as f:
+        f.write("# keep\n")
+    with contextlib.redirect_stdout(io.StringIO()):
+        code = settings.run(["set", "delivery.branch-prefix", prefix], d)
+    with open(os.path.join(d, settings.SETTINGS_FILE), encoding="utf-8") as f:
+        text = f.read()
+    if code:
+        assert text == "# keep\n", (prefix, text)
+    else:
+        r = subprocess.run(["git", "check-ref-format", "--branch", settings.check_value("delivery.branch-prefix", prefix)
+                            + "a"], capture_output=True, stdin=subprocess.DEVNULL)
+        assert r.returncode == 0, prefix
+
+
+class PrefixChangeGuardProperty(ConfigDir):
+    """Requirement: Prefix change guard (property)."""
+
+    @hsettings(max_examples=150, deadline=None)
+    @given(PREFIXES)
+    def test_prefix_change_guard_property(self, prefix):
+        check_prefix_guard(self.dir, prefix)
+
+    def test_no_ref_check_fails_the_property(self):
+        from unittest import mock
+
+        @hsettings(max_examples=150, deadline=None, database=None)
+        @given(PREFIXES)
+        def mutant(prefix):
+            check_prefix_guard(self.dir, prefix)
+        with mock.patch.object(settings, "prefix_refusal", no_ref_check), self.assertRaises(AssertionError):
+            mutant()
+
+
 MODELS = st.sampled_from(["claude-opus-4.5", "opus[1m]", "gpt_5.1-mini"]) | st.text(st.sampled_from(settings.MODEL_CHARS),
                                                                                     min_size=1, max_size=12)
 VALUES = {k: st.sampled_from(v[1]) if v[1] else MODELS if v[0] == "model" else st.integers(1, 99).map(str)
           for k, v in settings.REGISTRY.items()}
+VALUES.update({"delivery.branch-prefix": st.sampled_from(["change/", "feat/", "team-1/"]),
+               "delivery.plan-prefix": st.sampled_from(["plan/", "plans/"]),
+               "commit.light-prefix": st.sampled_from(["light:", "[quick]", "q: x"])})
 COMMENT = st.text(st.characters(blacklist_categories=("Cs", "Cc", "Zl", "Zp")), max_size=12).map(lambda s: "# " + s)
 
 

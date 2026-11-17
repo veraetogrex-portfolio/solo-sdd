@@ -11,9 +11,9 @@ The result is a set of changes, each of which closes in one `/spec-next` run. No
 
 0. **Legacy tree.** The project has `openspec/` and no `solo-sdd/`: stop before any change work, change no file and name the next step `solo-sdd import openspec`; do not import by yourself.
 1. **Context.** The local project rules, `solo-sdd/project.md` (intent, language, mode), `solo-sdd list --json`, `solo-sdd list --specs`, the project's `DESIGN.md` if there is one. This avoids duplicates of existing changes and specs.
-1a. **Light path.** Before any unit, take out two kinds of input item; they get no change. An item already closed by a `light:` commit (`git log --oneline --grep='^light:'`) is counted with its hash.
+1a. **Light path.** Before any unit, take out two kinds of input item; they get no change. An item already closed by a `light:` commit (its subject starts with the text of `solo-sdd config get commit.light-prefix`, default `light:`, matched as plain text: `git log --format='%s%x09%h' | LP="$(solo-sdd config get commit.light-prefix)" awk 'index($0, ENVIRON["LP"]) == 1'`; with the default prefix the same as `git log --oneline --grep='^light:'`) is counted with its hash.
 
-   An item within the light path bounds of the global rules (no behaviour a main spec describes, no dependency, data, migration or deploy, at most `solo-sdd config get process.light-path.max-files` files; `solo-sdd config get process.light-path` is `off`: no item is light) is done after step 9 by the global rules: the edit, the tests, a live check, one `light:` commit. An input made only of such items creates no change and skips steps 2-9.
+   An item within the light path bounds of the global rules (no behaviour a main spec describes, no dependency, data, migration or deploy, at most `solo-sdd config get process.light-path.max-files` files; `solo-sdd config get process.light-path` is `off`: no item is light) is done after step 9 by the global rules: the edit, the tests, a live check, one `light:` commit (`commit.light-prefix`). An input made only of such items creates no change and skips steps 2-9.
 2. **Units.** Split the input into units. A unit fits when all four conditions hold:
    - one result the user can check themselves;
    - one area of code;
@@ -45,7 +45,7 @@ The result is a set of changes, each of which closes in one `/spec-next` run. No
 7. **Check.** `solo-sdd validate --all`.
 7a. **Cross-check.** The `spec-analyze` skill on every created change; edits only in the artifacts. Then repeat step 7.
 8. **Coverage.** Match every input item with a change or with the light path of step 1a (its commit, or `to do` until the commit after step 9). Any other item without a change is an error: create a change or explain in the report why there is none.
-9. **Plan commit.** Read `plan-commit.md` each time this step starts, also after compaction: after gate G1 (steps 7, 7a, 8), the plan commit on `plan/<first id>` under `delivery.mode` `pr` or on the main branch under `local`.
+9. **Plan commit.** Read `plan-commit.md` each time this step starts, also after compaction: after gate G1 (steps 7, 7a, 8), the plan commit on `plan/<first id>` (`plan/`: `solo-sdd config get delivery.plan-prefix`) under `delivery.mode` `pr` or on the main branch under `local`.
 
 More than five changes: you write the artifacts yourself; Codex executors only if the user named `codex-orchestration` or the project sets `agents.executor: codex`.
 
@@ -95,7 +95,7 @@ Map: <change> — <map files of its type rows>, one line per change | Map: none
 Map stale: <file>, <n> commits since <hash>; refresh: /project-init map (one line per printed stale file, no line otherwise)
 Analyze: CRITICAL <n> · HIGH <n>, fixed <n>
 Coverage: <input items> of <input items>; light path: <item — `light:` <hash> | to do> | none; without a change: <item — reason> | none
-Plan: commit <hash> | commit <hash> on plan/<id>, PR <url> | commit <hash> on plan/<id>, PR <url>, waits for human merge | plan outside git | no change: light path only
+Plan: commit <hash> | commit <hash> on plan/<id>, PR <url> | commit <hash> on plan/<id>, PR <url>, waits for human merge | plan outside git | no change: light path only (plan/: the delivery.plan-prefix value)
 Waiting for external conditions: <change — what is needed> | none
 My interpretations: <item — how I understood it> | none
 Next: /spec-next | /spec-next after the merge of <PR url> | the light path items

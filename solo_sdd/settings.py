@@ -6,6 +6,7 @@ The block between the settings markers is copied into the scripts of global/ tha
 import json
 import os
 import re
+import subprocess
 import sys
 
 from solo_sdd import process_format as pf, providers
@@ -33,10 +34,13 @@ REGISTRY = {
     "delivery.code-scanning": ("choice", ("gate", "warn", "off"), "gate", None),  # open alerts: code 8, a warning, not asked
     "delivery.delete-branch": ("choice", ("on", "off"), "on", None),  # off: a merged PR keeps its branch
     "delivery.draft": ("choice", ("on", "off"), "off", None),  # on: a PR opens as a draft, marked ready before the merge
+    "delivery.branch-prefix": ("choice", None, "change/", None),  # a change branch is <prefix><id>
+    "delivery.plan-prefix": ("choice", None, "plan/", None),  # the spec-plan branch is <prefix><first id>
     "dispatch.limit": ("int", None, "2", None),
     "process.review-rounds": ("int", None, "5", None),
     "process.light-path": ("choice", ("on", "off"), "on", None),  # off: every code edit goes through a change
     "process.light-path.max-files": ("int", None, "3", None),
+    "commit.light-prefix": ("text", None, "light:", None),  # a light commit subject starts with it, as plain text
     "reply.language": ("choice", ("ru", "en", "off"), "off", None),
     "agents": ("list", ("claude", "codex", "cursor", "other"), "claude, codex, other", None),
     "rules.scope": ("choice", ("project", "global"), "project", None),  # project: init writes the rules block into AGENTS.md
@@ -235,10 +239,13 @@ ABOUT = {
     "delivery.code-scanning": ("delivery", "What open code scanning alerts do after green checks: gate waits for a fix, warn prints them and merges, off skips them."),
     "delivery.delete-branch": ("delivery", "Whether merge and land delete the branch of a merged pull request."),
     "delivery.draft": ("delivery", "Whether a pull request opens as a draft, marked ready for review right before the merge."),
+    "delivery.branch-prefix": ("delivery", "The start of every change branch name: the branch of a change is this prefix and the change id."),
+    "delivery.plan-prefix": ("delivery", "The start of the branch spec-plan commits a plan on in pull request delivery, before the first change id."),
     "dispatch.limit": ("dispatch", "The most orchestrators the dispatcher runs at the same time."),
     "process.review-rounds": ("process", "The most independent acceptance rounds of one change, plus one extra round for findings on the last fix, before it counts as not done."),
     "process.light-path": ("process", "Whether a small code edit outside every spec may skip the change cycle."),
     "process.light-path.max-files": ("process", "The most files a light path edit may change."),
+    "commit.light-prefix": ("process", "The text a light path commit subject starts with; work-status, report and spec-plan count such commits by it as plain text."),
     "reply.language": ("agents", "The language the stop hook expects in the agent's final reply; off checks none."),
     "agents": ("agents", "The agents this project is worked on with; doctor warns about one the installation lacks."),
     "rules.scope": ("agents", "Where the agents get the rules: a block in this project's AGENTS.md, or only the global rules."),
@@ -308,6 +315,47 @@ def set_text(text, key, value):
     return text + ("" if not text or text.endswith(("\n", "\r")) else end) + "%s: %s%s" % (key, value, end)
 
 
+BRANCH_KEYS = ("delivery.branch-prefix", "delivery.plan-prefix")
+
+
+def git(root, *args):
+    """git in root -> (code, stdout, stderr); a git that cannot run is code 127 with the reason."""
+    try:
+        r = subprocess.run(["git", "-C", root] + list(args), capture_output=True, text=True, stdin=subprocess.DEVNULL,
+                           timeout=30)
+    except (OSError, subprocess.SubprocessError) as e:
+        return 127, "", str(e)
+    return r.returncode, r.stdout, r.stderr.strip()
+
+
+def prefix_refusal(root, old, new):
+    """Why the branch prefixes of new cannot replace those of old ({key: (value, source)} both), or None: equal branch
+    and plan prefixes, a prefix git takes no branch name under, a local branch of an open change under the old branch
+    prefix. Outside a git repository the branches pass; a listing that fails refuses."""
+    was, now = [old.get(k, ("",))[0] for k in BRANCH_KEYS], [new.get(k, ("",))[0] for k in BRANCH_KEYS]
+    if was == now:
+        return None
+    if now[0] == now[1]:
+        return "delivery.branch-prefix and delivery.plan-prefix would both be %s: a plan branch would read as a change branch" % now[0]
+    for key, a, b in zip(BRANCH_KEYS, was, now):
+        code, _, err = git(root, "check-ref-format", "--branch", b + "a") if a != b else (0, "", "")
+        if code:
+            return "%s: %s is no valid branch name, so %s cannot start one (%s)" % (key, b + "a", b, err)
+    if was[0] == now[0]:
+        return None
+    code, out, err = git(root, "for-each-ref", "--format=%(refname)", "refs/heads/")
+    if code:
+        return None if "not a git repository" in err else "delivery.branch-prefix: cannot list the branches: " + err
+    base = os.path.join(root, os.path.dirname(SETTINGS_FILE), "changes")
+    opened = {d for d in (os.listdir(base) if os.path.isdir(base) else ()) if d != "archive"}
+    names = [r[len("refs/heads/"):] for r in out.split()]
+    left = [n for n in names if n.startswith(was[0]) and n[len(was[0]):] in opened]
+    if left:
+        return ("delivery.branch-prefix stays %s: open changes still have branches under it: %s; merge or delete them"
+                " first, the dispatcher would no longer see them" % (was[0], ", ".join(left)))
+    return None
+
+
 def unknown_key(key, registry=REGISTRY):
     return None if entry(key, registry) else "unknown key %s; known: %s" % (key, ", ".join(list(registry) + list(PATTERNS)))
 
@@ -361,6 +409,10 @@ def run(args, cwd=".", registry=REGISTRY):
             print(e)
             return 1
     new = set_text(text, args[1], value)
+    why = prefix_refusal(root, values, effective(parse_settings(new, registry), registry, agents))
+    if why:
+        print(why)
+        return 1
     if new != text:
         try:
             with open(os.path.join(root, SETTINGS_FILE), "w", encoding="utf-8", newline="") as f:

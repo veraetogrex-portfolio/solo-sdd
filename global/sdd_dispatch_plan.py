@@ -7,7 +7,7 @@ Run: sdd_dispatch_plan.py <MAIN> [--running id1,id2,...] [--waiting id1,id2,...]
 --running: orchestrators at work; --waiting: waiting for merge (status accepted, the branch went to CI).
 An id in both lists is running; an id that is not an open change is dropped.
 
-Ready: no CLAIM or WAITING, no branch change/<id>, every Depends On archived, the change folder committed
+Ready: no CLAIM or WAITING, no branch <delivery.branch-prefix><id> (default change/<id>), every Depends On archived, the change folder committed
 (otherwise the reason «not committed»: a worktree made from a commit would not see it).
 Reasons in order: branch («not merged»), CLAIM, WAITING, «not committed», dependencies.
 Dependencies: a name that is neither an open change nor archived is «unknown dependency: <name>»
@@ -73,10 +73,13 @@ REGISTRY = {
     "delivery.code-scanning": ("choice", ("gate", "warn", "off"), "gate", None),  # open alerts: code 8, a warning, not asked
     "delivery.delete-branch": ("choice", ("on", "off"), "on", None),  # off: a merged PR keeps its branch
     "delivery.draft": ("choice", ("on", "off"), "off", None),  # on: a PR opens as a draft, marked ready before the merge
+    "delivery.branch-prefix": ("choice", None, "change/", None),  # a change branch is <prefix><id>
+    "delivery.plan-prefix": ("choice", None, "plan/", None),  # the spec-plan branch is <prefix><first id>
     "dispatch.limit": ("int", None, "2", None),
     "process.review-rounds": ("int", None, "5", None),
     "process.light-path": ("choice", ("on", "off"), "on", None),  # off: every code edit goes through a change
     "process.light-path.max-files": ("int", None, "3", None),
+    "commit.light-prefix": ("text", None, "light:", None),  # a light commit subject starts with it, as plain text
     "reply.language": ("choice", ("ru", "en", "off"), "off", None),
     "agents": ("list", ("claude", "codex", "cursor", "other"), "claude, codex, other", None),
     "rules.scope": ("choice", ("project", "global"), "project", None),  # project: init writes the rules block into AGENTS.md
@@ -425,8 +428,8 @@ def loopback_needed(main):
     return False
 
 
-def has_branch(main, cid):
-    r = subprocess.run(["git", "-C", main, "branch", "--list", "change/" + cid],
+def has_branch(main, cid, prefix="change/"):
+    r = subprocess.run(["git", "-C", main, "branch", "--list", prefix + cid],
                        capture_output=True, text=True, stdin=subprocess.DEVNULL)
     return bool(r.stdout.strip())
 
@@ -446,15 +449,15 @@ def ignored_artifacts(main):
     return r.stdout.split() if r.returncode == 0 else []
 
 
-def worktree_of(main, cid):
-    """Path of the worktree of branch change/<id>, or an empty string."""
+def worktree_of(main, cid, prefix="change/"):
+    """Path of the worktree of branch <prefix><id>, or an empty string."""
     r = subprocess.run(["git", "-C", main, "worktree", "list", "--porcelain"],
                        capture_output=True, text=True, stdin=subprocess.DEVNULL)
     path = ""
     for ln in r.stdout.splitlines():
         if ln.startswith("worktree "):
             path = ln[len("worktree "):]
-        elif ln == "branch refs/heads/change/" + cid:
+        elif ln == "branch refs/heads/" + prefix + cid:
             return path
     return ""
 
@@ -487,6 +490,7 @@ def read_project(main, shared=()):
     if not os.path.isdir(base):
         raise OSError("no folder " + base)
     values = read_settings(main)
+    prefix = values["delivery.branch-prefix"][0]
     common, limit = agents_section(main)
     if values["dispatch.limit"][1] == "file" or limit is None:
         limit = int(values["dispatch.limit"][0])
@@ -521,8 +525,8 @@ def read_project(main, shared=()):
             "claim": os.path.exists(os.path.join(d, "CLAIM")),
             "abandoned": abandoned(os.path.join(d, "CLAIM")),
             "waiting": os.path.exists(os.path.join(d, "WAITING")),
-            "branch": has_branch(main, cid),
-            "worktree": worktree_of(main, cid),
+            "branch": has_branch(main, cid, prefix),
+            "worktree": worktree_of(main, cid, prefix),
             "uncommitted": uncommitted(main, cid),
             "deps": parse_deps(sections(src, "Depends On")),
             "reqs": reqs, "files": files, "shared": shared,
@@ -564,8 +568,8 @@ def busy(changes, running=(), waiting=()):
     return run, wait
 
 
-def plan(changes, archived, limit, running=(), specs=(), waiting=()):
-    """Pure planning -> (issued in order, [(id, reason)])."""
+def plan(changes, archived, limit, running=(), specs=(), waiting=(), prefix="change/"):
+    """Pure planning -> (issued in order, [(id, reason)]); prefix: the change branch prefix in the reasons."""
     run, wait = busy(changes, running, waiting)
     over = max(0, len(wait) - limit)
     cands = [c for c in changes if c not in run and c not in wait]
@@ -575,7 +579,7 @@ def plan(changes, archived, limit, running=(), specs=(), waiting=()):
         miss = [d for d in c["deps"] if d not in archived]
         if c["branch"]:
             wt = c.get("worktree")
-            waits.append((cid, "not merged: branch change/" + cid + (", worktree " + wt if wt else "")))
+            waits.append((cid, "not merged: branch " + prefix + cid + (", worktree " + wt if wt else "")))
         elif c["claim"]:
             waits.append((cid, c.get("abandoned") or "CLAIM"))
         elif c["waiting"]:
@@ -675,7 +679,7 @@ def main(argv):
         print("read error: %s" % e, file=sys.stderr)
         return 1
     granted, waits = plan(apply_ignores(changes, ignores), archived, limit, running,
-                          spec_names(os.path.abspath(args[0])), waiting)
+                          spec_names(os.path.abspath(args[0])), waiting, deliver["delivery.branch-prefix"][0])
     run, wait = busy(changes, running, waiting)
     print(render(granted, waits, limit, run, together(changes, granted, run, wait),
                  ignored_artifacts(os.path.abspath(args[0])), wait, loopback(loopback_needed(os.path.abspath(args[0]))), deliver))
