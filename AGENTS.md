@@ -96,7 +96,7 @@ Before "done": the `Tests` row, the lint from the table without output, `python3
 ## Lessons
 
 - A stand runs exactly what it means to test: real inputs through the host, a base commit pinned by hash and read apart from the working folder, reads on a condition, every imported module copied. ([full text](LESSONS.md#stand-runs-what-it-tests))
-- Environment detection looks only inside the passed home and PATH, and a test fixture pins every git and interpreter default it relies on. ([full text](LESSONS.md#environment-facts))
+- Environment detection looks only inside the passed home and PATH, a check of what another process will find runs in that process's own launch form, and a test fixture pins every git and interpreter default it relies on. ([full text](LESSONS.md#environment-facts))
 - A claim about a tool's behaviour, a record of edited files or of affected tests, or a new test counted as run, is written only after checking it here against the tool, the source or the suite runner's output. ([full text](LESSONS.md#probe-before-claim))
 - An unnamed "our product" means solo-sdd itself; the owner's other products are neither the subject nor a source of facts unless named. ([full text](LESSONS.md#unnamed-product))
 - A reader of a format or of a command's arguments, or a guard that predicts what a program will match, reads it by that program's own rules and options (case folding included) and every form that program writes a record in, refuses broken or unknown input before its first side effect, never skips a line, entry or argument silently, and never takes a failed call for an empty answer. ([full text](LESSONS.md#formats-read-like-their-program))

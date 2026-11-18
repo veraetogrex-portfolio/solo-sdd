@@ -556,5 +556,68 @@ class ReleaseSet(unittest.TestCase):
         self.assertTrue(cmd.startswith("python3 tests/run.py ") and cmd.endswith(" --tier slow"), cmd)
 
 
+GONE = "no_such_module_xq7"
+
+
+class ImportsFound(unittest.TestCase):
+    """Requirements: Test imports found before the run; What the import check passes by."""
+
+    def test_modules_of_the_repository(self):
+        t = Tree(self, {"helper.py": "", "test_a.py": "import helper\nimport pkg.sub\nimport check\n" + PASS})
+        (t.root / "pkg").mkdir()
+        (t.root / "tests" / "stands" / "st").mkdir(parents=True)
+        (t.root / "tests" / "stands" / "st" / "check.py").write_text("")
+        code, out, err = t.run("tests/test_a.py")
+        self.assertNotIn("missing module", err)
+        self.assertEqual(t.lines(out, "ok") + t.lines(out, "FAIL"), ["tests/test_a.py"], out + err)
+
+    def test_an_import_inside_a_function_class_if_or_try(self):
+        body = ("def f():\n    import {0}\n\n\nclass C:\n    if 0:\n        import {0}\n\n\nif 0:\n    import {0}\n"
+                "try:\n    import {0}\nexcept ImportError:\n    pass\n").format(GONE)
+        t = Tree(self, {"test_a.py": body + PASS})
+        code, out, err = t.run()
+        self.assertEqual((code, t.lines(out, "ok")), (0, ["tests/test_a.py"]), out + err)
+
+    def test_a_file_that_does_not_parse(self):
+        t = Tree(self, {"test_bad.py": "import %s\ndef (:\n" % GONE})
+        code, out, err = t.run()
+        self.assertEqual((code, t.lines(out, "FAIL")), (1, ["tests/test_bad.py"]), out + err)
+        self.assertIn("SyntaxError", out)
+
+    def test_no_install_row(self):
+        t = Tree(self, {"test_m.py": "import %s.sub\n" % GONE + PASS})
+        code, out, err = t.run()
+        self.assertEqual((code, t.lines(out, "ok") + t.lines(out, "FAIL")), (2, []), out + err)
+        line = next((ln for ln in err.splitlines() if ln.startswith("missing module %s " % GONE)), err)
+        self.assertIn("tests/test_m.py", line)
+        self.assertTrue(line.endswith("install command: see the Install row of AGENTS.md"), line)
+
+    def test_the_lookup_runs_as_the_test_files_run(self):
+        # a regression of review round 1: `-E` hid a PYTHONPATH module the files themselves import
+        t = Tree(self, {"test_a.py": "import extra_mod\n" + PASS})
+        (t.root / "extra").mkdir()
+        (t.root / "extra" / "extra_mod.py").write_text("")
+        p = subprocess.run([sys.executable, "-E", "tests/run.py"], cwd=t.root, stdin=subprocess.DEVNULL,
+                           env=dict(os.environ, PYTHONPATH=str(t.root / "extra")), capture_output=True, text=True,
+                           timeout=120)
+        self.assertEqual((p.returncode, t.lines(p.stdout, "ok")), (0, ["tests/test_a.py"]), p.stdout + p.stderr)
+
+    def test_the_install_row_is_read_as_a_table_row(self):
+        # a regression of review round 1: a fenced row, a prose line, an escaped pipe and a double-backtick span
+        rows = {"```\n| Install | `old` |\n```\n| Install | `real` |\n": "real",
+                "Install | `prose`\n": "see the Install row of AGENTS.md",
+                "| Install | `a \\| b` |\n": "a | b",
+                "| Install | ``pip `x` y`` |\n": "pip `x` y",
+                "| Install | Python 3 only |\n": "see the Install row of AGENTS.md"}
+        d = pathlib.Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, d, True)
+        old = run_mod.ROOT
+        self.addCleanup(setattr, run_mod, "ROOT", old)
+        run_mod.ROOT = d
+        for text, want in rows.items():
+            (d / "AGENTS.md").write_text(text, encoding="utf-8")
+            self.assertEqual(run_mod.install_command(), want, text)
+
+
 if __name__ == "__main__":
     unittest.main()
