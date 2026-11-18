@@ -12,6 +12,8 @@ WORKTREE is prepared: solo-sdd/, AGENTS.md and the node_modules links are alread
 
 A hook blocked a subagent launch or a command: do not bypass it (neither SOLO_SDD_EXPENSIVE_OK nor rewording). Do what the hook requires and record the block in HOOKS.
 
+Status self-check: before handing back archived, write the block to a file outside WORKTREE and run `python3 ~/.local/bin/sdd-dispatch.py accept <file>`; correct a mismatched field from the real output and repeat, hand back archived only after "status matches". The LIVE text after "->" is one line of the command's output, copied verbatim; a failing command is not edited into the field: fix the change and check again, or hand back not_ready with the failure in NOTES.
+
 Do not print the spec-next report. As the last message return only this block:
 
 STATUS: archived | not_ready | blocked
