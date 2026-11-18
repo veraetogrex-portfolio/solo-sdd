@@ -703,7 +703,8 @@ class Screen:
                 title = "New checklist: its name (lowercase letters, digits and -)"
             else:
                 title = self.target + ": " + settings.describe(self.target, self.values())["type"]
-            return [title, "", "> " + shown(self.buffer) + "_"], set()
+            tail = fit(shown(self.buffer)[::-1], self.width - 4)[::-1]  # "> ", the tail and "_" in width - 1
+            return [title, "", "> " + tail + "_"], set()
         if self.mode == "machine":
             return self.draw_machine()
         if self.mode == "whole":
