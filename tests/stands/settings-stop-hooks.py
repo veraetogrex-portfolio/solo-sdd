@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Live scenario of settings-stop-hooks: the real global/work_hooks.py run as a process on /usr/bin/python3, the way
 Claude Code starts it, fed Stop and PreToolUse events of a temporary git project under a temporary HOME. Only gh is
-faked (first in PATH): `gh pr view` answers an open PR. The push of step 6 is real, into a bare repository.
+faked (first in PATH): `gh pr view` answers an open PR. The push of step 6 is real, into a bare repository. Steps 7 and 8
+run the stop in a git worktree: one that commits its own config, one of a repository that ignores the config file.
 
 Usage: python3 tests/stands/settings-stop-hooks.py (from the repository root)
-Prints one PASS or FAIL line per check and `<n> of 6 checks passed`; code 0 when all pass. The stand creates and
+Prints one PASS or FAIL line per check and `<n> of 8 checks passed`; code 0 when all pass. The stand creates and
 removes its temporary folder itself."""
 import json
 import os
@@ -128,8 +129,30 @@ def run(tmp):
     check(6, "an open PR after a push: not blocked under delivery.merge-by: human, blocked under agent",
           r1 == "" and "pull/7 is open and not merged" in r2, "%r / %r" % (r1, r2))
 
+    w = project("proj-wt")
+    config(w, "hooks.stop.open-pr: on\n")
+    git(w, "add", "-A")
+    git(w, "commit", "-qm", "config on")
+    wt = tmp / "wt"
+    git(w, "worktree", "add", "-q", str(wt), "-b", "change/wt")
+    config(wt, "hooks.stop.open-pr: off\n")
+    git(wt, "commit", "-qam", "config off")
+    r1 = stop(wt, push=True)
+    r2 = stop(w, push=True)
+    check(7, "a worktree that commits hooks.stop.open-pr: off over the main's on: not blocked; the main checkout: blocked",
+          r1 == "" and "pull/7 is open and not merged" in r2, "%r / %r" % (r1, r2))
+
+    x = project("proj-ignored")
+    (x / ".git/info/exclude").write_text("solo-sdd/config\n")
+    config(x, "delivery.merge-by: human\n")
+    wt2 = tmp / "wt-ignored"
+    git(x, "worktree", "add", "-q", str(wt2), "-b", "change/wt")
+    r1 = stop(wt2, push=True)
+    check(8, "a worktree without the ignored config: the main's delivery.merge-by: human applies, not blocked",
+          not (wt2 / "solo-sdd/config").exists() and r1 == "", r1)
+
     print("%d of %d checks passed" % (sum(checks), len(checks)))
-    return 0 if all(checks) and len(checks) == 6 else 1
+    return 0 if all(checks) and len(checks) == 8 else 1
 
 
 if __name__ == "__main__":
