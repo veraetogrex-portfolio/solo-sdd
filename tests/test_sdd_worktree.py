@@ -808,6 +808,22 @@ class DiscardTests(unittest.TestCase):
         self.assertEqual(tree(r.main), before)
         self.assertTrue((r.main / "node_modules/p/i.js").exists())
 
+    @unittest.skipIf(os.geteuid() == 0, "root writes through a read-only mode")
+    def test_later_link_failure_keeps_made_links_excluded(self):  # Worktree venv link: A later link fails
+        r = Repo(ignore="openspec/\nAGENTS.md\n", tracked=["app/keep.txt"])
+        self.addCleanup(r.close)
+        put(r.main, "app/node_modules/p/i.js", "1\n")
+        put(r.main, ".venv/bin/python", "x\n")
+        os.chmod(r.wt, 0o555)  # app/ stays writable: app/node_modules is made, the root .venv link fails
+        self.addCleanup(lambda: r.wt.exists() and os.chmod(r.wt, 0o755))
+        self.assertEqual(run("setup", r.main, r.wt).returncode, 1)
+        os.chmod(r.wt, 0o755)
+        self.assertTrue((r.wt / "app/node_modules/.sdd-worktree").exists())
+        self.assertIn("node_modules", (r.main / ".git/info/exclude").read_text().splitlines())
+        self.assertEqual(git(r.wt, "status", "--short"), "")
+        res = run("remove", r.main, r.wt)
+        self.assertEqual(res.returncode, 0, res.stderr)
+
     def test_commit_in_branch_refuses(self):
         r = self.prepared()
         self.assertEqual(run("setup", r.main, r.wt).returncode, 0)

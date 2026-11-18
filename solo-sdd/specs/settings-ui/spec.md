@@ -25,7 +25,7 @@ An interactive full-screen terminal screen where a person reads and changes ever
 - **THEN** the same line naming `solo-sdd config` is printed, exit 1, and no file changes
 
 ### Requirement: Edit by type
-Editing a key SHALL offer a pick list for a choice, a number entry for a whole number, checkboxes for a list with known values, and a text entry for other lists, names and paths. Every entered value SHALL pass the same check as `config set`; a refused value SHALL keep the old one and show the reason. Reset SHALL put the key back to the value below the file.
+Editing a key SHALL offer a pick list for a choice, a number entry for a whole number, checkboxes for a list with known values, and a text entry for other lists, names and paths. Every entered value SHALL pass the same check as `config set`; a refused value SHALL keep the old one and show the reason. Reset SHALL put the key back to the value below the file. A text entry longer than the screen SHALL show the end of the value and the cursor.
 
 #### Scenario: A choice
 - **WHEN** the person selects `delivery.mode`, presses Enter and picks `pr`
@@ -42,6 +42,10 @@ Editing a key SHALL offer a pick list for a choice, a number entry for a whole n
 #### Scenario: Reset
 - **WHEN** the file has `dispatch.limit: 4` and the person resets the key
 - **THEN** the key shows `2` with source `default`, marked as unsaved
+
+#### Scenario: A long text entry
+- **WHEN** the person types 150 characters into the entry of `delivery.deploy` on an 80-column screen
+- **THEN** the entry line shows the last characters typed and the `_` cursor, and the value keeps all 150 characters
 
 ### Requirement: Save only edited lines
 Edits SHALL stay in memory until save. Save SHALL list each edited key with its old and new value and write only after confirmation, changing only the lines of edited keys the way `config set` and `unset` do. A file whose bytes changed since the screen read it SHALL NOT be written; the screen says so. Quit with unsaved edits SHALL ask; Ctrl-C SHALL leave without writing and restore the terminal.
