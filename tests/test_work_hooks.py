@@ -916,17 +916,49 @@ class StopGateSwitches(HookCase):
         r = self.stop("S-g1", tr)
         assert "not archived" not in r and "uncommitted" in r and "The interface changed" in r, r
 
-    def test_open_pr_gate(self):
-        proj, fbin = os.path.join(H, "proj-pr"), os.path.join(H, "fake-gh")
-        os.makedirs(fbin)
-        subprocess.run(["git", "init", "-q", proj], check=True)
+    def open_pr_env(self):
+        """A transcript with a git push and an env whose gh shows an open PR .../pull/9."""
+        fbin = os.path.join(H, "fake-gh")
+        os.makedirs(fbin, exist_ok=True)
         open(os.path.join(fbin, "gh"), "w").write('#!/bin/sh\necho \'{"state": "OPEN", "url": "https://github.com/o/r/pull/9"}\'\n')
         os.chmod(os.path.join(fbin, "gh"), 0o755)
-        tr, env = edits_transcript("t-pr.jsonl", push=True), dict(ENV, PATH=fbin + os.pathsep + ENV["PATH"])
+        return edits_transcript("t-pr.jsonl", push=True), dict(ENV, PATH=fbin + os.pathsep + ENV["PATH"])
+
+    def test_open_pr_gate(self):
+        proj = os.path.join(H, "proj-pr")
+        subprocess.run(["git", "init", "-q", proj], check=True)
+        tr, env = self.open_pr_env()
         # the stand settings-stop-hooks.py step 6 covers the switch on under human and agent merges
         project_config(proj, "hooks.stop.open-pr: off\n")
         r = self.stop("S-pr-off", tr, proj, env)
         assert "pull/9 is open and not merged" not in r, r
+
+    def test_a_worktree_reads_its_own_config(self):
+        tr, env = self.open_pr_env()
+        # a branch that removed the tracked file has the defaults: the main's off does not apply
+        for name, ignored, main_cfg, wt_cfg, blocked in (("own", False, "hooks.stop.open-pr: on\n", "hooks.stop.open-pr: off\n", False),
+                                                         ("none", True, "delivery.merge-by: human\n", None, False),
+                                                         ("removed", False, "hooks.stop.open-pr: off\n", None, True)):
+            proj, wt = os.path.join(H, "proj-wt-" + name), os.path.join(H, "wt-" + name)
+            g = ["git", "-C", proj, "-c", "user.email=t@t", "-c", "user.name=t"]
+            subprocess.run(["git", "init", "-q", proj], check=True)
+            if ignored:
+                os.makedirs(os.path.join(proj, ".git/info"), exist_ok=True)
+                open(os.path.join(proj, ".git/info/exclude"), "a").write("solo-sdd/config\n")
+            project_config(proj, main_cfg)
+            open(os.path.join(proj, "a.txt"), "w").write("a\n")
+            subprocess.run(g + ["add", "-A"], check=True)
+            subprocess.run(g + ["commit", "-qm", "init"], check=True)
+            subprocess.run(g + ["worktree", "add", "-q", wt, "-b", "change/" + name], check=True, capture_output=True)
+            if wt_cfg:
+                project_config(wt, wt_cfg)
+            elif not ignored:
+                os.remove(os.path.join(wt, "solo-sdd/config"))
+            if not ignored:
+                subprocess.run(["git", "-C", wt, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qam", "config"], check=True)
+            assert os.path.exists(os.path.join(wt, "solo-sdd/config")) == bool(wt_cfg), name
+            r = self.stop("S-wt-" + name, tr, wt, env)
+            assert ("pull/9 is open and not merged" in r) == blocked, name + ": " + r
 
     def test_settings_of_the_edited_repository(self):
         b = os.path.join(H, "proj-b")

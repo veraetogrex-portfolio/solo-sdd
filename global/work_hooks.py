@@ -2769,8 +2769,11 @@ def cmd_stop(inp):
                            "or say what is missing." % os.path.basename(cdir))
 
     root = git_root(cwd)
-    main = main_checkout(root) if pushed and root else None
-    if main and gate_setting(main, "hooks.stop.open-pr") == "on" and gate_setting(main, "delivery.merge-by") != "human":
+    # read the checked copy's settings; an ignored config the copy lacks is kept only in the main checkout, so read the main's
+    lacks = pushed and root and not os.path.lexists(os.path.join(root, SETTINGS_FILE)) \
+        and sh(["git", "check-ignore", SETTINGS_FILE], cwd=root)
+    cfg = (main_checkout(root) if lacks else root) if pushed and root else None
+    if cfg and gate_setting(cfg, "hooks.stop.open-pr") == "on" and gate_setting(cfg, "delivery.merge-by") != "human":
         # a person merges: an open PR is the expected end, whatever the switch says
         pr = sh(["gh", "pr", "view", "--json", "state,url"], cwd=root, timeout=10)
         try:
