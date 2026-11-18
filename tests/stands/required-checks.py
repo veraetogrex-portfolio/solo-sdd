@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Live scenario of pr-wait-required without a repository (Fallback): the real global/sdd_pr.py wait
 against a fake gh first in PATH. The fake returns branch rules with a required `PR title` and a list
-of checks; the stuck-check deadline of 300 s is replaced by the parameter --stuck 1.
+of checks, or fails every checks read; the stuck-check deadline of 300 s is replaced by the parameter --stuck 1.
 
 Usage: python3 tests/stands/required-checks.py
 Code 0 means every scenario matched. The stand creates and removes its temporary folder itself."""
@@ -30,6 +30,9 @@ cfg = json.load(open(os.environ["STAND_CFG"]))
 a = sys.argv[1:]
 if a[:2] == ["pr", "view"]:
     print(json.dumps({{"baseRefName": "main"}}))
+elif a[:2] == ["pr", "checks"] and cfg["checks"] == "fail":  # every read fails, as with a broken gh login
+    sys.stderr.write("HTTP 401: Bad credentials\\n")
+    sys.exit(1)
 elif a[:2] == ["pr", "checks"]:
     print(json.dumps(cfg["checks"]))
 elif a[:1] == ["api"] and "/code-scanning/" in a[1]:  # code scanning is not enabled in the stand
@@ -57,6 +60,8 @@ CASES = [
      (0, f"PR #1 {URL} CI: green", "")),
     ("rules not readable", {"rules": "fail", "checks": [CHECKS, CODEQL]},
      (0, f"PR #1 {URL} CI: green", WARN)),
+    ("checks not read with a required check", {"rules": RULES, "checks": "fail", "timeout": 3},
+     (4, f"PR #1 {URL} CI: infra\nchecks not read: HTTP 401: Bad credentials", "")),
 ]
 
 
@@ -70,7 +75,7 @@ def main():
         for name, cfg, want in CASES:
             (d / "cfg.json").write_text(json.dumps(cfg))
             t = time.monotonic()
-            p = subprocess.run([sys.executable, str(SCRIPT), "wait", URL, "--timeout", "30",
+            p = subprocess.run([sys.executable, str(SCRIPT), "wait", URL, "--timeout", str(cfg.get("timeout", 30)),
                                 "--interval", "0.2", "--stuck", "1"],
                                capture_output=True, text=True, stdin=subprocess.DEVNULL, env=env, timeout=60)
             got = (p.returncode, p.stdout.strip(), p.stderr.strip())

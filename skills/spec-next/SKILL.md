@@ -59,6 +59,7 @@ The mode turns on when the prompt names "Under the dispatcher" and passes `MAIN`
 - Instead of the report, as the last message hand back only the status block in the format from the dispatcher prompt (capability `orchestrator-status`); the number of rounds, whether the extra round ran, `Pre-existing` and a reviewer failure go into the findings line of the `REVIEW` field. The report's `Lesson` lines (global rules, section Lessons) go right under `NOTES`, above its line limit; no lesson, no line.
 
   The change did not reach the archive (the live scenario failed, a blocker, an open `Important`): `STATUS: not_ready` or `blocked`, the reason in `NOTES`. The handback hook rejects `archived` if the commit, the archive or the removed `CLAIM` do not match the fields: remove the mismatch or hand back `not_ready`.
+- Status self-check: before handing back `archived`, write the status block to a file outside `WORKTREE` and run `python3 ~/.local/bin/sdd-dispatch.py accept <file>`. On code 1 correct the stated field from the real output (the `LIVE` text after `->` is one printed line, copied verbatim), on code 2 fix the block's format, and repeat; hand back `archived` only after `status matches`. A failing `LIVE` or `VALIDATE` command is not edited into the field: fix the change and check again, or hand back `not_ready` with the failure in `NOTES`. The dispatcher still runs its own `accept`.
 
 ## Decisions without questions
 
