@@ -2,6 +2,48 @@
 
 The changes each version archived, by name; the change folders are in `solo-sdd/changes/archive/<date>-<change>` of the author's working folder, which is not published.
 
+## 0.3.0
+
+- config-describe
+- delivery-ci-green
+- npm-publish-no-token
+- readme-showcase
+- settings-tui
+- settings-tui-home
+- settings-tui-lists
+- cli-menu
+- codex-hooks-layout
+- dispatch-run-decisions
+- plan-commit-branch-fix
+- project-rules-stale
+- reply-language-requests
+- sync-args-fix
+- review-rounds-five
+- settings-agent-models
+- settings-branch-names
+- settings-change-limits
+- settings-ci-wait
+- settings-delivery-items
+- settings-gitignore
+- settings-local-merge
+- skill-compaction-budget
+- update-check
+- dispatch-skill-ci-and-return
+- dispatched-status-self-check
+- fix-ci-wait-unread-checks
+- fix-plan-local-merge-line
+- fix-settings-entry-scroll
+- fix-settings-fit-zero-width
+- fix-setup-links-exclude
+- fix-stop-gate-worktree-config
+- fix-stop-gates-ignored-config
+- fix-venv-exclude-line
+- fix-worktree-ignored-overwrite
+- settings-project-rules
+- settings-stop-hooks
+- settings-working-copy
+- test-runner-deps-check
+
 ## 0.2.0
 
 - cli-core
