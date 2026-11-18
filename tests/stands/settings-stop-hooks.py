@@ -2,10 +2,11 @@
 """Live scenario of settings-stop-hooks: the real global/work_hooks.py run as a process on /usr/bin/python3, the way
 Claude Code starts it, fed Stop and PreToolUse events of a temporary git project under a temporary HOME. Only gh is
 faked (first in PATH): `gh pr view` answers an open PR. The push of step 6 is real, into a bare repository. Steps 7 and 8
-run the stop in a git worktree: one that commits its own config, one of a repository that ignores the config file.
+run the stop in a git worktree: one that commits its own config, one of a repository that ignores the config file;
+steps 9 and 10 run the uncommitted and ui-check gates in that second worktree.
 
 Usage: python3 tests/stands/settings-stop-hooks.py (from the repository root)
-Prints one PASS or FAIL line per check and `<n> of 8 checks passed`; code 0 when all pass. The stand creates and
+Prints one PASS or FAIL line per check and `<n> of 10 checks passed`; code 0 when all pass. The stand creates and
 removes its temporary folder itself."""
 import json
 import os
@@ -151,8 +152,17 @@ def run(tmp):
     check(8, "a worktree without the ignored config: the main's delivery.merge-by: human applies, not blocked",
           not (wt2 / "solo-sdd/config").exists() and r1 == "", r1)
 
+    config(x, "hooks.stop.uncommitted: off\n")
+    r1 = stop(wt2, "notes.txt")
+    check(9, "an uncommitted edit in that worktree: the main's hooks.stop.uncommitted: off applies, not blocked", r1 == "", r1)
+
+    config(x, "hooks.stop.ui-check: off\n")
+    r1 = stop(wt2, "app.css")
+    check(10, "app.css in that worktree: the main's hooks.stop.ui-check: off applies, blocked only for the uncommitted edit",
+          "uncommitted edits" in r1 and "The interface changed" not in r1, r1)
+
     print("%d of %d checks passed" % (sum(checks), len(checks)))
-    return 0 if all(checks) and len(checks) == 8 else 1
+    return 0 if all(checks) and len(checks) == 10 else 1
 
 
 if __name__ == "__main__":
