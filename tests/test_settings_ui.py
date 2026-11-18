@@ -17,7 +17,7 @@ from hypothesis import example, given, settings as hsettings, strategies as st
 
 REPO = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 sys.path.insert(0, REPO)
-from solo_sdd import init, settings, settings_ui  # noqa: E402
+from solo_sdd import __version__, init, settings, settings_ui  # noqa: E402
 from test_settings import VALUES, files  # noqa: E402
 
 
@@ -641,7 +641,7 @@ class Machine(unittest.TestCase):
                     press(s, "down")
                 press(s, "esc")
             self.assertIn(solid([whole]), solid(ln for ln in lines if not ln.endswith("Up/Down scrolls")), whole)
-        self.assertIn("0.2", flat([info[0]]), "the version is in the layout row")
+        self.assertIn(__version__, flat([info[0]]), "the version is in the layout row")
         self.item(s, "agent", "codex")
         press(s, "space")
         self.item(s, "rules")
