@@ -323,7 +323,7 @@ class RequiredChecks(Base):
         self.assert_stuck(self.wait(self.env(rules_json=RULES), timeout="0.2", stuck="300"))
 
     def test_no_checks_waits_stuck_limit(self):  # with required checks an empty list waits the stuck deadline, not 180 s
-        with mock.patch.object(sp, "checks", return_value=[]), \
+        with mock.patch.object(sp, "checks", return_value=([], "")), \
                 mock.patch.object(sp, "required_checks", return_value={TITLE}), \
                 mock.patch("sys.stdout", new_callable=io.StringIO) as out:
             t = time.monotonic()
@@ -506,7 +506,7 @@ class CodeScanning(Base):
     def test_code_scanning_in_ci_wait_line_limit(self, n, texts):
         alerts = [alert(i, text=texts[i % len(texts)]) for i in range(1, n + 1)]
         reply = subprocess.CompletedProcess([], 0, json.dumps(alerts), "")
-        with mock.patch.object(sp, "checks", return_value=[DONE]), \
+        with mock.patch.object(sp, "checks", return_value=([DONE], "")), \
                 mock.patch.object(sp, "required_checks", return_value=set()), \
                 mock.patch.object(sp, "sh", return_value=reply) as sh, \
                 mock.patch("sys.stdout", new_callable=io.StringIO) as out:
@@ -1903,11 +1903,16 @@ class MergeGateSettings(Base):
         e = self.env(fail_json={"token": "checks", "code": 1})
         put_config(e, "delivery.require-ci: off\ndelivery.ci-no-checks: 1\n")
         r = self.wait(e, "--timeout", "3")
-        self.assertEqual((r.returncode, r.stdout.splitlines()), (4, [INFRA_LINE, "checks not read"]), r.stderr)
+        self.assertEqual((r.returncode, r.stdout.splitlines()), (4, [INFRA_LINE, "checks not read: boom checks"]), r.stderr)
         r = e.run("merge", URL, "squash", "abc123")
         self.assertEqual(r.returncode, 1)
         self.assertIn("checks not read", r.stderr)
         self.assertEqual(e.calls("gh", "api", "-X", "PUT"), [])
+
+    def test_unread_checks_with_a_required_check(self):  # a failed read never makes a required check "did not start"
+        e = self.env(rules_json=RULES, fail_json={"token": "checks", "code": 1})
+        r = self.wait(e, "--timeout", "0.5", "--stuck", "0.1")
+        self.assertEqual((r.returncode, r.stdout.splitlines()), (4, [INFRA_LINE, "checks not read: boom checks"]), r.stderr)
 
     def test_ci_optional_with_unread_rules(self):  # rules not read: a required check may exist, so no none
         e = self.env(rulesfail_txt="x")

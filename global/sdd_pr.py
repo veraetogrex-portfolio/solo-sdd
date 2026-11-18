@@ -736,13 +736,15 @@ def brief(text):
 
 
 def checks(url):
-    """The PR check rows; [] when gh reports no checks, None when the request failed otherwise (a failure is never
-    "no checks": under delivery.require-ci: off that would merge without seeing a red check)."""
+    """(rows, error): the PR check rows; [] when gh reports no checks, None with gh's brief error when the request failed
+    otherwise (a failure is never "no checks": under delivery.require-ci: off that would merge without seeing a red check)."""
     p = sh("gh", "pr", "checks", url, "--json", "name,state,bucket,link")
     try:
-        return json.loads(p.stdout)
+        return json.loads(p.stdout), ""
     except ValueError:
-        return [] if "no checks reported" in p.stderr else None  # gh without checks prints an error, not JSON
+        if "no checks reported" in p.stderr:  # gh without checks prints an error, not JSON
+            return [], ""
+        return None, brief(p.stderr) or f"gh exit {p.returncode}"
 
 
 def failed_log(rows):
@@ -855,13 +857,15 @@ def cmd_wait(url, timeout=1200.0, interval=15.0, limit=300.0, root=None, no_chec
     start = time.monotonic()  # the deadline is for CI, reading the rules is not part of it
     since = None  # from which poll there is nothing to wait for but the stuck ones
     while True:
-        rows = checks(url)
+        rows, error = checks(url)
         unread, rows = rows is None, rows or []
         now = time.monotonic()
         elapsed = now - start
-        stuck = stuck_checks(rows, required)
-        since = (since or now) if stuck else None
-        verdict = ci_verdict(rows, required, now - since if stuck else 0, limit)
+        # an unread poll is no evidence that a check started or did not: no stuck, the stuck timer stays as it was
+        stuck = [] if unread else stuck_checks(rows, required)
+        if not unread:
+            since = (since or now) if stuck else None
+        verdict = None if unread else ci_verdict(rows, required, now - since if stuck else 0, limit)
         if verdict == "green":
             alerts = scan_alerts(url) if scan != "off" else []
             if alerts and scan == "gate":
@@ -885,7 +889,7 @@ def cmd_wait(url, timeout=1200.0, interval=15.0, limit=300.0, root=None, no_chec
         if verdict == "stuck" or elapsed >= timeout or no_rows_end:
             print(head + "infra")
             print("\n".join(f"required check did not start: {x}" for x in stuck)
-                  or ("checks not read" if unread else "no checks" if not rows else "timeout: checks did not finish"))
+                  or (f"checks not read: {error}" if unread else "no checks" if not rows else "timeout: checks did not finish"))
             return 4
         time.sleep(interval)
 
@@ -1079,7 +1083,7 @@ def cmd_merge(url, how, sha, title=None, main=None, wt=None):
     if behind > 0:
         print(f"PR #{n} behind {behind}: main moved ahead")
         return 5
-    rows = checks(url)
+    rows = checks(url)[0]
     if rows is None:
         die(f"PR #{n} CI not green: checks not read")
     bad = [f"{r.get('name')} ({r.get('bucket')})" for r in rows if r.get("bucket") not in ("pass", "skipping")]
