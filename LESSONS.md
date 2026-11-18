@@ -127,7 +127,7 @@ A new outcome or exemption of a step is written where the rule it changes is rea
 
 ### scenarios-only-new-code
 
-A scenario of a change that adds a behaviour names what only the new code produces, and an example project's own checks are ones its shipped open change already meets: otherwise a test written first passes on the old code, or the agent rewrites the example before code; a plan for a feature a person uses covers its life around the request unasked (how it is found, kept current after an update, switched off, and what it shows when it fails or contradicts another source), not only the words of the request.
+A scenario of a change that adds a behaviour names what only the new code produces, and an example project's own checks are ones its shipped open change already meets: otherwise a test written first passes on the old code, or the agent rewrites the example before code; the test of a scenario asserts the literal form its THEN names (a line, a path, a message), not only its effect, otherwise the spec text and the code drift apart unseen (a spec named the exclusion line `.venv` while the code wrote `/.venv`); a plan for a feature a person uses covers its life around the request unasked (how it is found, kept current after an update, switched off, and what it shows when it fails or contradicts another source), not only the words of the request.
 
 ### gates-from-sources
 

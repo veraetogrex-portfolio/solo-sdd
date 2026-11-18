@@ -117,7 +117,7 @@ class SetupTests(unittest.TestCase):
             self.assertEqual(os.path.realpath(pkg), os.path.realpath(r.main / rel / pkg.name))
         self.assertEqual(git(r.wt, "status", "--short"), "")
 
-    def test_links_excluded_without_gitignore(self):
+    def test_links_excluded_without_gitignore(self):  # Worktree venv link: The .venv link is invisible to git
         r = Repo(ignore="openspec/\nAGENTS.md\n")
         self.addCleanup(r.close)
         put(r.main, "AGENTS.md", "a\n")
@@ -125,6 +125,9 @@ class SetupTests(unittest.TestCase):
         put(r.main, ".venv/bin/python", "x\n")
         self.assertEqual(run("setup", r.main, r.wt).returncode, 0)
         self.assertTrue((r.wt / ".venv").is_symlink())
+        lines = (r.main / ".git/info/exclude").read_text().splitlines()
+        self.assertIn("/.venv", lines)
+        self.assertNotIn(".venv", lines)
         self.assertEqual(git(r.wt, "status", "--short"), "")
 
     def test_workspace_package(self):
