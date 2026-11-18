@@ -41,4 +41,4 @@ none
 
 ## Source
 
-"Да, заведи change" (the owner, 2026-11-18, on the follow-up list after the settings-* run, item: a `gh pr checks` call that keeps failing under require-ci on is reported as "required check did not start")
+The owner, 2026-11-18 (translated from Russian): "Yes, create a change" (on the follow-up list after the settings-* run, item: a `gh pr checks` call that keeps failing under require-ci on is reported as "required check did not start")

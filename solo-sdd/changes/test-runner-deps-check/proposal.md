@@ -36,4 +36,4 @@ none
 
 ## Source
 
-"Да, заведи change" (the owner, 2026-11-18, on the follow-up list after the settings-* run, item: the `Tests` row names a bare `python3` that can resolve to an interpreter without the test dependencies)
+The owner, 2026-11-18 (translated from Russian): "Yes, create a change" (on the follow-up list after the settings-* run, item: the `Tests` row names a bare `python3` that can resolve to an interpreter without the test dependencies)
