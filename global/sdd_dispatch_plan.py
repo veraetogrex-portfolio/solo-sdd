@@ -31,7 +31,8 @@ Second line: «loopback: ok» or «loopback: blocked: <error>»: a listen and a 
 the timeout LOOPBACK_TIMEOUT; a sandbox may deny them. dispatch.loopback: on (solo-sdd/config, else the item «Loopback:
 needed» of the AGENTS.md section «Commands» or «Working copy»: the project's tests need local sockets) makes it
 «loopback: blocked (needed by the project): <error>».
-Third line: «delivery: <local|pr> (<source>), merge: <squash|merge|rebase> (<source>)»: each from solo-sdd/config (file),
+Third line: «delivery: pr (<source>), merge: <squash|merge|rebase> (<source>)» (delivery.merge, the PR method), in local mode
+«delivery: local (<source>), local merge: <merge|squash|rebase> (<source>)» (delivery.local-merge, what land-local uses): each from solo-sdd/config (file),
 else the «Mode:» and «Merge:» items of the AGENTS.md section «Delivery» with an allowed value (AGENTS.md), else the team
 default under mode: team (mode), else the settings default (default: nothing names it).
 """
@@ -824,7 +825,9 @@ def render(granted, waits, limit, running, pairs=(), outside=(), waiting=(), pro
     if probe is not None:
         out.append("loopback: " + probe)
     if deliver:
-        out.append("delivery: %s (%s), merge: %s (%s)" % (deliver["delivery.mode"] + deliver["delivery.merge"]))
+        local = deliver["delivery.mode"][0] == "local"
+        out.append("delivery: %s (%s), %s: %s (%s)" % (deliver["delivery.mode"] + ("local merge" if local else "merge",)
+                                                      + deliver["delivery.local-merge" if local else "delivery.merge"]))
     out += ["launch: " + (" ".join(granted) or "none")] + list(pairs)
     if outside:
         out.append("Artifacts outside git: " + ", ".join(outside))
