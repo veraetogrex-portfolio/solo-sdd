@@ -954,6 +954,48 @@ class ShipLand(ShipLandRepo):
                                            capture_output=True).returncode, 0)
         self.no_branch_on_origin()
 
+    def test_ship_keeps_worktree_ignored_files(self):
+        # Requirement: Ship keeps worktree ignored files. Scenario: The base branch now tracks an ignored file
+        self.put(self.main, ".git/info/exclude", "docs/notes.md\ncache\nNotes.md\nvendor\nlib\next\n")
+        self.put(self.wt, "docs/notes.md", "mine\n")
+        self.put(self.wt, "cache", "mine\n")  # an ignored file where origin/main now needs a directory
+        self.put(self.wt, "Notes.md", "mine\n")  # the same file as notes.md on a case-insensitive disk
+        g(self.wt, "init", "-q", "vendor")  # an ignored nested repository: git lists it as `vendor/`
+        self.put(self.wt, "vendor/x", "mine\n")
+        g(self.wt, "init", "-q", "lib")  # a nested repository origin/main adds a new file to: nothing in the way
+        self.put(self.wt, "lib/y", "mine\n")
+        g(self.wt, "init", "-q", "ext")  # a file in a nested repository where origin/main needs a directory
+        self.put(self.wt, "ext/a", "mine\n")
+        self.advance_origin("docs/notes.md", "main\n")
+        for rel in ("cache/x", "notes.md", "vendor/x", "lib/new", "ext/a/b"):
+            self.advance_origin(rel, "x\n", rel)
+        head = self.head()
+        e = self.mk()
+        r = self.ship(e)
+        self.assertEqual(r.returncode, 1, r.stderr)
+        fold = (self.wt / "NOTES.MD").exists()
+        self.assertIn("not shipped: merge would overwrite ignored files in WORKTREE: cache, docs/notes.md, ext/, "
+                      + "Notes.md, " * fold + "vendor/", r.stderr.splitlines())
+        self.assertEqual(self.head(), head)
+        for rel in ("docs/notes.md", "cache", "Notes.md", "vendor/x", "ext/a"):
+            self.assertEqual((self.wt / rel).read_text(), "mine\n")
+        self.no_branch_on_origin()
+        self.assertEqual(e.calls("gh", "pr", "create"), [])
+
+    def test_ship_tracked_dir_becomes_file(self):
+        # Requirement: Ship keeps worktree ignored files: origin/main turns the tracked directory docs/ into a file and
+        # WORKTREE holds only tracked files there, so nothing is refused
+        self.advance_origin("README.md", "r2\n")  # the helper clone
+        helper = self.root / "helper"
+        g(helper, "rm", "-q", "docs/cli.md")
+        self.put(helper, "docs", "file\n")
+        g(helper, "add", "docs")
+        g(helper, "commit", "-qm", "docs file")
+        g(helper, "push", "-q", "origin", "main")
+        r = self.ship(self.mk())
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual((self.wt / "docs").read_text(), "file\n")
+
     def test_ship_refresh_conflict(self):
         self.put(self.main, "openspec/a.md", "a\nMAIN\nc\n")
         self.put(self.wt, "openspec/a.md", "a\nWT\nc\n")
@@ -1171,7 +1213,7 @@ SHIP_STEPS = [("git", " fetch "), ("git", " merge -q --no-edit "), ("sdd-worktre
               ("git", " push "), ("gh", "pr list"), ("gh", "pr create")]
 LAND_STEPS = [("gh", "-X PUT"), ("git", " fetch -q origin"), ("git", "--ff-only"),
               ("sdd-worktree", "transport"), ("sdd-worktree", "remove"), ("git", "branch -D")]
-TOKENS = {"ship": ["fetch", "merge", "refresh", "push", "pr list", "pr create"],
+TOKENS = {"ship": ["fetch", "merge -q", "refresh", "push", "pr list", "pr create"],
           "land": ["-X PUT", "fetch", "--ff-only", "transport", "remove", "branch -D"]}
 
 

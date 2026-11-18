@@ -389,14 +389,53 @@ def overwritten(main, branch):
     base = git(main, "merge-base", "HEAD", branch)
     if base.returncode:
         return [], "merge-base: " + base.stderr.strip()
-    diff = git(main, "diff", "--name-only", "-z", "--no-renames", "--diff-filter=d", base.stdout.strip(), branch)
-    if diff.returncode:
-        return [], "diff: " + diff.stderr.strip()
-    ls = git(main, "ls-files", "-z")
-    if ls.returncode:
-        return [], "ls-files: " + ls.stderr.strip()
-    tracked = set(ls.stdout.split("\0"))
-    return [f for f in diff.stdout.split("\0") if f and f not in tracked and os.path.lexists(os.path.join(main, f))], ""
+    return untracked_written(main, base.stdout.strip(), branch)
+
+
+def written_over(repo, written, untracked, fold):
+    """The untracked entries (git's own list, ignored files, links and nested repositories as `sub/` included) that
+    writing the paths deletes: the same path, an entry where a written path needs a directory, an entry inside a
+    directory a path turns into a file; fold compares case-insensitively, as a case-insensitive disk does."""
+    key = str.lower if fold else str
+    names, under = {}, {}
+    for u in untracked:
+        k = key(u.rstrip("/"))
+        names.setdefault(k, u)
+        parts = k.split("/")
+        for n in range(1, len(parts)):
+            under.setdefault("/".join(parts[:n]), []).append(u)
+    hits = []
+    for w in written:
+        parts = key(w).split("/")
+        for n in range(1, len(parts) + 1):
+            u = names.get("/".join(parts[:n]))
+            if u and (not u.endswith("/") or n == len(parts) or inside(repo, w, n)):
+                hits.append(u)
+        hits += under.get(key(w), [])
+    return list(dict.fromkeys(hits))
+
+
+def inside(repo, path, n):
+    """A path under a nested repository (its first n parts) writes over a file there: the path itself, or an inner part
+    that is a file or a link where the path needs a directory. git lists none of a nested repository's files."""
+    parts = path.split("/")
+    for m in range(n + 1, len(parts) + 1):
+        full = os.path.join(repo, *parts[:m])
+        if m < len(parts) and os.path.isdir(full) and not os.path.islink(full):
+            continue
+        return os.path.lexists(full)
+    return False
+
+
+def untracked_written(repo, old, new):
+    """Untracked entries of repo the move from commit old to new deletes: (paths, error text)."""
+    out = []
+    for args in (("diff", "--name-only", "-z", "--no-renames", "--diff-filter=d", old, new), ("ls-files", "-z", "--others")):
+        r = git(repo, *args)
+        if r.returncode:
+            return [], "%s: %s" % (args[0], r.stderr.strip() or "code %d" % r.returncode)
+        out.append([f for f in r.stdout.split("\0") if f])
+    return written_over(repo, out[0], out[1], os.path.lexists(os.path.join(repo, ".GIT"))), ""
 
 
 def rebase(main, wt, branch, prev):
@@ -422,6 +461,11 @@ def rebase(main, wt, branch, prev):
     finally:
         git(main, "worktree", "remove", "--force", path)  # its own entry only; an unfinished rebase goes with it
         shutil.rmtree(tmp, ignore_errors=True)
+    hit, err = untracked_written(wt, "HEAD", new)  # reset --keep takes an ignored file as expendable
+    if err or hit:
+        print("not merged: rebase: " + err if err
+              else "not merged: rebase would overwrite ignored files in WORKTREE: " + ", ".join(hit))
+        return 1
     r = git(wt, "reset", "-q", "--keep", new)  # touches only the files the rebase changed
     if r.returncode:
         print("not merged: rebase: reset: " + "; ".join(r.stderr.strip().splitlines()))

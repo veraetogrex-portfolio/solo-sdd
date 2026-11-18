@@ -1116,11 +1116,61 @@ def worktree_script():
     return None
 
 
+def written_over(repo, written, untracked, fold):
+    """The untracked entries (git's own list, ignored files, links and nested repositories as `sub/` included) that
+    writing the paths deletes: the same path, an entry where a written path needs a directory, an entry inside a
+    directory a path turns into a file; fold compares case-insensitively, as a case-insensitive disk does."""
+    key = str.lower if fold else str
+    names, under = {}, {}
+    for u in untracked:
+        k = key(u.rstrip("/"))
+        names.setdefault(k, u)
+        parts = k.split("/")
+        for n in range(1, len(parts)):
+            under.setdefault("/".join(parts[:n]), []).append(u)
+    hits = []
+    for w in written:
+        parts = key(w).split("/")
+        for n in range(1, len(parts) + 1):
+            u = names.get("/".join(parts[:n]))
+            if u and (not u.endswith("/") or n == len(parts) or inside(repo, w, n)):
+                hits.append(u)
+        hits += under.get(key(w), [])
+    return list(dict.fromkeys(hits))
+
+
+def inside(repo, path, n):
+    """A path under a nested repository (its first n parts) writes over a file there: the path itself, or an inner part
+    that is a file or a link where the path needs a directory. git lists none of a nested repository's files."""
+    parts = path.split("/")
+    for m in range(n + 1, len(parts) + 1):
+        full = os.path.join(repo, *parts[:m])
+        if m < len(parts) and os.path.isdir(full) and not os.path.islink(full):
+            continue
+        return os.path.lexists(full)
+    return False
+
+
+def untracked_written(wt, ref):
+    """Untracked entries of WORKTREE that merging ref deletes (the paths it writes: from the merge base to ref): a merge
+    takes an ignored file as expendable and overwrites it."""
+    def out(*args):
+        p = sh("git", "-C", wt, *args)
+        if p.returncode:
+            die(f"{args[0]}: " + (brief(p.stderr or p.stdout) or f"code {p.returncode}"))
+        return [f for f in p.stdout.split("\0") if f]
+    diff = out("diff", "--name-only", "-z", "--no-renames", "--diff-filter=d", "".join(out("merge-base", "HEAD", ref)).strip(), ref)
+    return written_over(wt, diff, out("ls-files", "-z", "--others"), os.path.lexists(os.path.join(wt, ".GIT")))
+
+
 def cmd_ship(main, wt, base, title):
     base = delivery(main)[0] or base
     p = sh("git", "-C", wt, "fetch", "-q", "origin")
     if p.returncode:
         die("fetch: " + brief(p.stderr))
+    hit = untracked_written(wt, "origin/" + base)
+    if hit:
+        die("not shipped: merge would overwrite ignored files in WORKTREE: " + ", ".join(hit))
     p = sh("git", "-C", wt, "merge", "-q", "--no-edit", "origin/" + base)
     if p.returncode:
         files = sh("git", "-C", wt, "diff", "--name-only", "--diff-filter=U").stdout.split("\n")
