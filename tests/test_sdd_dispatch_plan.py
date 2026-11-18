@@ -1087,7 +1087,7 @@ class LoopbackBeforeLaunchTests(Base):
         lines = out.splitlines()
         self.assertEqual(code, 0, out)
         self.assertRegex(lines[1], r"^loopback: (ok|blocked: .+)$")
-        self.assertEqual(lines[2:4], ["delivery: local (default), merge: squash (default)", "launch: a"])
+        self.assertEqual(lines[2:4], ["delivery: local (default), local merge: merge (default)", "launch: a"])
 
     def test_main_marks_the_need_of_the_project(self):
         self.connect(error=PermissionError(1, "Operation not permitted"))
@@ -1101,7 +1101,7 @@ class LoopbackBeforeLaunchTests(Base):
             lines = buf.getvalue().splitlines()
             self.assertEqual(code, 0)
             self.assertEqual(lines[1], want + "[Errno 1] Operation not permitted")
-            self.assertEqual(lines[2:4], ["delivery: local (default), merge: squash (default)", "launch: a"])
+            self.assertEqual(lines[2:4], ["delivery: local (default), local merge: merge (default)", "launch: a"])
 
 
     def test_loopback_from_the_config(self):
@@ -1138,7 +1138,7 @@ class SettingsReaderTests(Base):
         self.assertEqual(out.splitlines()[0], "limit: 1, running: 0, waiting for merge: 0", out)
         self.assertIn("\ndelivery: pr (AGENTS.md), merge: rebase (AGENTS.md)\n", out)
         put(p.main, "solo-sdd/config", "delivery.mode: local\n")
-        self.assertIn("\ndelivery: local (file), merge: rebase (AGENTS.md)\n", p.run()[1])
+        self.assertIn("\ndelivery: local (file), local merge: merge (default)\n", p.run()[1])
         put(p.main, "solo-sdd/config", "mode: team\n")
         self.assertIn("\ndelivery: pr (AGENTS.md), merge: rebase (AGENTS.md)\n", p.run()[1], "the AGENTS.md item comes before the team default")
 
@@ -1161,11 +1161,18 @@ class SettingsReaderTests(Base):
         p.change("a")
         out = p.run()[1]
         self.assertIn("limit: 2,", out)
-        self.assertIn("\ndelivery: local (default), merge: squash (default)\n", out)
+        self.assertIn("\ndelivery: local (default), local merge: merge (default)\n", out)
         put(p.main, "solo-sdd/config", "mode: team\n")
         self.assertIn("\ndelivery: pr (mode), merge: squash (default)\n", p.run()[1])
         put(p.main, "AGENTS.md", "## Delivery\n\n- Mode: cloud\n- Merge: `rebase`.\n")
         self.assertIn("\ndelivery: pr (mode), merge: rebase (AGENTS.md)\n", p.run()[1], "a value outside the allowed ones is skipped")
+
+    def test_local_mode_names_the_local_merge(self):
+        """Requirement: Local merge method, scenario The plan line in local mode."""
+        p = self.project(tree="solo-sdd")
+        p.change("a")
+        put(p.main, "solo-sdd/config", "delivery.mode: local\ndelivery.merge: rebase\n")
+        self.assertEqual(p.run()[1].splitlines()[2], "delivery: local (file), local merge: merge (default)")
 
     def test_broken_config_fails(self):
         p = self.project(tree="solo-sdd")
