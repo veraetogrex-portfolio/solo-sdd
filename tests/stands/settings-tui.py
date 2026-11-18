@@ -504,6 +504,25 @@ def main():
                 s.close()
         row("Delivery items: the three keys, a text entry, Esc, save", delivery_items)
 
+        def long_entry():
+            d = project(base)
+            s = Session(d, 24, 80)
+            typed = "".join(chr(97 + i % 26) for i in range(150))
+            try:
+                to(s, "delivery.deploy")
+                s.send("enter", *["backspace"] * len("no"))
+                t = s.send(*typed)
+                entry = [ln.rstrip() for ln in t.splitlines() if ln.startswith("> ")]
+                need(entry and entry[0].endswith(typed[-20:] + "_") and len(entry[0]) == 79,
+                     "the entry line ends with the last typed characters and _: %r" % entry, t)
+                s.send("enter", "s", "y", "q")
+                need(s.wait() == 0, "saved and quit")
+                code, out = sdd(d, "config", "get", "delivery.deploy")
+                need(code == 0 and typed in out.splitlines(), "config get prints all 150 characters: %r" % out)
+            finally:
+                s.close()
+        row("Long text entry: 150 characters on 80 columns show the tail and _, save keeps all", long_entry)
+
         def ci_wait_keys():
             d = project(base)
             s = Session(d, 80, 120)  # 80 rows: the four process keys before them push draft off a 40-row screen

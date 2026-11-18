@@ -94,6 +94,20 @@ class EditByType(Base):
             self.assertEqual("*unsaved" in "\n".join(s.draw(120, 40)[0]), edited, (key, keys))
             self.assertEqual(config(s.root), text, "an edit writes nothing before save")
 
+    def test_long_text_entry(self):
+        """Scenario A long text entry: the entry line keeps the tail and the cursor, the value keeps every character."""
+        for typed, w in (("".join(chr(97 + i % 26) for i in range(150)), 80), ("x" * 120 + "中" * 30, 41),
+                         ("x" * 120 + "中" * 30, 80)):
+            s = self.open("")
+            select(s, "delivery.deploy")
+            press(s, "enter", *["backspace"] * len("no"), *typed)
+            entry = [ln for ln in s.draw(w, 24)[0] if ln.startswith("> ")][0]
+            self.assertTrue(entry.endswith(typed[-10:] + "_"), (w, entry))
+            self.assertGreaterEqual(columns(entry), w - 2, "the line uses the width: %r" % entry)
+            self.assertLess(columns(entry), w, entry)
+            press(s, "enter")
+            self.assertEqual(s.values()["delivery.deploy"], (typed, "file"))
+
     def test_value_the_file_cannot_hold(self):
         s = self.open("")
         select(s, "delivery.base")
