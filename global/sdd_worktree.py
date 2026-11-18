@@ -44,6 +44,7 @@ remove     removes the links (by the <WORKTREE>.links record setup writes, never
 discard    removes a worktree without its own commits (HEAD equals the <WORKTREE>.start record made by setup,
            the commit is not only in the branch being removed) together with its branch; otherwise code 1, nothing changes.
 """
+import contextlib
 import filecmp
 import os
 import re
@@ -784,18 +785,23 @@ def setup(main, wt):
         write(os.path.join(base, LISTED), "\0".join(extra).encode("utf-8"))
     made = listed_links(wt)
     before = len(made)
-    for rel in find_links(main, linked):
-        dst = os.path.join(wt, rel)
-        if rel in linked and "/" in rel and not os.path.lexists(dst):  # a named item gets its parent folders
-            os.makedirs(os.path.dirname(dst), exist_ok=True)
-        if os.path.lexists(dst) or not os.path.isdir(os.path.dirname(dst)):
-            continue
-        if os.path.basename(rel) == "node_modules":
-            link_modules(os.path.join(main, rel), dst)
-        else:
-            os.symlink(os.path.abspath(os.path.join(main, rel)), dst)
-        made.append(rel)
-        write(wt + ".links", "\0".join(made).encode("utf-8"))  # after each link: a setup failing later leaves the record
+    try:
+        for rel in find_links(main, linked):
+            dst = os.path.join(wt, rel)
+            if rel in linked and "/" in rel and not os.path.lexists(dst):  # a named item gets its parent folders
+                os.makedirs(os.path.dirname(dst), exist_ok=True)
+            if os.path.lexists(dst) or not os.path.isdir(os.path.dirname(dst)):
+                continue
+            if os.path.basename(rel) == "node_modules":
+                link_modules(os.path.join(main, rel), dst)
+            else:
+                os.symlink(os.path.abspath(os.path.join(main, rel)), dst)
+            made.append(rel)
+            write(wt + ".links", "\0".join(made).encode("utf-8"))  # after each link: a setup failing later leaves the record
+    except BaseException:  # a later link failing still hides the links made before it; its own error is the one shown
+        with contextlib.suppress(RuntimeError, OSError):
+            add_exclude(main, linked)
+        raise
     add_exclude(main, linked)
     if cmd:
         r = subprocess.run(["sh", "-c", cmd], cwd=wt, stdin=subprocess.DEVNULL)
