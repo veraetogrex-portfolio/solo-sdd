@@ -10,6 +10,7 @@ import sys
 import tempfile
 import time
 import unittest
+import unittest.mock
 import marks
 
 from hypothesis import given, settings, strategies as st
@@ -381,6 +382,25 @@ class TestMarks(unittest.TestCase):
         self.assertNotIn("Ran ", p.stderr)
 
 
+SAFE = """import ast
+import os
+import subprocess
+import sys
+import unittest
+
+
+class T(unittest.TestCase):
+    def test_a_safe_path_run(self):
+        here = os.path.dirname(os.path.abspath(__file__))
+        want = ast.literal_eval(subprocess.check_output([sys.executable, "-c", "import sys; print(sys.path)"], text=True))
+        assert sys.path[0] == here and sys.path[1:] == want, (sys.path, want)
+
+
+if __name__ == "__main__":
+    unittest.main()
+"""
+
+
 class Tiers(unittest.TestCase):
     """Requirement: Tiers in the runner."""
 
@@ -389,6 +409,13 @@ class Tiers(unittest.TestCase):
         code, out, _ = t.run("--tier", "fast")
         self.assertEqual(code, 0, out)
         self.assertEqual(skipped_line(out), "skipped: 2")
+
+    @unittest.skipIf(sys.version_info < (3, 11), "PYTHONSAFEPATH is Python 3.11+")
+    def test_a_safe_path_keeps_every_entry(self):
+        t = Tree(self, {"test_s.py": SAFE})
+        with unittest.mock.patch.dict(os.environ, {"PYTHONSAFEPATH": "1"}):
+            code, out, _ = t.run("tests/test_s.py")
+        self.assertEqual(code, 0, out)
 
     def test_the_slow_and_release_tiers(self):
         t = Tree(self, {"test_m.py": MARKED})
