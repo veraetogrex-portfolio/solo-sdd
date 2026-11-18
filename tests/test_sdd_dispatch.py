@@ -803,6 +803,21 @@ class LocalMergeMethodTest(LandBase):
         self.assertEqual(g(self.wt, "status", "--short"), "")
         self.assertEqual(len(g(self.main, "worktree", "list").splitlines()), 2, "the temporary worktree is removed")
 
+    def test_rebase_tracked_dir_becomes_file(self):
+        # Requirement: Rebase keeps worktree ignored files. Scenario: No ignored file in the way: the main branch turns
+        # the tracked directory tools/ into a file; WORKTREE holds only tracked files there
+        self.put(self.main, "tools/a", "a\n")
+        g(self.main, "add", "tools/a")
+        g(self.main, "commit", "-q", "-m", "tools dir")
+        self.branch("rebase")
+        g(self.main, "rm", "-q", "tools/a")
+        self.put(self.main, "tools", "file\n")
+        g(self.main, "add", "tools")
+        g(self.main, "commit", "-q", "-m", "tools file")
+        r = self.land()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(pathlib.Path(self.main, "tools").read_text(), "file\n")
+
     def test_rebase_red_check_rolls_back_main(self):
         # Requirement: Local land after a red check, after a rebase: the main branch goes back, the branch stays
         self.branch("rebase")
@@ -881,6 +896,39 @@ class ArchiveRemovalLandTest(LandBase):
         self.assertEqual(g(self.main, "log", "--merges", "--format=%H"), "")
         self.assert_old_on_disk()
         self.assertEqual(pathlib.Path(self.main, self.NEW, "tasks.md").read_text(), "t\n")
+
+    def test_rebase_keeps_worktree_ignored_files(self):
+        # Requirement: Rebase keeps worktree ignored files. Scenario: An ignored config the main branch now tracks
+        self.put(self.main, ".git/info/exclude", "solo-sdd/config\nnotes\nNotes.md\nvendor\nlib\next\n")
+        for d in (self.main, self.wt + ".base"):
+            self.put(d, "solo-sdd/config", "delivery.local-merge: rebase\n")
+        self.put(self.wt, "solo-sdd/config", "delivery.local-merge: rebase\n# mine\n")
+        self.put(self.wt, "notes", "mine\n")  # an ignored file where the main branch now needs a directory
+        self.put(self.wt, "Notes.md", "mine\n")  # the same file as notes.md on a case-insensitive disk
+        g(self.wt, "init", "-q", "vendor")  # an ignored nested repository: git lists it as `vendor/`
+        self.put(self.wt, "vendor/x", "mine\n")
+        g(self.wt, "init", "-q", "lib")  # a nested repository the main branch adds a new file to: nothing in the way
+        self.put(self.wt, "lib/y", "mine\n")
+        g(self.wt, "init", "-q", "ext")  # a file in a nested repository where the main branch needs a directory
+        self.put(self.wt, "ext/a", "mine\n")
+        rels = ("notes/x", "notes.md", "vendor/x", "lib/new", "ext/a/b")
+        for rel in rels:
+            self.put(self.main, rel, "x\n")
+        g(self.main, "add", "-f", "solo-sdd/config", *rels)
+        g(self.main, "commit", "-q", "-m", "track config")
+        head, tip, wt_head = (g(d, "rev-parse", ref) for d, ref in
+                              ((self.main, "HEAD"), (self.main, "change/c"), (self.wt, "HEAD")))
+        r = self.land()
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        fold = os.path.exists(os.path.join(self.wt, "NOTES.MD"))
+        self.assertIn("not merged: rebase would overwrite ignored files in WORKTREE: ext/, "
+                      + "Notes.md, " * fold + "notes, solo-sdd/config, vendor/", r.stdout.splitlines())
+        self.assert_rolled_back(head)
+        self.assertEqual(g(self.main, "rev-parse", "change/c"), tip)
+        self.assertEqual(g(self.wt, "rev-parse", "HEAD"), wt_head)
+        self.assertEqual(pathlib.Path(self.wt, "solo-sdd/config").read_text(), "delivery.local-merge: rebase\n# mine\n")
+        for rel in ("notes", "Notes.md", "vendor/x", "ext/a"):
+            self.assertEqual(pathlib.Path(self.wt, rel).read_text(), "mine\n")
 
     def test_merge_keeps_archive_on_disk(self):
         r = self.land()
