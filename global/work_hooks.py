@@ -1180,6 +1180,16 @@ def main_checkout(root, run=sh):
     return nfc(os.path.realpath(os.path.dirname(common))) if common.endswith("/.git") else root
 
 
+def config_folder(folder):
+    """The folder whose settings a gate checking folder reads: folder itself, or the same folder of its main checkout
+    when folder lacks a git-ignored config, which then is kept only there."""
+    if not folder or os.path.lexists(os.path.join(folder, SETTINGS_FILE)) \
+            or not sh(["git", "check-ignore", SETTINGS_FILE], cwd=folder):
+        return folder
+    root = git_root(folder)
+    return os.path.normpath(os.path.join(main_checkout(root), os.path.relpath(folder, root))) if root else folder
+
+
 def more_done(tool, ti, path):
     """The edit increases the number of checked tasks: text on disk versus text after the edit."""
     old = read_head(path, 200000) or ""
@@ -2726,7 +2736,7 @@ def integration_reasons(by_root):
 
 def ui_file(path):
     """The edited file counts as interface by ui.extensions of its repository, and its ui-check gate is on."""
-    s = gate_settings(git_root(path))
+    s = gate_settings(config_folder(git_root(path)))
     exts = tuple(e.strip() for e in s["ui.extensions"][0].split(",") if e.strip())
     return path.endswith(exts) and s["hooks.stop.ui-check"][0] == "on"
 
@@ -2753,7 +2763,7 @@ def cmd_stop(inp):
         if r:
             by_root.setdefault(r, set()).add(p)
     for root, files in sorted(by_root.items()):
-        if gate_setting(root, "hooks.stop.uncommitted") == "off":
+        if gate_setting(config_folder(root), "hooks.stop.uncommitted") == "off":
             continue
         dirty = sorted(files & dirty_paths(root))
         if dirty:
@@ -2764,15 +2774,12 @@ def cmd_stop(inp):
     for cdir in sorted({c[0] for c in map(change_file, edited) if c and c[1] != "archive"}):
         tasks = read_head(os.path.join(cdir, "tasks.md"), 200000)
         if tasks and os.path.isdir(cdir) and re.search(r"^\s*- \[[xX]\]", tasks, re.M) and not re.search(r"^\s*- \[ \]", tasks, re.M) \
-                and gate_setting(change_project(cdir), "hooks.stop.unarchived") == "on":
+                and gate_setting(config_folder(change_project(cdir)), "hooks.stop.unarchived") == "on":
             reasons.append("Change %s: every task is checked but it is not archived. Run verify, sync, archive and remove the CLAIM, "
                            "or say what is missing." % os.path.basename(cdir))
 
     root = git_root(cwd)
-    # read the checked copy's settings; an ignored config the copy lacks is kept only in the main checkout, so read the main's
-    lacks = pushed and root and not os.path.lexists(os.path.join(root, SETTINGS_FILE)) \
-        and sh(["git", "check-ignore", SETTINGS_FILE], cwd=root)
-    cfg = (main_checkout(root) if lacks else root) if pushed and root else None
+    cfg = config_folder(root) if pushed and root else None
     if cfg and gate_setting(cfg, "hooks.stop.open-pr") == "on" and gate_setting(cfg, "delivery.merge-by") != "human":
         # a person merges: an open PR is the expected end, whatever the switch says
         pr = sh(["gh", "pr", "view", "--json", "state,url"], cwd=root, timeout=10)
