@@ -982,6 +982,32 @@ class ShipLand(ShipLandRepo):
         self.no_branch_on_origin()
         self.assertEqual(e.calls("gh", "pr", "create"), [])
 
+    def test_overwrites_command(self):
+        # Requirement: Overwrite check command. Rows: an unknown ref, a branch with its own commit (no match: the stand)
+        self.put(self.main, ".git/info/exclude", "solo-sdd/config\n")
+        self.put(self.wt, "solo-sdd/config", "mine\n")
+        self.put(self.wt, "own.txt", "own\n")
+        g(self.wt, "add", "own.txt")
+        g(self.wt, "commit", "-qm", "own commit")
+        e = self.mk()
+        state = lambda: (self.head(), g(self.wt, "status", "--porcelain", "--ignored"), g(self.wt, "ls-files", "-s"))
+        before = state()
+        for name, track, ref, code, err in (
+                ("unknown ref", False, "no/such/ref", 1, "merge-base: "),
+                ("own commit", True, "origin/main", 1,
+                 "merge would overwrite ignored files in WORKTREE: solo-sdd/config\n")):
+            with self.subTest(name):
+                if track:
+                    self.advance_origin("solo-sdd/config", "main\n", "track config")
+                    g(self.wt, "fetch", "-q", "origin")
+                    before = state()
+                r = e.run("overwrites", str(self.wt), ref)
+                self.assertEqual(r.returncode, code, r.stderr)
+                self.assertEqual(r.stdout, "")
+                self.assertTrue(r.stderr.startswith(err), r.stderr)
+                self.assertEqual(state(), before)
+                self.assertEqual((self.wt / "solo-sdd/config").read_text(), "mine\n")
+
     def test_ship_tracked_dir_becomes_file(self):
         # Requirement: Ship keeps worktree ignored files: origin/main turns the tracked directory docs/ into a file and
         # WORKTREE holds only tracked files there, so nothing is refused
