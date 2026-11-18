@@ -31,6 +31,8 @@ FAST_LIMIT = 2.0
 # `<seconds>\t<skipped 0|1>\t<test id>` go to the file SOLO_SDD_TIMES names (Python 3.9 has no unittest --durations).
 BOOT = """import os, runpy, sys, time, unittest
 f, out = sys.argv[1], os.environ.pop("SOLO_SDD_TIMES")
+if getattr(sys.flags, "safe_path", 0):  # -P or PYTHONSAFEPATH: sys.path[0] is a real entry, keep it
+    sys.path.insert(0, "")
 sys.argv, sys.path[0], rows, run, depth = [f], os.path.dirname(f), [], unittest.TestCase.run, [0]
 def timed(self, result=None):
     n, t = len(getattr(result, "skipped", ())), time.monotonic()
