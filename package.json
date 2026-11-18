@@ -1,6 +1,6 @@
 {
   "name": "solo-sdd",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Spec-driven development process for AI coding agents: rules, skills, hooks and a process format with its own validator; a change is done only after a live check and an independent review",
   "keywords": [
     "spec-driven-development",
