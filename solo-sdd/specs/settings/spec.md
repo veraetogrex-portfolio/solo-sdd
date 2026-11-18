@@ -410,6 +410,10 @@ The `stop` hook SHALL skip the gate of `hooks.stop.uncommitted`, `hooks.stop.una
 - **WHEN** the repository ignores `solo-sdd/config`, the session runs in a worktree that has no such file, and the main checkout's file has `delivery.merge-by: human`
 - **THEN** the main checkout's file applies, and the stop is not blocked for the open PR
 
+#### Scenario: Other gates in a worktree without a config file
+- **WHEN** the repository ignores `solo-sdd/config`, the main checkout's file has `hooks.stop.uncommitted: off`, and the session left uncommitted edits in a worktree that has no such file
+- **THEN** the main checkout's file applies, and the stop is not blocked for the uncommitted edits; the same holds for `hooks.stop.unarchived` and `hooks.stop.ui-check`
+
 ### Requirement: Interface settings
 `ui.extensions` (default `.html, .htm, .css, .scss, .sass, .less, .tsx, .jsx, .vue, .svelte`) SHALL decide which edited files count as interface for the `stop` hook and `project-init`, and `ui.widths` (default `1280, 390`) SHALL be the widths `ui-check` and `spec-plan` name for a check. An extension other than `.` and letters or digits, or a width other than a whole number from 1, SHALL be refused with exit 1, the file unchanged.
 

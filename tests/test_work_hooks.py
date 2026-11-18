@@ -960,6 +960,32 @@ class StopGateSwitches(HookCase):
             r = self.stop("S-wt-" + name, tr, wt, env)
             assert ("pull/9 is open and not merged" in r) == blocked, name + ": " + r
 
+    def test_other_gates_in_a_worktree_without_a_config(self):
+        # the main checkout's ignored file switches one gate off; the other two still block, so the edits were seen
+        gates = {"uncommitted": "has uncommitted edits", "unarchived": "not archived", "ui-check": "The interface changed"}
+        for name, sub, gate in (("unc", "", "uncommitted"), ("arch", "", "unarchived"), ("ui", "", "ui-check"),
+                                ("arch-sub", "sub/", "unarchived")):
+            proj, wt = os.path.join(H, "proj-gw-" + name), os.path.join(H, "wt-gw-" + name)
+            g = ["git", "-C", proj, "-c", "user.email=t@t", "-c", "user.name=t"]
+            subprocess.run(["git", "init", "-q", proj], check=True)
+            os.makedirs(os.path.join(proj, ".git/info"), exist_ok=True)
+            open(os.path.join(proj, ".git/info/exclude"), "a").write(sub + "solo-sdd/config\n")
+            project_config(os.path.join(proj, sub), "hooks.stop.%s: off\n" % gate)
+            tasks = sub + "solo-sdd/changes/c/tasks.md"
+            os.makedirs(os.path.dirname(os.path.join(proj, tasks)))
+            open(os.path.join(proj, tasks), "w").write("- [ ] a\n")
+            open(os.path.join(proj, "app.css"), "w").write("a {}\n")
+            subprocess.run(g + ["add", "-A"], check=True)
+            subprocess.run(g + ["commit", "-qm", "init"], check=True)
+            subprocess.run(g + ["worktree", "add", "-q", wt, "-b", "change/" + name], check=True, capture_output=True)
+            assert not os.path.exists(os.path.join(wt, sub + "solo-sdd/config")), name
+            open(os.path.join(wt, tasks), "w").write("- [x] a\n")
+            open(os.path.join(wt, "app.css"), "w").write("b {}\n")
+            tr = edits_transcript("t-gw-%s.jsonl" % name, os.path.join(wt, tasks), os.path.join(wt, "app.css"))
+            r = self.stop("S-gw-" + name, tr, wt)
+            for k, msg in gates.items():
+                assert (msg in r) == (k != gate), "%s, %s: %s" % (name, k, r)
+
     def test_settings_of_the_edited_repository(self):
         b = os.path.join(H, "proj-b")
         os.makedirs(b)

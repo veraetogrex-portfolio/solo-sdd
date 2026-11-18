@@ -37,10 +37,13 @@ NO_TERMINAL = "solo-sdd settings needs a full-screen terminal; without one use s
 
 
 def fit(text, width):
-    """Text cut to at most width terminal columns: a wide (East Asian) character takes two."""
+    """Text cut to at most width terminal columns: a wide (East Asian) character takes two, a mark (Mn, Me)
+    and a Hangul vowel or final jamo (U+1160-11FF) none; U+FE0F keeps one, as it draws a narrow emoji two wide."""
     out, used = [], 0
     for c in text:
-        w = 2 if unicodedata.east_asian_width(c) in "WF" else 0 if unicodedata.combining(c) else 1
+        zero = (unicodedata.combining(c) or unicodedata.category(c) in ("Mn", "Me") and c != "\ufe0f"
+                or "\u1160" <= c <= "\u11ff")
+        w = 2 if unicodedata.east_asian_width(c) in "WF" else 0 if zero else 1
         if used + w > width:
             break
         out.append(c)
