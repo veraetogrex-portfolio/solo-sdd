@@ -19,6 +19,9 @@ USAGE = """usage:
   sdd-pr.py land <MAIN> <WORKTREE> <url> <squash|merge|rebase>
   sdd-pr.py land <MAIN> <WORKTREE> <url> --after-merge
   sdd-pr.py promote <from> <to>
+  sdd-pr.py overwrites <WORKTREE> <ref>
+  overwrites changes nothing: code 1 «merge would overwrite ignored files in WORKTREE: <paths>» when merging <ref>
+    writes over an untracked WORKTREE file, «<step>: <reason>» when a git step fails; no output and code 0 otherwise
   delivery.merge-by: human in solo-sdd/config: merge and land never merge (code 8 «waits for human merge: <url>»);
     land --after-merge, after a person merged, pulls, transports and removes the worktree; an open PR: code 8
   checklist.<name>.paths and .file of solo-sdd/config: open and ship add «## Checklist: <name>» with the file's items
@@ -1163,6 +1166,13 @@ def untracked_written(wt, ref):
     return written_over(wt, diff, out("ls-files", "-z", "--others"), os.path.lexists(os.path.join(wt, ".GIT")))
 
 
+def cmd_overwrites(wt, ref):
+    hit = untracked_written(wt, ref)
+    if hit:
+        die("merge would overwrite ignored files in WORKTREE: " + ", ".join(hit))
+    return 0
+
+
 def cmd_ship(main, wt, base, title):
     base = delivery(main)[0] or base
     p = sh("git", "-C", wt, "fetch", "-q", "origin")
@@ -1307,6 +1317,8 @@ def main(a):
         return cmd_ship(*a[1:])
     if a[:1] == ["land"] and len(a) == 5 and a[4] in ("squash", "merge", "rebase", AFTER):
         return cmd_land(*a[1:])
+    if a[:1] == ["overwrites"] and len(a) == 3:
+        return cmd_overwrites(*a[1:])
     if a[:1] == ["promote"] and len(a) == 3:
         return cmd_promote(*a[1:])
     if a[:1] == ["open"] and len(a) == 4:
