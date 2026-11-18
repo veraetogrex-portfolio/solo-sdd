@@ -34,7 +34,8 @@ needed» of the AGENTS.md section «Commands» or «Working copy»: the project'
 Third line: «delivery: pr (<source>), merge: <squash|merge|rebase> (<source>)» (delivery.merge, the PR method), in local mode
 «delivery: local (<source>), local merge: <merge|squash|rebase> (<source>)» (delivery.local-merge, what land-local uses): each from solo-sdd/config (file),
 else the «Mode:» and «Merge:» items of the AGENTS.md section «Delivery» with an allowed value (AGENTS.md), else the team
-default under mode: team (mode), else the settings default (default: nothing names it).
+default under mode: team (mode), else the settings default (default: nothing names it); the local merge comes only
+from solo-sdd/config (file) or the settings default (default).
 """
 import os
 import re
@@ -825,9 +826,8 @@ def render(granted, waits, limit, running, pairs=(), outside=(), waiting=(), pro
     if probe is not None:
         out.append("loopback: " + probe)
     if deliver:
-        local = deliver["delivery.mode"][0] == "local"
-        out.append("delivery: %s (%s), %s: %s (%s)" % (deliver["delivery.mode"] + ("local merge" if local else "merge",)
-                                                      + deliver["delivery.local-merge" if local else "delivery.merge"]))
+        label, key = ("local merge", "delivery.local-merge") if deliver["delivery.mode"][0] == "local" else ("merge", "delivery.merge")
+        out.append("delivery: %s (%s), %s: %s (%s)" % (deliver["delivery.mode"] + (label,) + deliver[key]))
     out += ["launch: " + (" ".join(granted) or "none")] + list(pairs)
     if outside:
         out.append("Artifacts outside git: " + ", ".join(outside))

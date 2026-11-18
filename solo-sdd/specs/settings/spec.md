@@ -188,6 +188,14 @@ The key `delivery.local-merge` (`merge`, `squash`, `rebase`; default `merge`) SH
 - **WHEN** the file has no `delivery.local-merge`
 - **THEN** `config get delivery.local-merge` prints `merge` with `source: default`
 
+#### Scenario: The plan line in local mode
+- **WHEN** `delivery.mode` is `local`, `delivery.merge` is `rebase` and `delivery.local-merge` is not set
+- **THEN** the third line of `sdd-dispatch-plan.py` is `delivery: local (<source>), local merge: merge (default)`, and it names no PR merge method
+
+#### Scenario: The plan line in pr mode
+- **WHEN** `delivery.mode` is `pr` and `delivery.merge` is `squash` from `AGENTS.md`
+- **THEN** the third line stays `delivery: pr (AGENTS.md), merge: squash (AGENTS.md)`
+
 ### Requirement: Subagent model settings
 `agents.orchestrator-model` (default `opus`), `agents.review-model` (empty: the session's main model), `agents.lookup-model` and `agents.test-model` (`haiku`, the latter for paid product calls in tests) SHALL take one model name, `agents.dispatcher-effort` one of `low`, `medium`, `high` (default `low`). `spec-dispatch`, `spec-next`, `spec-audit` and the global rules SHALL read them; `opus`, `Opus` and `/effort low` in other requirements name these defaults.
 
