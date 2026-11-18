@@ -95,6 +95,10 @@ The script `sdd-pr.py` runs a change's PR for the dispatcher: opens it, waits fo
 - **WHEN** `delivery.require-ci` is `off`, the base branch requires `PR title`, and the PR has no checks
 - **THEN** the result is `infra` with "required check did not start: PR title", not `none`: `none` needs a base branch that requires no check
 
+#### Scenario: Checks not read with required checks
+- **WHEN** the base branch requires `PR title`, and every `gh pr checks` call of `wait` fails until the deadline
+- **THEN** the result is `CI: infra` with `checks not read: <the gh error>`, code 4, and no line "required check did not start"
+
 ### Requirement: Ship and land
 `sdd-pr.py ship <MAIN> <WORKTREE> <main> <title>` SHALL update the `WORKTREE` branch from `origin/<main>`, run `sdd-worktree.py refresh`, push the branch, open or update the PR and wait for CI by the rules of `wait`; no step runs after a failed one.
 
