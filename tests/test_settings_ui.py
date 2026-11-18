@@ -280,6 +280,16 @@ class BrokenAndSafeDisplay(Base):
             lines, marked = s.draw(w, h)
             self.assertEqual([lines[i].split()[1] for i in marked], ["delivery.promote"], (w, h))
             self.assertIn("q quit", " ".join(" ".join(lines).split()), "the footer keeps every key at %dx%d" % (w, h))
+        self.assertEqual(settings_ui.fit("กั" * 5, 5), "กั" * 5, "a zero-width mark takes no column")
+        self.assertEqual(settings_ui.fit("\u2764\ufe0f" * 3, 6), "\u2764\ufe0f" * 3, "U+FE0F keeps one column")
+        self.assertEqual(settings_ui.fit("\u2764\ufe0f" * 4, 6), "\u2764\ufe0f" * 3, "no more than six columns")
+        korean = settings_ui.unicodedata.normalize("NFD", "\ud55c\uad6d")  # six jamo, as a macOS path holds them
+        self.assertEqual(settings_ui.fit(korean, 4), korean, "a Hangul vowel or final jamo takes no column")
+        thai = "กั" * 30
+        s = self.open("delivery.deploy: %s\n" % thai)
+        select(s, "delivery.deploy")
+        lines, marked = s.draw(80, 24)
+        self.assertEqual([lines[i].split()[2] for i in marked], [thai], "the line holds the whole value")
 
     def test_long_message_keeps_the_selected_row(self):
         s = self.open("")
