@@ -38,7 +38,7 @@ A pattern the remarks show but the owner never stated SHALL go into a `## Unconf
 - **THEN** `## Unconfirmed` has one line for it with the four links, and the rules list has none
 
 ### Requirement: Reviewer match measured
-On the owner's word the skill SHALL build an `agent-quality` set of K past changes (default 5) with the owner's remarks as golden answers, run `Review:` on their diffs with and without `REVIEW.md`, and report matched, missed and extra findings per variant.
+On the owner's word the skill SHALL build an `agent-quality` set of K past changes (default 3) with the owner's remarks as golden answers, run `Review:` on their diffs with and without `REVIEW.md`, and report matched, missed and extra findings per variant.
 
 #### Scenario: The comparison table
 - **WHEN** the set has 2 changes with 4 owner remarks
