@@ -41,4 +41,4 @@ none
 
 ## Source
 
-"А это разве плохо? Мы можем достать первопричину и переписать это коротко" (20.11.2026, about lessons lines that grew to paragraphs at the 20-line cap); "Да, оформи" (20.11.2026).
+The owner, 2026-11-20 (translated from Russian): "Is that really bad? We can get the root cause out and rewrite it short" (on lessons lines that grew to paragraphs at the 20-line cap); then "Yes, create it".
