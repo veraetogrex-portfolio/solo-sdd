@@ -1,0 +1,12 @@
+## 1. Implementation
+
+- [ ] 1.1 Requirements Skills audit table and Gates a hook could hold: write `docs/skills-audit.md` for all skills of `targets.json` and a test class `SkillsAudit` in `tests/test_skill_commands.py` (the step reader, a skill without a section, a step without a row, another mark, a `hook: yes` row missing from the list, a section with two lost runs without the `candidate to cut` line); `tests/test_skill_commands.py` in the `docs/skills-audit.md` and `targets.json` entries of `tests/affected.json`; proven by `python3 tests/test_skill_commands.py`
+- [ ] 1.2 Requirements Ablation runner and Full skill out of reach in the cut variants, variants: `tests/stands/skill-ablation.py` builds the three variant texts (the method steps removed by the table) and an isolated folder per variant, and probes once per variant, outside the budget, that `claude -p` runs logged in and cannot load the full skill in the cut variants, stopping with exit 2 and the probe line otherwise; proven by `python3 tests/test_skill_ablation.py` with a fake `claude` on `PATH`, with rows for the failed login and the leaked skill
+- [ ] 1.3 Requirement Ablation runner, outcome and path: run each task, check its outcome by the task's script and the required commands from the `claude -p` stream output, print the table with tokens, stop before a call beyond `--budget` with exit 3; a row for the budget in `tests/test_skill_ablation.py`, and the entry `tests/stands/skill-ablation.py` → `tests/test_skill_ablation.py` in `tests/affected.json`; proven by `python3 tests/test_skill_ablation.py`
+- [ ] 1.4 Write the task sets `tests/stands/skill-ablation/debug-profile/` and `tests/stands/skill-ablation/evidence-research/` (2 tasks each: a fixture, a prompt, a check script, the required commands), the `evidence-research` tasks on local source files only; proven by each check script passing on a reference answer and failing on an empty one
+- [ ] 1.5 Requirement Measurement on a main model change: add the rule to `docs/release.md` and the `candidate to cut` line format to `docs/skills-audit.md`; proven by the `SkillsAudit` row of task 1.1 and `python3 tests/test_repo_language.py`
+
+## 2. Acceptance
+
+- [ ] 2.1 Run the Live Scenario (or its Fallback) from verification.md and record the Result, Not Verified and Decisions Without Owner sections
+- [ ] 2.2 Run `solo-sdd validate skill-ablation` and archive the change with `solo-sdd archive skill-ablation --yes`
