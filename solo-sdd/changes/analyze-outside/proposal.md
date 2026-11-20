@@ -15,7 +15,7 @@ The owner decided on 2026-11-20 to run the check outside the author: attackers o
 - The subagent limits of `spec-next` (step 5, the dispatched mode), `ALGORITHM.md` and section 10 of the global rules name the three tags.
 - `spec-plan` step 7a and `spec-next` step 4a run `spec-analyze` this way; the procedure lives in `spec-analyze`, so `spec-plan` stays within the skill size budget.
 - A new setting `process.analyze-attackers` (integer, at least 0, default 3); an agent changes it only on the owner's words in the chat, like `process.analyze`.
-- A stand with a change that holds four planted holes compares the run in the same session, one `Analyze:`, and three `Attack:` with a `Judge:`.
+- A stand with a change that holds four planted holes compares the run in the same session, one `Analyze:`, and three `Attack:` with a `Judge:`, each variant as a Claude Code subagent of the lead session (never `claude -p`, by the owner's decision of 2026-11-20).
 
 ## Capabilities
 

@@ -8,7 +8,7 @@ The independent reviewer of `spec-next` gets `REVIEW.md` from the project root w
 
 - A skill `review-principles` collects the owner's review remarks from the sources the project has (PR review comments and reviews by the owner's GitHub login through `gh` when the project has a GitHub remote, archived `verification.md` lines that quote the owner with a date, `## Lessons`, a chat history the project rules name; other authors' comments and `Decisions Without Owner` lines do not count), and writes the project's `REVIEW.md`: at most 25 rules, each with one or two links to its sources.
 - Patterns the remarks show but the owner never stated go into a separate `## Unconfirmed` section. The reviewer does not apply them until the owner moves a line into the main list.
-- A parallel mode: an `agent-quality` set of K past changes with the owner's remarks as the golden answers (K = 5 unless the owner names another number); `Review:` runs on the same diffs with and without `REVIEW.md`, and a table shows matched, missed and extra findings. The owner decides at what match they stop reviewing by hand.
+- A parallel mode: an `agent-quality` set of K past changes with the owner's remarks as the golden answers (K = 3, the owner's number of 2026-11-20); `Review:` runs on the same diffs with and without `REVIEW.md`, and a table shows matched, missed and extra findings. The owner decides at what match they stop reviewing by hand.
 - `spec-next` hands the reviewer `REVIEW.md` without its `## Unconfirmed` section.
 - A `REVIEW.md` template, the form the skill writes; the file itself lives in the consumer project, not in solo-sdd.
 
@@ -46,4 +46,4 @@ The independent reviewer of `spec-next` gets `REVIEW.md` from the project root w
 
 ## Source
 
-The owner, 2026-11-20 (translated from Russian): "Turn into changes four techniques from the interview: attacking reviewers with a judge, a check of whether skills get in the way, a set of the owner's review rules, the agent choosing tasks." Unit C: "Goal: the reviewer checks by the owner's rules, and it is known how far its verdict matches the owner's."
+The owner, 2026-11-20 (translated from Russian): "Turn into changes four techniques from the interview: attacking reviewers with a judge, a check of whether skills get in the way, a set of the owner's review rules, the agent choosing tasks." On the parallel mode, the number of past changes K: "3". Unit C: "Goal: the reviewer checks by the owner's rules, and it is known how far its verdict matches the owner's."

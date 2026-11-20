@@ -7,7 +7,7 @@ A skill written for one model can stop helping the next one, and sometimes the m
 ## What Changes
 
 - `docs/skills-audit.md`: every skill and each of its steps marked `gate (code)`, `gate (text)` or `method`; a `gate (text)` step also says whether a hook or the CLI could enforce it, and those are listed at the end for the owner to plan as changes.
-- `tests/stands/skill-ablation.py`: for one skill and a task set with checkable outcomes, runs `claude -p` on the subscription in three variants: the full skill; the skill without its `method` steps (by the table); no skill, only `global/AGENTS.md`. It checks each outcome by the task's script and the path (whether the required commands ran), and prints a table variant by task with tokens. The cut variants keep the full skill out of the session's reach, and a probe stops the run when it is not. It stops before a call beyond `--budget`; the probe is not counted.
+- `tests/stands/skill-ablation.py`: for one skill and a task set with checkable outcomes, prepares prompts for three variants, each run by a Claude Code subagent of the lead session (never `claude -p`, by the owner's decision of 2026-11-20): the full skill; the skill without its `method` steps (by the table); no skill, only `global/AGENTS.md`. `grade` checks each saved answer by the task's script and the path (whether the required commands ran, from the subagent's transcript) and prints a table variant by task with tokens. A cut-variant row whose subagent loaded the full skill anyway is marked `leaked` and left out. `prepare` writes no prompt beyond `--budget`.
 - Task sets for `debug-profile` and `evidence-research` (methods whose outcomes a script can check).
 - `docs/release.md`: when the `main` list of `model-policy.json` changes, the runner runs on the method skills and the result goes into `docs/skills-audit.md`; a skill that did not beat the no-skill variant on two runs in a row is listed as a candidate to cut, and only the owner deletes it.
 
@@ -41,4 +41,4 @@ A skill written for one model can stop helping the next one, and sometimes the m
 
 ## Source
 
-The owner, 2026-11-20 (translated from Russian): "Turn into changes four techniques from the interview: attacking reviewers with a judge, a check of whether skills get in the way, a set of the owner's review rules, the agent choosing tasks." Unit B: "Goal: for every skill it is known what it gives the current main model. The measurement is repeated when the main model changes."
+The owner, 2026-11-20 (translated from Russian), on the runner's budget: "Only if these are subagents in Claude Code." Earlier: "Turn into changes four techniques from the interview: attacking reviewers with a judge, a check of whether skills get in the way, a set of the owner's review rules, the agent choosing tasks." Unit B: "Goal: for every skill it is known what it gives the current main model. The measurement is repeated when the main model changes."

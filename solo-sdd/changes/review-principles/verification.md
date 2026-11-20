@@ -7,14 +7,15 @@ The stand `tests/stands/review-principles/` holds a fixture project with a GitHu
 3. A `Review: fixture` subagent (main model) gets the fixture diff and the `REVIEW.md` of step 2 as the laid-out `acceptance.md` line hands it (the line is quoted into `Result`) → `--grade-review <findings>` prints `broken rule found: yes`, `unconfirmed pattern applied: no`.
 4. The same skill run with the fake `gh` exiting 1, and again on a copy after `git remote remove origin` → both reports name the PR sources as unread, and `REVIEW.md` holds the rules of the owner quotes in the archived `verification.md` files.
 5. The parallel mode on the fixture with K = 2 (its two archived changes and their owner remarks) → `--grade-table <report>` prints `rows 2`, `matched + missed = 4 for each row`.
+6. The parallel mode on this repository with K = 3: the skill picks the 3 latest archived changes with owner remarks; its `Review:` subagents (main model, Claude Code subagents of the lead session) run on their diffs with and without the `REVIEW.md` of a run on this repository → the table of two rows with matched, missed and extra goes into `Result` as is. Fewer than 3 such changes found: the count goes into `Not Verified`.
 
 ## Needs
 
-- The owner's word and K for the parallel mode on a real project (default 5 changes); not needed for the stand.
+none: the owner gave the word and K = 3 for the parallel mode on 2026-11-20.
 
 ## Fallback
 
-Without the owner's word the parallel mode runs only on the fixture (step 5); the run on a real project goes into `Not Verified` until the owner names it.
+Not needed: the stand and the run on this repository are local, the subagents run in the lead session on the subscription.
 
 ## Result
 
@@ -28,5 +29,5 @@ Without the owner's word the parallel mode runs only on the fixture (step 5); th
 
 <!-- Filled during apply: choices made without asking, and new changes created for out-of-scope work. -->
 
-- analyze: the owner did not name the default sources and K → every source the project has, PRs only with a GitHub remote and a working `gh`; K = 5 unless the owner names another number.
+- analyze: the default sources → every source the project has, PRs only with a GitHub remote and a working `gh`; K = 3 by the owner's word of 2026-11-20.
 - analyze: whose PR remarks count → the login the project rules name, else `gh api user` — PRs may come from the owner's agent account, whose own comments are not the owner's rules.

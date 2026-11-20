@@ -23,22 +23,22 @@ Every `gate (text)` row SHALL carry `hook: yes` or `hook: no`, and `docs/skills-
 - **THEN** it is listed in `Gates a hook could hold`, and the audit table test fails if it is missing there
 
 ### Requirement: Ablation runner
-`tests/stands/skill-ablation.py <skill> --budget <calls>` SHALL run each task of the skill's set in three variants (full skill; without its `method` steps; no skill, only `global/AGENTS.md`), check each outcome by the task's script and the required commands of its path, and print one row per variant and task with the outcome, the path and the tokens. It SHALL stop before a call beyond the budget; the login probe is not counted.
+`tests/stands/skill-ablation.py prepare <skill> --budget <calls>` SHALL write one prompt per variant and task (full skill; without its `method` steps; no skill, only `global/AGENTS.md`), at most the budget, each to be run by a Claude Code subagent of the lead session, never by `claude -p`. `grade <run>` SHALL check each saved answer by the task's script and the required commands in that subagent's transcript, and print one row per variant and task with the outcome, the path and the tokens.
 
 #### Scenario: The budget is reached
-- **WHEN** the set has 2 tasks, and `--budget 4` is given
-- **THEN** the runner makes 4 task calls, prints their rows and the line `budget reached: 2 of 6 calls not made`, exit 3
+- **WHEN** the set has 2 tasks, and `prepare --budget 4` is given
+- **THEN** it writes 4 prompts and the line `budget reached: 2 of 6 calls not made`, exit 3
 
-#### Scenario: A run without a login
-- **WHEN** `claude -p` cannot run logged in from the runner's isolated folder
-- **THEN** the runner stops before the first task with a line naming the failed probe, exit 2, no row is printed
+#### Scenario: A missing answer
+- **WHEN** `grade` finds a prompt without a saved answer or transcript
+- **THEN** its row is `not run`, and the run's summary counts it apart from failures
 
 ### Requirement: Full skill out of reach in the cut variants
-In the variant without `method` steps and the no-skill variant the full skill text SHALL be out of reach of the session: no user-level or project-level copy of it is loaded. The probe SHALL stop the run with exit 2 when the session can still load the full skill.
+The prompt of the variant without `method` steps and of the no-skill variant SHALL carry its own text and forbid loading the skill. `grade` SHALL mark a row `leaked`, and leave it out of the comparison, when its transcript has a `Skill` call for that skill or a read of the skill's laid-out files.
 
-#### Scenario: The user-level skill leaks
-- **WHEN** the probe session of the no-skill variant lists `evidence-research` among its skills
-- **THEN** the runner stops with exit 2 and the line `the full skill is reachable in the no-skill variant`
+#### Scenario: The skill is loaded anyway
+- **WHEN** the transcript of a no-skill row has a `Skill` call for `evidence-research`
+- **THEN** the row is `leaked`, and the table counts it as neither a win nor a loss
 
 ### Requirement: Measurement on a main model change
 `docs/release.md` SHALL require the runner on the method skills when the `main` list of `model-policy.json` changes, with the result written into `docs/skills-audit.md`. A skill that did not beat the no-skill variant on two runs in a row SHALL be listed there as a candidate to cut; only the owner deletes it.
