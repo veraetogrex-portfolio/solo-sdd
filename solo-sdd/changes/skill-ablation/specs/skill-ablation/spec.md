@@ -1,0 +1,48 @@
+## Purpose
+
+What each skill gives the current main model is measured by running the same tasks with the full skill, without its method steps and without the skill, and the measurement is repeated when the main model changes.
+
+## ADDED Requirements
+
+### Requirement: Skills audit table
+`docs/skills-audit.md` SHALL hold every skill of `targets.json` with a row per step marked `gate (code)`, `gate (text)` or `method`. A step SHALL be a top-level `N.`, `Na.` or `**N.` item of `SKILL.md` with its step file; a skill without such items SHALL have one row for its whole text. A test SHALL fail on a skill without a section, a step without a row, or another mark.
+
+#### Scenario: A new skill without a section
+- **WHEN** a skill is added to `targets.json` and `docs/skills-audit.md` has no section for it
+- **THEN** the audit table test fails naming the skill
+
+#### Scenario: A step without a row
+- **WHEN** a skill gets a new step `9.` and its section has no row for it
+- **THEN** the audit table test fails naming the skill and the step
+
+### Requirement: Gates a hook could hold
+Every `gate (text)` row SHALL carry `hook: yes` or `hook: no`, and `docs/skills-audit.md` SHALL end with a section `Gates a hook could hold` listing the `hook: yes` rows, for the owner to plan as changes.
+
+#### Scenario: A text gate a hook could hold
+- **WHEN** a `gate (text)` row is marked `hook: yes`
+- **THEN** it is listed in `Gates a hook could hold`, and the audit table test fails if it is missing there
+
+### Requirement: Ablation runner
+`tests/stands/skill-ablation.py <skill> --budget <calls>` SHALL run each task of the skill's set in three variants (full skill; without its `method` steps; no skill, only `global/AGENTS.md`), check each outcome by the task's script and the required commands of its path, and print one row per variant and task with the outcome, the path and the tokens. It SHALL stop before a call beyond the budget; the login probe is not counted.
+
+#### Scenario: The budget is reached
+- **WHEN** the set has 2 tasks, and `--budget 4` is given
+- **THEN** the runner makes 4 task calls, prints their rows and the line `budget reached: 2 of 6 calls not made`, exit 3
+
+#### Scenario: A run without a login
+- **WHEN** `claude -p` cannot run logged in from the runner's isolated folder
+- **THEN** the runner stops before the first task with a line naming the failed probe, exit 2, no row is printed
+
+### Requirement: Full skill out of reach in the cut variants
+In the variant without `method` steps and the no-skill variant the full skill text SHALL be out of reach of the session: no user-level or project-level copy of it is loaded. The probe SHALL stop the run with exit 2 when the session can still load the full skill.
+
+#### Scenario: The user-level skill leaks
+- **WHEN** the probe session of the no-skill variant lists `evidence-research` among its skills
+- **THEN** the runner stops with exit 2 and the line `the full skill is reachable in the no-skill variant`
+
+### Requirement: Measurement on a main model change
+`docs/release.md` SHALL require the runner on the method skills when the `main` list of `model-policy.json` changes, with the result written into `docs/skills-audit.md`. A skill that did not beat the no-skill variant on two runs in a row SHALL be listed there as a candidate to cut; only the owner deletes it.
+
+#### Scenario: Two lost runs
+- **WHEN** `docs/skills-audit.md` holds two runs in a row where `evidence-research` scored no better than the no-skill variant
+- **THEN** its section has the line `candidate to cut: the owner decides`, the audit table test fails without that line, and the skill stays in the repository
