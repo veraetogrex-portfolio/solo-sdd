@@ -40,3 +40,5 @@ Without that subagent run: step 1 and step 5 run without models (step 5 covers s
 - review round 1, Important I5 (tasks unticked) → ticked after their checks.
 - review round 1, Nit N1 (the `lessons.max-lines` description still said "merging the closest lines") → fixed in `docs/settings.md` and `solo_sdd/settings.py`, outside Impact: the rule is read there too.
 - review round 1, Nits N2, N4, N5 → dropped: the stand's fixtures hold only `- ` lines with LF endings (the CRLF heading is Pre-existing), phrase tests are this repository's form for rules text, and the mutant's exact match fails loudly if `check.sh` is reformatted.
+- review round 2, Important N-1 (`ignored-paths` joined two causes under a false premise that an untracked file is expendable) and Nit N-3 (`input-edge-forms` borderline two duties) → both reworded to one cause; the run-files rule and the limit on a foreign call stand in their full text.
+- review round 2, Nit N-2 (`lost` accepts the old text under any linked id, not the one that line links to) → kept: the stand cannot tell which new line replaces which old one; restricting to linked ids is the closest check it can make.
