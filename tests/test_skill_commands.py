@@ -219,6 +219,23 @@ class SkillCommandsTest(unittest.TestCase):
             self.assertIn("changes `project.stage`, `artifacts.language`, `lessons.write` and `lessons.max-lines` only "
                           "on the owner's words", read(rel), rel)
 
+    def test_short_lessons_merged_by_cause(self):
+        """Requirements: Lessons without duplicates, Short line with full text: a merge at the cap writes one line
+        about the shared cause, every line is one sentence of at most 300 characters, its details and any longer old
+        text go verbatim under its id in the project's `LESSONS.md`."""
+        rules = " ".join(skill_text.read(REPO / "global/AGENTS.md").split())
+        lessons = rules.split("## 15.", 1)[1]
+        for phrase in ("two or more overlapping lines become one new line that names the cause they share, never "
+                       "their joined text; their old text goes verbatim under the new line's id in `LESSONS.md`",
+                       "Every `## Lessons` line is one sentence of at most 300 characters before an optional link "
+                       "`([full text](LESSONS.md#<id>))`",
+                       "go under `### <id>` in the project's `LESSONS.md`, created when first needed, and a refinement "
+                       "of a linked line edits both",
+                       "a longer line found there is shortened to its cause in the same edit, its old text kept "
+                       "verbatim under its id"):
+            self.assertIn(phrase, lessons)
+        self.assertNotIn("merging or generalising the closest lines", lessons)
+
     def test_executor_setting_from_the_owner(self):
         """Requirement: Executor setting from the owner: agents.executor codex counts as the owner naming
         codex-orchestration; an agent changes the key only on the owner's words."""
