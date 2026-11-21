@@ -1,7 +1,8 @@
 ## Live Scenario
 
-From the solo-sdd root, after `python3 sync.py push`, with the deployed hook `~/.claude/hooks/work_hooks.py`:
+From the solo-sdd root:
 
+0. Steps 1-2 as one stand: `python3 tests/stands/stop-background-shell.py` runs the repository hook `global/work_hooks.py` and prints `8 of 8 checks passed`; after `python3 sync.py push`, `python3 tests/stands/stop-background-shell.py --deployed` runs the same checks on the deployed hook `~/.claude/hooks/work_hooks.py`.
 1. A scratch repository outside the project: `R="$(mktemp -d)/r"; mkdir -p "$R"; cd "$R"; git init -q; echo 'a{}' > app.css; git add -A; git -c user.email=t@t -c user.name=t commit -qm base; echo 'a{color:red}' > app.css`, and a transcript `t.jsonl` next to it with one `Edit` tool use of `$R/app.css`.
 2. Run the deployed hook as Claude Code starts it, `python3 ~/.claude/hooks/work_hooks.py stop` with the Stop input on stdin under a temporary `HOME` (a new `session_id` per run), `background_tasks` as in the Claude Code hooks reference:
    - `[]`: stdout holds `"decision": "block"` and `uncommitted edits`;
@@ -23,11 +24,11 @@ Step 3 needs a main interactive Claude Code session; under the dispatcher or a r
 
 ## Result
 
-<!-- Filled during apply: date, what was run, what was observed. -->
+RESULT_PLACEHOLDER
 
 ## Not Verified
 
-<!-- Filled during apply: what stayed unproven and why. Write: nothing - if all proven. -->
+NV_PLACEHOLDER
 
 ## Decisions Without Owner
 
