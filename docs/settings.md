@@ -58,8 +58,9 @@ A line that is not `key: value`, an unknown key or a wrong value makes the comma
 | `agents` | `claude`, `codex`, `cursor`, `other` | the detected agents | | `doctor` (`warn project-agents` for an agent the installation lacks) |
 | `rules.scope` | `project`, `global` | `project` | | `init`: `project` writes the rules block into `AGENTS.md`, `global` writes none and names the global rules (`install --global-rules`) |
 | `agents.orchestrator-model` | one model name of ASCII letters, digits, . - _ [ and ] | `opus` | | `spec-dispatch`: the `model` of each orchestrator launch; the `guard` hook refuses a launch on a set model outside the `main` list of the machine's `model-policy.json` |
-| `agents.review-model` | one model name | the session's main model | | `spec-next` step 7a and `spec-audit`: the `model` of the `Review:` subagent, none when empty; the `guard` hook: the `main` list |
+| `agents.review-model` | one model name | the session's main model | | `spec-next` step 7a and `spec-audit`: the `model` of the `Review:` subagent, none when empty; the `guard` hook: the `main` list, also for `Analyze:`, `Judge:` and `Check:` subagents |
 | `agents.lookup-model` | one model name | `haiku` | | `spec-next` and the global rules: the `model` of a `Lookup:` subagent; the `guard` hook: the `cheap` list |
+| `agents.attack-model` | one model name | `haiku` | | the `model` of an `Attack:` subagent of an outside check; the `guard` hook: the `cheap` list |
 | `agents.test-model` | one model name | `haiku` | | the global rules: paid product calls in tests, acceptance and experiments; the Test model allowlist of the `guard` hook bounds it |
 | `agents.dispatcher-effort` | `low`, `medium`, `high` | `low` | | `spec-dispatch`: the `/effort` the dispatcher session starts with |
 | `agents.executor` | `self`, `codex` | `self` | | `spec-next`, `spec-plan`, `codex-orchestration`, the algorithm and the global rules: `codex` counts as the owner naming `codex-orchestration`; an agent changes the key only on the owner's words in the chat |

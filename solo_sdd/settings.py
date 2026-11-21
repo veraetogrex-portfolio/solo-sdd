@@ -63,6 +63,7 @@ REGISTRY = {
     "agents.orchestrator-model": ("model", None, "opus", None),  # spec-dispatch; work_hooks.py keeps it in the main list
     "agents.review-model": ("model", None, "", None),  # "": the session's main model; work_hooks.py: the main list
     "agents.lookup-model": ("model", None, "haiku", None),  # work_hooks.py: the cheap list
+    "agents.attack-model": ("model", None, "haiku", None),  # work_hooks.py: the cheap list
     "agents.test-model": ("model", None, "haiku", None),  # paid product calls in tests; the Test model allowlist bounds it
     "agents.dispatcher-effort": ("choice", ("low", "medium", "high"), "low", None),
     "agents.executor": ("choice", ("self", "codex"), "self", None),  # codex: as if the owner named codex-orchestration
@@ -462,6 +463,7 @@ ABOUT = {
     "agents.orchestrator-model": ("agents", "The model the dispatcher launches each orchestrator on; the guard hook refuses one outside the machine main list."),
     "agents.review-model": ("agents", "The model of the independent reviewer; empty runs it on the session's main model, the guard hook refuses one outside the machine main list."),
     "agents.lookup-model": ("agents", "The model of the search subagents; the guard hook refuses one outside the machine cheap list."),
+    "agents.attack-model": ("agents", "The model of the attacker subagents of an outside check; the guard hook refuses one outside the machine cheap list."),
     "agents.test-model": ("agents", "The model of paid product calls in tests, acceptance and experiments, within the machine test allowlist."),
     "agents.dispatcher-effort": ("agents", "The effort the dispatcher session is started with."),
     "agents.executor": ("agents", "Who writes the change code: the lead agent itself, or Codex executors as if the owner named codex-orchestration."),
