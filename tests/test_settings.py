@@ -200,13 +200,14 @@ class Readme(unittest.TestCase):
 
 
 class SubagentModelSettings(unittest.TestCase):
-    """Requirements: Subagent model settings and Executor setting from the owner: the six keys of group agents."""
+    """Requirements: Subagent model settings and Executor setting from the owner, Attack model setting: the seven keys of group agents."""
     KEYS = {"agents.orchestrator-model": ("model", None, "opus"), "agents.review-model": ("model", None, ""),
-            "agents.lookup-model": ("model", None, "haiku"), "agents.test-model": ("model", None, "haiku"),
+            "agents.lookup-model": ("model", None, "haiku"), "agents.attack-model": ("model", None, "haiku"),
+            "agents.test-model": ("model", None, "haiku"),
             "agents.dispatcher-effort": ("choice", ("low", "medium", "high"), "low"),
             "agents.executor": ("choice", ("self", "codex"), "self")}
 
-    def test_the_six_keys(self):
+    def test_the_seven_keys(self):
         for key, (kind, allowed, default) in self.KEYS.items():
             self.assertEqual(settings.REGISTRY.get(key), (kind, allowed, default, None), key)
             self.assertEqual(settings.describe(key, {})["group"], "agents", key)
@@ -361,7 +362,7 @@ class Command(unittest.TestCase):
         self.assertEqual(self.read(), "# keep\nmode: solo\n")
 
     def test_model_name_refused(self):
-        """Requirement: Subagent model settings: a model name with a space, and the defaults in config list."""
+        """Requirements: Subagent model settings and Attack model setting: a model name with a space, and the defaults in config list."""
         self.write("# keep\nagents.orchestrator-model: fable\n")
         code, out = self.cli("set", "agents.lookup-model", "haiku 4")
         self.assertEqual(code, 1)
@@ -371,6 +372,7 @@ class Command(unittest.TestCase):
         lines = self.cli("list")[1].splitlines()
         self.assertIn("agents.orchestrator-model opus default", lines)
         self.assertIn("agents.dispatcher-effort low default", lines)
+        self.assertIn("agents.attack-model haiku default", lines, msg="Requirement: Attack model setting")
 
     def test_broken_file_named(self):
         self.write("# c\n\nmode: solo\ndelivery.mode pr\n")
