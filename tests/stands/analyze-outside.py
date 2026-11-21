@@ -59,7 +59,8 @@ def prepare(variant):
                  "`Where` and `Finding` (and `Mark` when a judge marked them). Write nothing outside `%s`. A "
                  "long-lived process only as a managed background task, stopped before the report." % (copy, copy),
                  "Variant: %s. Follow only the skill texts below: do not call the Skill tool and do not read "
-                 "an installed skill, whose text may be newer than this variant's." % variant]
+                 "an installed skill, whose text may differ from this variant's.%s" % (variant, "" if variant ==
+                 "same-session" else " A subagent you launch gets the skill path %s." % (REPO / "skills/spec-analyze/SKILL.md"))]
         parts += ["=== %s (SKILL.md) ===\n%s" % (n, t) for n, t in texts(variant)]
         prompt = tmp / "prompt.md"
         prompt.write_text("\n\n".join(parts) + "\n")
@@ -80,7 +81,8 @@ def clean(copy):
 
 
 def cells(line):
-    """The cells of a GFM table row: split on `|` outside a code span and not escaped as `\\|`."""
+    """The cells of a table row: split on `|` unless escaped as `\\|` or inside a single-backtick code span (a
+    looser rule than GFM's; a row it splits wrong fails the cell-count check of findings())."""
     out, cell, code, i, s = [], "", False, 0, line.strip()
     s = s[1:] if s.startswith("|") else s
     s = s[:-1] if s.endswith("|") and not s.endswith("\\|") else s
