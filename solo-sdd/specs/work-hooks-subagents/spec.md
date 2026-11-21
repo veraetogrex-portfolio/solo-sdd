@@ -137,6 +137,10 @@ The `stop` hook SHALL NOT return the agent for an open unmerged PR when the proj
 - **WHEN** the transcript file is missing or cannot be read
 - **THEN** the command passes and the error is written to the hook error log, as for every hook failure
 
+#### Scenario: Another outside-check role after the code
+- **WHEN** after the first edit of `src/app.py` the session ran only `Analyze:`, `Attack:`, `Judge:` or `Check:` agents, then runs `solo-sdd archive add-words --yes`
+- **THEN** the archive is refused, the reason names `src/app.py`: only a `Review:` agent counts as the code review
+
 ### Requirement: Direct merge refused in a process tree
 `guard` SHALL refuse a Bash command that runs `gh pr merge` or a `gh api` call to `pulls/<n>/merge` when the git working copy of the hook's `cwd` has a `solo-sdd/` tree, naming `sdd-pr.py merge`, whose gates a direct merge skips; outside such a tree it passes. A quoted argument, a heredoc body read by a text program and a search pattern are not commands. The check guards against an agent's accidental direct merge by the plain forms; it is not a security boundary.
 

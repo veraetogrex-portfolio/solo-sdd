@@ -219,7 +219,7 @@ The key `delivery.local-merge` (`merge`, `squash`, `rebase`; default `merge`) SH
 - **THEN** Codex executors write the code by `codex-orchestration`, the lead agent accepts the result with its own commands
 
 ### Requirement: Project models within the machine policy
-When the event folder's `solo-sdd/config` sets `agents.orchestrator-model`, `agents.review-model` or `agents.lookup-model`, the guard hook SHALL refuse a launch of that role on that model while the model is outside the role's machine list (`main` for orchestrator and review, `cheap` for lookup), naming the key and the list. `SOLO_SDD_EXPENSIVE_OK=1` lifts it; a broken config SHALL keep the role rules alone and write `errors.log`. `agents.test-model` SHALL stay bound by Test model allowlist.
+When the event folder's `solo-sdd/config` sets `agents.orchestrator-model`, `agents.review-model`, `agents.lookup-model` or `agents.attack-model`, the guard hook SHALL refuse a launch of that key's roles on that model outside their machine list, naming the key and the list. `SOLO_SDD_EXPENSIVE_OK=1` lifts it; a broken config SHALL keep the role rules alone and write `errors.log`. `agents.test-model` SHALL stay bound by Test model allowlist.
 
 #### Scenario: A project widens the lookup model
 - **WHEN** the file has `agents.lookup-model: sonnet`, and a `Lookup:` subagent of type `Explore` starts on `sonnet`
@@ -236,6 +236,18 @@ When the event folder's `solo-sdd/config` sets `agents.orchestrator-model`, `age
 #### Scenario: A broken config
 - **WHEN** the file has a broken line, and the main session launches `Orchestrator a` on `sonnet`
 - **THEN** the hook allows it by the role rules, and the temporary home's `errors.log` names the line
+
+#### Scenario: The roles and lists of each key
+- **WHEN** a role model key is set in the file
+- **THEN** `agents.orchestrator-model` bounds the orchestrator by `main`; `agents.review-model` bounds review, analyze, judge and check by `main`; `agents.lookup-model` bounds lookup and `agents.attack-model` bounds attack by `cheap`
+
+#### Scenario: A project widens the attack model
+- **WHEN** the file has `agents.attack-model: sonnet`, and a subagent launches `Attack: a 4 4a` on `sonnet`
+- **THEN** the hook denies it, and the reason names `agents.attack-model` and the `cheap` list
+
+#### Scenario: A judge on a project review model
+- **WHEN** the file has `agents.review-model: fable`, `fable` is in `main`, and a subagent launches `Judge: a` on `fable`
+- **THEN** the hook allows it
 
 ### Requirement: Branch and commit prefixes
 The change branch SHALL be `<delivery.branch-prefix><id>` (default `change/`), the plan branch `<delivery.plan-prefix><first id>` (default `plan/`), and a light commit subject SHALL start with `commit.light-prefix` (text, default `light:`), matched as plain text. The dispatch scripts, `sdd-pr.py`, `sdd-eval.py`, `spec-dispatch`, `spec-plan`, `work-status`, `report` and the global rules SHALL take them; `change/<id>`, `plan/<first id>` and `light:` in other requirements name these defaults.
@@ -462,3 +474,10 @@ Without a file value, `dispatch.limit` and each key of Working copy settings exc
 #### Scenario: A refused old value
 - **WHEN** there is no file value and "Working copy" has "Paths: `/etc/hosts`, `docs/a.md`"
 - **THEN** `config get worktree.paths` prints `docs/a.md`, and stderr names `AGENTS.md:<line>` and `/etc/hosts`
+
+### Requirement: Attack model setting
+`agents.attack-model` (default `haiku`) SHALL take one model name; the guard hook SHALL read it as the key of the `attack` role (Project models within the machine policy).
+
+#### Scenario: The default attack model
+- **WHEN** the file has no `agents.attack-model`
+- **THEN** `config list` prints `agents.attack-model haiku default`

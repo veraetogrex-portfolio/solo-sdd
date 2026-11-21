@@ -25,15 +25,15 @@ The guard SHALL determine a subagent's role by an explicit tag at the start of t
 - **THEN** the role is `lookup`
 
 #### Scenario: Role tags
-- **WHEN** the `Agent` call description starts (ignoring case and leading spaces) with `Review:`, with `Orchestrator` (with a colon or a space after the word), with `Implement:`, with `Lookup:`
-- **THEN** the role is respectively `review`, `orchestrator`, `implement`, `lookup`; other descriptions, including those with the old Russian review, executor and search tags, are `general`
+- **WHEN** the `Agent` call description starts (ignoring case and leading spaces) with `Review:`, with `Orchestrator` (with a colon or a space after the word), with `Implement:`, with `Lookup:`, with `Analyze:`, with `Attack:`, with `Judge:`, with `Check:`
+- **THEN** the role is respectively `review`, `orchestrator`, `implement`, `lookup`, `analyze`, `attack`, `judge`, `check`; other descriptions, including those with the old Russian review, executor and search tags, are `general`
 
 #### Scenario: Words without a tag
-- **WHEN** the description holds `Acceptance`, `Test`, `Independent review`, `Re-review` without a tag, or role words further in the description
+- **WHEN** the description holds `Acceptance`, `Test`, `Independent review`, `Re-review`, `Analyze`, `Check` without a colon, or role words further in the description
 - **THEN** they do not affect the role
 
 ### Requirement: Models allowed per role and caller
-The guard SHALL apply the rules by role and by who launches (`agent_id` in the hook input means a subagent launches, none means the main session); the rules of each role are set by the scenarios, and a role model the project sets adds the refusal of Project models within the machine policy (capability `settings`).
+The guard SHALL apply the rules by role and by who launches (`agent_id` in the hook input means a subagent launches, none means the main session); the rules of each role are set by the scenarios, and a role model the project sets adds the refusal of Project models within the machine policy and Attack model setting (capability `settings`).
 
 #### Scenario: An orchestrator from the main session
 - **WHEN** the main session launches "Orchestrator add-words" with `model: opus`
@@ -45,7 +45,7 @@ The guard SHALL apply the rules by role and by who launches (`agent_id` in the h
 
 #### Scenario: An executor without a model from a subagent
 - **WHEN** a subagent launches "Implement words command" without `model`, with `model: opus` or with `model: sonnet`
-- **THEN** the launch is refused; the refusal text says the orchestrator writes the change code, and from a subagent `Review:` and `Lookup:` are allowed
+- **THEN** the launch is refused; the refusal text says the orchestrator writes the change code, and from a subagent `Review:`, `Lookup:`, `Analyze:`, `Attack:`, `Judge:` and `Check:` are allowed
 
 #### Scenario: Search not through Explore
 - **WHEN** a subagent launches "Lookup: where is the limit" with `subagent_type: general-purpose` and `model: haiku`
@@ -71,9 +71,17 @@ The guard SHALL apply the rules by role and by who launches (`agent_id` in the h
 - **WHEN** `Agent` with the role `lookup` is launched
 - **THEN** `subagent_type` is `Explore`, `model` is set explicitly and is not in the `expensive` list
 
+#### Scenario: The analyze, judge and check role rule
+- **WHEN** `Agent` with the role `analyze`, `judge` or `check` is launched by the main session or a subagent
+- **THEN** `model` is not set or is in the `main` list, as for `review`; `Judge: a` on `haiku` is refused with the text naming the `main` list
+
+#### Scenario: The attack role rule
+- **WHEN** `Agent` with the role `attack` is launched by the main session or a subagent
+- **THEN** `model` is set explicitly and is not in the `expensive` list, any `subagent_type`; `Attack: a` without `model` or on `opus` is refused with the text that an attacker runs on a cheap model set explicitly
+
 #### Scenario: The general and implement roles
 - **WHEN** `Agent` with the role `general` or `implement` is launched by the main session or a subagent
-- **THEN** from the main session without limits; from a subagent refused with the text that the orchestrator writes the change code itself, and the owner bypass does not lift this rule, like the orchestrator rule; from a subagent only `review` and `lookup` are allowed
+- **THEN** from the main session without limits; from a subagent refused with the text that the orchestrator writes the change code itself, and the owner bypass does not lift this rule, like the orchestrator rule; from a subagent only `review`, `lookup`, `analyze`, `attack`, `judge` and `check` are allowed
 
 ### Requirement: Owner-only expensive override
 The model rules bypass SHALL work only with `SOLO_SDD_EXPENSIVE_OK=1` in the hook process environment. The word `EXPENSIVE_OK` in a subagent description or in a Bash command text does not turn the bypass on. The bypass lifts the model limits; it does not lift the rule "only the main session launches an orchestrator". Refusal messages do not name the bypass and say that the owner allows an expensive model.

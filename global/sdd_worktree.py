@@ -173,6 +173,7 @@ REGISTRY = {
     "agents.orchestrator-model": ("model", None, "opus", None),  # spec-dispatch; work_hooks.py keeps it in the main list
     "agents.review-model": ("model", None, "", None),  # "": the session's main model; work_hooks.py: the main list
     "agents.lookup-model": ("model", None, "haiku", None),  # work_hooks.py: the cheap list
+    "agents.attack-model": ("model", None, "haiku", None),  # work_hooks.py: the cheap list
     "agents.test-model": ("model", None, "haiku", None),  # paid product calls in tests; the Test model allowlist bounds it
     "agents.dispatcher-effort": ("choice", ("low", "medium", "high"), "low", None),
     "agents.executor": ("choice", ("self", "codex"), "self", None),  # codex: as if the owner named codex-orchestration

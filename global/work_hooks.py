@@ -86,6 +86,7 @@ REGISTRY = {
     "agents.orchestrator-model": ("model", None, "opus", None),  # spec-dispatch; work_hooks.py keeps it in the main list
     "agents.review-model": ("model", None, "", None),  # "": the session's main model; work_hooks.py: the main list
     "agents.lookup-model": ("model", None, "haiku", None),  # work_hooks.py: the cheap list
+    "agents.attack-model": ("model", None, "haiku", None),  # work_hooks.py: the cheap list
     "agents.test-model": ("model", None, "haiku", None),  # paid product calls in tests; the Test model allowlist bounds it
     "agents.dispatcher-effort": ("choice", ("low", "medium", "high"), "low", None),
     "agents.executor": ("choice", ("self", "codex"), "self", None),  # codex: as if the owner named codex-orchestration
@@ -1730,7 +1731,10 @@ def agent_role(desc, pol=None):
 
 # role -> (the project key of its model, the machine list that bounds it): Project models within the machine policy
 ROLE_KEYS = {"orchestrator": ("agents.orchestrator-model", "main"), "review": ("agents.review-model", "main"),
-             "lookup": ("agents.lookup-model", "cheap")}
+             "lookup": ("agents.lookup-model", "cheap"), "attack": ("agents.attack-model", "cheap"),
+             "analyze": ("agents.review-model", "main"), "judge": ("agents.review-model", "main"),
+             "check": ("agents.review-model", "main")}
+JUDGEMENT_ROLES = ("review", "analyze", "judge", "check")  # judgement: no model or one of main
 
 
 def project_model(role, cwd):
@@ -1760,13 +1764,17 @@ def guard_models_agent(ti, from_subagent=False, cwd=None):
     # not about models: the owner bypass (SOLO_SDD_EXPENSIVE_OK) does not lift it
     if role in ("general", "implement") and from_subagent:
         deny("The orchestrator writes the change code itself. From a subagent only subagents tagged "
-             "`Review:` and `Lookup:` are allowed.")
+             "`Review:`, `Lookup:`, `Analyze:`, `Attack:`, `Judge:` and `Check:` are allowed.")
     if owner_override():
         return
     model = ti.get("model")
-    if role == "review" and model and not model_hits(model, pol["main"]):
-        deny("Acceptance or review subagent on model %s. Review and acceptance run on the main model: launch without model "
-             "(inherits the session model) or with a model from the list: %s." % (model, ", ".join(pol["main"])))
+    if role in JUDGEMENT_ROLES and model and not model_hits(model, pol["main"]):
+        who = "Acceptance or review" if role == "review" else role.capitalize()
+        deny("%s subagent on model %s. Review, acceptance and judgement run on the main model: launch without model "
+             "(inherits the session model) or with a model from the list: %s." % (who, model, ", ".join(pol["main"])))
+    if role == "attack" and not (model and not model_hits(model, pol["expensive"])):
+        deny("Attack subagent on model %s. An attacker runs on a cheap model set explicitly (model: haiku), "
+             "outside the expensive list: %s. %s" % (model or "inherit", ", ".join(pol["expensive"]), OWNER_ONLY))
     if role == "lookup" and not (model and not model_hits(model, pol["expensive"])):
         deny("Lookup subagent on model %s. Set a cheap model explicitly (model: haiku). %s"
              % (model or "inherit", OWNER_ONLY))

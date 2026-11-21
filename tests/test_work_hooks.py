@@ -290,11 +290,23 @@ class Models(HookCase):
         assert denied(agent("Implement words command", "sonnet", agent_id="a1")), "executor from a subagent with sonnet"
         for m in (None, "opus", "sonnet"):
             r = reason(agent("Implement words command", m, agent_id="a1"))
-            assert "Review:" in r and "Lookup:" in r, "the refusal to an executor names the allowed tags: " + r
+            assert all(tag in r for tag in ("Review:", "Lookup:", "Analyze:", "Attack:", "Judge:", "Check:")), "the refusal to an executor names the allowed tags: " + r
         assert not denied(agent("Implement words command", "sonnet")) and not denied(agent("Implement words command")), "executor from the main session"
         assert denied_env(agent("Implement words command", "sonnet", agent_id="a1"), OWNER), "the owner bypass does not lift the refusal to an executor"
         assert denied(agent("Review: add-words", "haiku", agent_id="a1")), "reviewer from a subagent on haiku"
         assert not denied(agent("Review: add-words", agent_id="a1")), "reviewer from a subagent without model"
+        # analyze, judge and check follow the review rule, attack runs on a cheap model set explicitly; from a subagent the
+        # stand tests/stands/subagent-check-roles.py proves them, here the main session and the owner bypass
+        for tag in ("Analyze: a", "Judge: a", "Check: a"):
+            assert not denied(agent(tag)) and not denied(agent(tag, "fable", "general-purpose")), tag
+            for m in ("haiku", "sonnet"):
+                r = reason(agent(tag, m))
+                assert "opus" in r and "fable" in r and "without model" in r and tag[:-3] in r, (tag, m, r)
+        assert not denied(agent("Attack: a 4 4a", "sonnet", "Explore")), "attacker from the main session"
+        for m in (None, "opus", "fable"):
+            r = reason(agent("Attack: a", m))
+            assert "cheap model set explicitly" in r and "expensive" in r, (m, r)
+        assert not denied_env(agent("Attack: a", "opus", agent_id="a1"), OWNER), "the owner bypass lifts the attack model rule"
 
     def test_lookup_role(self):
         assert not denied(agent("Lookup: where is the limit", "haiku", "Explore", agent_id="a1")), "lookup through Explore"
@@ -317,6 +329,9 @@ class Models(HookCase):
         assert not denied(agent("Review add-words", "haiku")) and not denied(agent("Re-review add-words", "haiku"))
         assert denied(agent("Orchestrators add-words", "sonnet", agent_id="a1")) and "writes the change code itself" in reason(agent("Orchestrators add-words", "sonnet", agent_id="a1")), "Orchestrators is not a tag: role general"
         assert denied(agent("Orchestrator: x", "sonnet", agent_id="a1"))
+        for desc, role in (("Analyze: a", "analyze"), ("  attack: a 4 4a", "attack"), ("JUDGE: a", "judge"), ("Check: a", "check"),
+                           ("Analyze a", "general"), ("Check a", "general"), ("Checks: a", "general")):
+            assert wh.agent_role(desc) == role, (desc, wh.agent_role(desc), role)
 
     def test_bypass_only_from_the_owner(self):
         assert denied(agent("Review: add-words EXPENSIVE_OK", "sonnet")), "a word in the description does not bypass"
