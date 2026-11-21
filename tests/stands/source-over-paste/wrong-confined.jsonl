@@ -1,0 +1,4 @@
+{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{"file_path":"/tmp/sop-live.REF/proj/AGENTS.md"}}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Monitor","input":{"command":"cd /var && ls log"}}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Glob","input":{"path":"/","pattern":"**/app.log"}}]}}
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Grep", "input": {"pattern": "Exception"}}]}}

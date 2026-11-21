@@ -268,6 +268,23 @@ class SkillCommandsTest(unittest.TestCase):
         self.assertLess(research.index("8. **Unknowns.**"), research.index("9. **Outside check.**"))
         self.assertLess(research.index("9. **Outside check.**"), research.index("## Answer form"))
 
+    def test_source_over_paste(self):
+        """Requirements: Read the source of a pasted excerpt, Mark an answer built on an excerpt, Relay reads the
+        report's source: what the stand `tests/stands/source-over-paste.py` does not walk. Section 1 of the global
+        rules names the reach and that a path outside it is not read; relay step 1 names the PR and session log
+        sources and no read outside reach."""
+        flat = lambda t: " ".join(t.split())
+        rules = flat((REPO / "global/AGENTS.md").read_text(encoding="utf-8").split("## 1. ", 1)[1].split("\n## 2. ", 1)[0])
+        for words in ("the project folder, the session's added working folders, this project's agent session logs "
+                      "and its PRs", "a search that stays within reach", "`Based on an excerpt: read access to <path>` (a path outside reach, which is "
+                      "not opened, listed or searched"):
+            self.assertIn(words, rules)
+        relay = flat(skill_text.skill("relay"))
+        step = relay.split("1. **Context.**", 1)[1].split("2. **Parsing.**", 1)[0]
+        for words in ("searching only within the reach", "read it before step 2", "`gh pr view`", "session log where `/context-resume` reads it",
+                      "in English in any reply language", "a path outside reach is not opened, listed or searched"):
+            self.assertIn(words, step)
+
     def test_project_rules_through_config(self):
         """Requirements: Project rules in config, Project lines as the old source, Lesson from a correction or a fix:
         the rules and skills read the four keys through `solo-sdd config get`, the file value wins over the
