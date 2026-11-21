@@ -815,6 +815,10 @@ class Stop(HookCase):
         assert run("stop", dict(stop2, background_tasks=bg)) is None, "running background agent: stop is silent"
         o = run("stop", dict(stop2, session_id="S21", background_tasks=[dict(bg[0], status="completed")]))
         assert o and o["decision"] == "block" and "uncommitted" in o["reason"], o
+        sh = {"id": "b1", "type": "shell", "status": "running", "description": "npm run dev", "command": "npm run dev"}
+        for n, tasks in [("shell", [sh]), ("monitor", [{"id": "m1", "type": "monitor", "status": "running"}])]:
+            o = run("stop", dict(stop2, session_id="S21-" + n, background_tasks=tasks))
+            assert o and o["decision"] == "block" and "uncommitted" in o["reason"], (n, o)  # the kept rows: the stand
 
     def test_a_browser_in_a_subagent_transcript(self):
         tr, lines = stop_fixture()
