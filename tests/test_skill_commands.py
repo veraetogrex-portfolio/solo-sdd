@@ -239,11 +239,34 @@ class SkillCommandsTest(unittest.TestCase):
                                        if l.startswith("- You write the code yourself")]))
         for name, lines in places:
             self.assertEqual(len(lines), 1, name)
-            tags = ("`Analyze:`", "`Attack:`", "`Judge:`") + (("Explore",) if name == "global rules 10"
+            tags = ("`Analyze:`", "`Attack:`", "`Judge:`") + (("Explore", "`Check:`") if name == "global rules 10"
                                                                else ("`Review:`", "`Lookup:`") if "spec-next" in name
                                                                else ("`Lookup:`",))
             for tag in tags:
                 self.assertIn(tag, lines[0], name)
+
+    def test_outside_fact_check(self):
+        """Requirements: Outside fact check before handover, Fact check without a subagent tool, Fixes and a
+        counter-argument after the check, Check failures: section 3 of the global rules and evidence-research name the
+        `Check:` pass, its marks, bounds and lines, and the evidence-research answer form ends with the check line."""
+        flat = lambda t: " ".join(t.split())
+        rules = flat((REPO / "global/AGENTS.md").read_text(encoding="utf-8").split("## 3. What", 1)[1].split("\n## ", 1)[0])
+        research = flat(skill_text.skill("evidence-research"))
+        step = research.split("9. **Outside check.**", 1)[-1].split("## Answer form", 1)[0]
+        form = research.split("## Answer form", 1)[-1].split("## Mistakes", 1)[0]
+        for name, text in (("global rules 3", rules), ("evidence-research step 9", step)):
+            for words in ("`Check:`", "`confirmed`", "`wrong`", "`no primary source`", "`unreadable: <reason>`",
+                          "`Not confirmed:`", "`Against:`", "not the reasoning", "fixed lines", "no third", "rerun",
+                          "empty source list", "`Check: in session (no subagent tool)`"):
+                self.assertIn(words, text, name)
+        self.assertIn("a fact still missing after the rerun counts in `not confirmed <n>`", step)
+        for words in ("process skill", "change artifacts", "status lines", "no fact from an outside source"):
+            self.assertIn(words, rules)
+        for line in ("Not confirmed:", "Against:", "Check: confirmed <n>, fixed <n>, not confirmed <n> | "
+                     "Check: in session (no subagent tool)"):
+            self.assertIn(line, form)
+        self.assertLess(research.index("8. **Unknowns.**"), research.index("9. **Outside check.**"))
+        self.assertLess(research.index("9. **Outside check.**"), research.index("## Answer form"))
 
     def test_project_rules_through_config(self):
         """Requirements: Project rules in config, Project lines as the old source, Lesson from a correction or a fix:
