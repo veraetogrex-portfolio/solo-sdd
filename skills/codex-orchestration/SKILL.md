@@ -1,6 +1,6 @@
 ---
 name: codex-orchestration
-description: Orchestrate the Codex CLI as a fleet of single-purpose executors. Decompose the work into independent units, give each unit its own codex process with its own spec, then review each diff from a clean context. Use only when the user names Codex as the executor - "use codex", "run it through codex", "delegate this to codex", "codex-orchestration" - or when the project sets `agents.executor: codex` (`solo-sdd config get agents.executor`), which counts as that naming. Otherwise the lead agent writes the code itself and uses subagents only for independent review and heavy reading.
+description: Orchestrate the Codex CLI as a fleet of single-purpose executors. Decompose the work into independent units, give each unit its own codex process with its own spec, then review each diff from a clean context. Use only when the user names Codex as the executor - "use codex", "run it through codex", "delegate this to codex", "codex-orchestration" - or when the project sets `agents.executor: codex` (`solo-sdd config get agents.executor`), which counts as that naming. Otherwise the lead agent writes the code itself and uses subagents only for review, outside analysis and search.
 ---
 
 # Codex orchestration

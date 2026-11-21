@@ -1,8 +1,9 @@
-## Purpose
+# analyze-outside Specification
 
+## Purpose
 The `spec-analyze` check before code runs outside the session that wrote the change: cheap attackers each try to prove the change is not ready on their own pass group, a judge on the main model keeps or drops their findings, and the author fixes what was kept.
 
-## ADDED Requirements
+## Requirements
 
 ### Requirement: Analyze outside the author
 When `spec-plan` step 7a or `spec-next` step 4a runs `spec-analyze` and `process.analyze` is `on`, the passes SHALL run in subagents, never in the session that wrote or implements the change, except in an agent without a subagent tool (Passes in place). Every such subagent SHALL get the artifact paths, the main specs of the affected capabilities and the project rules, and SHALL NOT get the planner's reasoning, reports or chat history.

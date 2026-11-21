@@ -92,7 +92,7 @@ Shared by Claude Code and Codex. The three copies above are deployed from the so
 
 ## 10. Orchestration
 
-- You write the code yourself: every handoff between agents loses precision. Subagents are only for independent acceptance and heavy reading (Explore). Independent changes run in parallel through `spec-dispatch`.
+- You write the code yourself: every handoff between agents loses precision. Subagents are only for independent acceptance, the outside `spec-analyze` run (`Analyze:`, `Attack:`, `Judge:`) and heavy reading (Explore). Independent changes run in parallel through `spec-dispatch`.
 - Codex executors only when the user named the skill `codex-orchestration`, or the project sets `agents.executor: codex` (`solo-sdd config get agents.executor`), which counts as that naming. An agent changes `agents.executor` only on the owner's words in the chat.
 - Plan through `/spec-plan`, debug through `/debug-profile`. In a project with `solo-sdd/` a plugin's own cycle of tests, verification, per-task subagents and code review is not used: `spec-next` and `ship` set the cycle.
 

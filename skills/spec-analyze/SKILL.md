@@ -9,6 +9,23 @@ description: Use when change artifacts are written and code is not yet touched -
 
 Argument: the change name. Without an argument, the change `/spec-next` is running now (its `CLAIM`), otherwise all open changes without `WAITING`.
 
+## Outside run
+
+A session judges its own work poorly. When `spec-plan` step 7a or `spec-next` step 4a runs this skill (`process.analyze` is `on`), the author runs no pass itself: the passes run in subagents with a clean context.
+
+**Passes in place**, with no subagent launched: inside an `Analyze:`, `Attack:` or `Judge:` subagent; on a direct `/spec-analyze` call by the user; in an agent without a subagent tool, whose report line is `Analyze: in session (no subagent tool)`. Inside those three subagents edit no file: return the findings table to the author, who alone edits the artifacts.
+
+**Every subagent gets** the absolute paths of the change artifacts, of the main specs of the affected capabilities, of the project rules (`AGENTS.md`, `CLAUDE.md`, `solo-sdd/project.md`, `solo-sdd/analyze.md`) and of this skill, and the passes to run. It never gets the planner's reasoning, reports or chat history. Under the dispatcher it also gets the ban on writing outside `WORKTREE`.
+
+**The run.** N is `solo-sdd config get process.analyze-attackers` (default 3).
+- N = 0: one `Analyze: <id>` subagent, without `model` or with `agents.review-model` when it is set, runs every pass. Every finding counts as kept.
+- N > 0: N `Attack: <id> <passes>` subagents in one message, `model` from `solo-sdd config get agents.attack-model` (default `haiku`), each tasked to prove the change is not ready on its pass group: group one `1 2 3 3a`, group two `4 4a`, group three `5 6 7 7a 7b`. With 1 the attacker takes all three groups; with 2 the first takes groups one and two and the second group three; with N of 3 or more attacker i takes group ((i - 1) mod 3) + 1.
+- Then one `Judge: <id>` subagent, without `model` or with `agents.review-model`, gets every attacker's table, each named by its attacker, and the artifacts. It merges duplicates into one finding naming every attacker that reported it, and marks each finding in the column `Mark`: `keep <level>`, or `drop: <reason>` (the artifacts already answer it, a misread, outside the change).
+
+**The author** fixes every kept CRITICAL and HIGH by "What to do with findings". A kept finding it does not fix gets a `Decisions Without Owner` line: "analyze: <finding> kept by the judge, not fixed → <reason>"; the change still starts. Then `solo-sdd validate <id>` and one `Analyze: <id> 1 2 7 7a` subagent for the repeat; its findings go to the author with no judge.
+
+**The report line** of `spec-plan` and `spec-next`: `Analyze: <n> findings, kept <k>, dropped <d>; CRITICAL <c> · HIGH <h>, fixed <f>`, where n counts the findings after the merge (k + d) and c and h the kept ones. Without the outside run the line is `Analyze: off (solo-sdd/config)` or `Analyze: in session (no subagent tool)`.
+
 ## What to read
 
 0. Legacy tree: the project has `openspec/` and no `solo-sdd/`: stop before any change work, change no file and name the next step `solo-sdd import openspec`; do not import by yourself.
@@ -86,11 +103,11 @@ Fix: add the earlier one to the `Depends On` of the later one by number or name 
 
 ## What to do with findings
 
-Ask no questions. Fix CRITICAL and HIGH yourself in the artifacts: a requirement and a scenario in the spec, a decision in `design.md` or a task, waiting in `Needs`. Record every decision as a line in the `Decisions Without Owner` section of `verification.md`: "analyze: <what was unclear> → <what was decided> — <why>". No `verification.md`: into the report.
+Ask no questions. Inside an `Analyze:`, `Attack:` or `Judge:` subagent this section does not apply: no edits, only the table. Fix CRITICAL and HIGH yourself in the artifacts: a requirement and a scenario in the spec, a decision in `design.md` or a task, waiting in `Needs`. Record every decision as a line in the `Decisions Without Owner` section of `verification.md`: "analyze: <what was unclear> → <what was decided> — <why>". No `verification.md`: into the report.
 
 Do not bypass an unarchived dependency: the change is not ready, `/spec-next` takes another.
 
-Code does not change. After the edits: `solo-sdd validate <change>` and a repeat of passes 1, 2, 7 and 7a: an edit of coverage or the frame often opens a new hole.
+Code does not change. After the edits: `solo-sdd validate <change>` and a repeat of passes 1, 2, 7 and 7a (in the outside run, the `Analyze: <id> 1 2 7 7a` subagent): an edit of coverage or the frame often opens a new hole.
 
 ## Report
 
@@ -103,13 +120,14 @@ CRITICAL <n> · HIGH <n> · MEDIUM <n> · LOW <n>, fixed <n>
 Ready for implementation: yes | no — <reason>
 ```
 
-At most 30 rows in the table, the rest as a summary by pass.
+At most 30 rows in the table, the rest as a summary by pass. An attacker's table leaves `What was done` empty; the judge's adds the columns `Attackers` and `Mark`.
 
 ## Mistakes
 
 | Mistake | Fix |
 |---|---|
 | Started editing code | Only the artifacts change here |
+| The author of the change ran the passes in its own session | `Outside run`: `Analyze:`, or `Attack:` and `Judge:` subagents |
 | Asked the user | Decide yourself, record in `Decisions Without Owner` |
 | Skipped pass 2 because "it is clear anyway" | The change frame is always checked, except a change without `verification.md` |
 | "The test will come later" as a criterion | The test or the scenario step is named now |

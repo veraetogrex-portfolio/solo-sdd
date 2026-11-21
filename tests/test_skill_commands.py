@@ -157,23 +157,24 @@ class SkillCommandsTest(unittest.TestCase):
         self.assertIn("`/effort low`", read("skills/spec-dispatch/SKILL.md"))
 
     def test_process_cadence_settings(self):
-        """Requirements: Process cadence settings and Change size limits: the skills and the algorithm read the five
+        """Requirements: Process cadence settings and Change size limits: the skills and the algorithm read the six
         keys through `solo-sdd config get`, name every fixed limit with its key, and let an agent change the keys
         only on the owner's words."""
         read = lambda rel: " ".join(skill_text.read(REPO / rel).split())
         get = "`solo-sdd config get process.%s`"
         for rel, keys in (("skills/spec-plan/SKILL.md", ("max-tasks", "bugfix-max-tasks", "requirement-max-chars",
-                                                         "analyze")),
+                                                         "analyze", "analyze-attackers")),
                           ("skills/spec-analyze/SKILL.md", ("max-tasks", "bugfix-max-tasks", "requirement-max-chars")),
-                          ("skills/spec-next/SKILL.md", ("analyze", "audit-every")),
+                          ("skills/spec-next/SKILL.md", ("analyze", "audit-every", "analyze-attackers")),
                           ("ALGORITHM.md", ("max-tasks", "bugfix-max-tasks", "requirement-max-chars", "analyze",
-                                            "audit-every"))):
+                                            "audit-every", "analyze-attackers"))):
             text = read(rel)
             for key in keys:
                 self.assertIn(get % key, text, "%s: %s" % (rel, key))
         for rel in ("skills/spec-plan/SKILL.md", "skills/spec-next/SKILL.md", "ALGORITHM.md"):
             self.assertIn("changes `process.max-tasks`, `process.bugfix-max-tasks`, `process.requirement-max-chars`, "
-                          "`process.audit-every` and `process.analyze` only on the owner's words", read(rel), rel)
+                          "`process.audit-every`, `process.analyze` and `process.analyze-attackers` only on the owner's "
+                          "words", read(rel), rel)
         for rel in ("skills/spec-plan/SKILL.md", "skills/spec-next/SKILL.md"):
             self.assertIn("`Analyze: off (solo-sdd/config)`", read(rel), rel)
         # Scenario Analyze switched off, Audit every three archives: the spec-next lines that hold the gate and the audit
@@ -192,6 +193,57 @@ class SkillCommandsTest(unittest.TestCase):
                 for n, line in enumerate((REPO / rel).read_text(encoding="utf-8").splitlines(), 1)
                 if fixed.search(line) and "process." not in line]
         self.assertEqual(bare, [])
+
+    def test_analyze_outside_the_author(self):
+        """Requirements: Analyze outside the author, Passes in place, Attackers and a judge, Findings after the judge,
+        Repeat after the author's edits: the laid-out spec-analyze names the outside run, and spec-plan step 7a and
+        spec-next step 4a send their check to it with the new report line."""
+        flat = lambda rel: " ".join(skill_text.read(REPO / rel).split())
+        analyze = flat("skills/spec-analyze/SKILL.md")
+        run = analyze.split("## Outside run", 1)[1].split("## What to read", 1)[0]
+        line = "`Analyze: <n> findings, kept <k>, dropped <d>; CRITICAL <c> · HIGH <h>, fixed <f>`"
+        for words in ("inside an `Analyze:`, `Attack:` or `Judge:` subagent", "on a direct `/spec-analyze` call",
+                      "`Analyze: in session (no subagent tool)`", "Inside those three subagents edit no file",
+                      "never gets the planner's reasoning, reports or chat history",
+                      "`solo-sdd config get process.analyze-attackers` (default 3)", "prove the change is not ready",
+                      "With 1 the attacker takes all three groups",
+                      "with 2 the first takes groups one and two and the second group three",
+                      "with N of 3 or more attacker i takes group ((i - 1) mod 3) + 1",
+                      "one `Judge: <id>`", "naming every attacker that reported it", "`keep <level>`", "`drop: <reason>`",
+                      "kept by the judge, not fixed", "`Decisions Without Owner`",
+                      "one `Analyze: <id> 1 2 7 7a` subagent for the repeat", "with no judge", line):
+            self.assertIn(words, run)
+        self.assertIn("this section does not apply: no edits, only the table", analyze)
+        plan, nxt = flat("skills/spec-plan/SKILL.md"), flat("skills/spec-next/SKILL.md")
+        steps = (("spec-plan 7a", plan.split("7a. **Cross-check.**", 1)[1].split(" 8. **", 1)[0]),
+                 ("spec-next 4a", nxt.split("4a. **Check before code.**", 1)[1].split(" 5. **", 1)[0]))
+        for name, step in steps:
+            for words in ("`Outside run`", "`Analyze:`", "`Attack:`", "`Judge:`", "process.analyze-attackers",
+                          "`agents.attack-model`"):
+                self.assertIn(words, step, name)
+        for name, text in (("spec-plan", plan), ("spec-next", nxt)):
+            report = text.split("## Report", 1)[1]
+            self.assertIn(line.strip("`") + " | Analyze: off (solo-sdd/config) | Analyze: in session (no subagent tool)",
+                          report, name)
+            self.assertNotIn("Analyze: CRITICAL <n>", report, name)
+
+    def test_subagent_tags_of_the_lead(self):
+        """Requirements: Lead writes code and Orchestrator writes code: the subagent limits of spec-next (step 5 and
+        its dispatched line), the algorithm's stage 5 and section 10 of the global rules name the five tags."""
+        nxt = skill_text.read(REPO / "skills/spec-next/SKILL.md").splitlines()
+        places = (("spec-next step 5", [l for l in nxt if l.startswith("5. **Implementation.**")]),
+                  ("spec-next dispatched step 5", [l for l in nxt if l.startswith("- Step 5. The orchestrator")]),
+                  ("ALGORITHM stage 5", [l for l in (REPO / "ALGORITHM.md").read_text(encoding="utf-8").splitlines()
+                                         if l.startswith("5. The lead agent does the tasks")]),
+                  ("global rules 10", [l for l in (REPO / "global/AGENTS.md").read_text(encoding="utf-8").splitlines()
+                                       if l.startswith("- You write the code yourself")]))
+        for name, lines in places:
+            self.assertEqual(len(lines), 1, name)
+            tags = ("`Analyze:`", "`Attack:`", "`Judge:`") + (("Explore",) if name == "global rules 10"
+                                                               else ("`Review:`", "`Lookup:`") if "spec-next" in name
+                                                               else ("`Lookup:`",))
+            for tag in tags:
+                self.assertIn(tag, lines[0], name)
 
     def test_project_rules_through_config(self):
         """Requirements: Project rules in config, Project lines as the old source, Lesson from a correction or a fix:

@@ -68,15 +68,15 @@ In the "Under the dispatcher" mode the orchestrator SHALL NOT prepare the enviro
 - **THEN** the links are in place and did not get into the commit
 
 ### Requirement: Orchestrator writes code
-In the "Under the dispatcher" mode the orchestrator SHALL do all tasks of the change itself, whatever their number and the number of code areas. It launches subagents only for independent acceptance (step 7a, tag `Review:`) and heavy reading (tag `Lookup:`). The other steps of the mode and the status block do not change.
+In the "Under the dispatcher" mode the orchestrator SHALL do all tasks of the change itself, whatever their number and the number of code areas. It launches subagents only for independent acceptance (step 7a, tag `Review:`), the outside `spec-analyze` run of step 4a (tags `Analyze:`, `Attack:`, `Judge:`) and heavy reading (tag `Lookup:`). The other steps of the mode and the status block do not change.
 
 #### Scenario: A large change
 - **WHEN** a change has seven tasks in two code areas
-- **THEN** the orchestrator does them itself, its subagents carry only the tags `Review:` and `Lookup:`, the change is handed back as a status block
+- **THEN** the orchestrator does them itself, its subagents carry only the tags `Review:`, `Lookup:`, `Analyze:`, `Attack:` and `Judge:`, the change is handed back as a status block
 
 #### Scenario: A small change
 - **WHEN** a change has two tasks in one module
-- **THEN** the orchestrator does them itself and launches only the reviewer
+- **THEN** the orchestrator does them itself and launches only the reviewer and the `Analyze:`, `Attack:` and `Judge:` subagents of step 4a
 
 ### Requirement: Status self-check before handback
 In the "Under the dispatcher" mode, before handing back `STATUS: archived` the orchestrator SHALL write its status block to a file outside `WORKTREE` and run `sdd-dispatch.py accept` on it. On code 1 or 2 it SHALL correct the stated field from the command's real output (the `LIVE` text after `->` is one printed line, copied verbatim) or rework the change, and repeat the check. It SHALL hand back `archived` only after `status matches`.

@@ -153,6 +153,7 @@ REGISTRY = {
     "process.requirement-max-chars": ("int", None, "500", None),  # solo-sdd validate: one requirement text
     "process.audit-every": ("int", None, "5", None),  # spec-next proposes spec-audit at a multiple of the archive count
     "process.analyze": ("choice", ("on", "off"), "on", None),  # off: spec-plan and spec-next skip spec-analyze
+    "process.analyze-attackers": ("int", None, "3", None),  # spec-plan, spec-next: Attack: subagents, 0 for one Analyze:
     "commit.light-prefix": ("text", None, "light:", None),  # a light commit subject starts with it, as plain text
     "project.stage": ("choice", ("demo", "prod"), "", None),  # "": the global rules decide by the task
     "artifacts.language": ("lang", None, "en", None),  # the prose of the change artifacts
@@ -181,7 +182,8 @@ REGISTRY = {
 }
 LIST_KINDS = ("exts", "ints", "list", "paths", "names")
 # the lowest value of an int key, 1 when not named: a task limit under 3 fits no change (Acceptance holds two tasks)
-INT_MIN = {"process.max-tasks": 3, "process.bugfix-max-tasks": 3, "process.requirement-max-chars": 100}
+INT_MIN = {"process.max-tasks": 3, "process.bugfix-max-tasks": 3, "process.requirement-max-chars": 100,
+           "process.analyze-attackers": 0}
 # pattern keys: <name> is lowercase letters, digits and -, not starting with -; set keys show in `config list` as `file`
 PATTERNS = {
     "checklist.<name>.paths": ("paths", None, "", None),  # globs of the files a person checks by the list
