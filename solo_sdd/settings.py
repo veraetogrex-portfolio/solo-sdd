@@ -454,7 +454,7 @@ ABOUT = {
     "project.stage": ("process", "The project stage the global rules read: demo or prod; empty decides by the task, and the Mode line of solo-sdd/project.md is read when the file sets none."),
     "artifacts.language": ("process", "The language of the prose spec-plan writes into the change artifacts; headings, keywords, keys and paths stay English."),
     "lessons.write": ("process", "Whether a lesson is written into the Lessons section of AGENTS.md; off gives it in the report as Lesson (not written)."),
-    "lessons.max-lines": ("process", "The most lines the Lessons section of AGENTS.md holds before the closest lines are merged."),
+    "lessons.max-lines": ("process", "The most lines the Lessons section of AGENTS.md holds before overlapping lines are merged into one line naming their shared cause."),
     "commit.light-prefix": ("process", "The text a light path commit subject starts with; work-status, report and spec-plan count such commits by it as plain text."),
     "reply.language": ("agents", "The language the stop hook expects in the agent's final reply; off checks none."),
     "agents": ("agents", "The agents this project is worked on with; doctor warns about one the installation lacks."),

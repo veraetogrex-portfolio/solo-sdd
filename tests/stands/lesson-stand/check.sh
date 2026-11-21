@@ -38,14 +38,20 @@ heads = set(re.findall(r"^### (\S+)\s*$", lessons, re.M))
 print("over 300: %d" % sum(len(t) > 300 for t, _ in now))
 missing = sorted({i for _, i in now if i and i not in heads})
 print("missing ids: %s" % (", ".join(missing) or "none"))
-git = lambda *a: subprocess.run(("git",) + a, capture_output=True, text=True, stdin=subprocess.DEVNULL)
-if git("rev-parse", "--verify", "-q", "HEAD").returncode != 0:
-    print("lost: n/a")
+# The text under each "### <id>" heading of LESSONS.md, up to the next heading of level 1-3.
+bodies = dict(re.findall(r"^### (\S+)[ \t]*\n(.*?)(?=^#{1,3} |\Z)", lessons, re.M | re.S))
+linked = " ".join(flat(bodies.get(i, "")) for i in {i for _, i in now if i})
+try:
+    shown = subprocess.run(("git", "show", "HEAD:./AGENTS.md"), capture_output=True, text=True,
+                           stdin=subprocess.DEVNULL)
+except OSError:
+    shown = None
+if shown is None or shown.returncode != 0:
+    print("lost: n/a")  # no git, no commit, or AGENTS.md not committed at HEAD: nothing to compare with
 else:
-    shown = git("show", "HEAD:./AGENTS.md")
     kept = {flat(t) for t, _ in now}
-    print("lost: %d" % sum(flat(t) not in kept and flat(t) not in flat(lessons)
-                           for t, _ in (items(shown.stdout) if shown.returncode == 0 else [])))
+    # a committed line is kept when it is still in the section or verbatim under an id a current line links to
+    print("lost: %d" % sum(flat(t) not in kept and flat(t) not in linked for t, _ in items(shown.stdout)))
 PY
 fi
 for f in "$HOME/AGENTS.md" "$HOME/.codex/AGENTS.md" "$HOME/.claude/CLAUDE.md"; do

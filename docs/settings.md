@@ -53,7 +53,7 @@ A line that is not `key: value`, an unknown key or a wrong value makes the comma
 | `project.stage` | `demo`, `prod` | none | | the global rules (section 11) and `project-init`: the project stage; empty decides by the task; the `Mode:` line of `solo-sdd/project.md` (source `project.md`) |
 | `artifacts.language` | a language code of 2 or 3 lowercase letters (ISO 639) | `en` | | `spec-plan` and `project-init`: the language of the prose of the change artifacts; headings, `SHALL`, `WHEN`, `THEN`, keys and paths stay English; the `Language:` line of `solo-sdd/project.md` (source `project.md`) |
 | `lessons.write` | `on`, `off` | `on` | | the global rules (section 15): `off` gives a lesson in the report as `Lesson (not written): <sentence>` instead of writing it into `## Lessons` of `AGENTS.md` |
-| `lessons.max-lines` | a whole number from 1 | `20` | | the global rules (section 15): the most lines of `## Lessons`; one more means merging the closest lines in the same edit |
+| `lessons.max-lines` | a whole number from 1 | `20` | | the global rules (section 15): the most lines of `## Lessons`; one more means merging overlapping lines into one line that names their shared cause, in the same edit |
 | `reply.language` | `ru`, `en`, `off` | `off` | | the `stop` hook: the language of the final reply, `off` checks none; the `SOLO_SDD_REPLY_LANG` variable |
 | `agents` | `claude`, `codex`, `cursor`, `other` | the detected agents | | `doctor` (`warn project-agents` for an agent the installation lacks) |
 | `rules.scope` | `project`, `global` | `project` | | `init`: `project` writes the rules block into `AGENTS.md`, `global` writes none and names the global rules (`install --global-rules`) |

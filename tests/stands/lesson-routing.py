@@ -5,7 +5,9 @@ Copies tests/stands/lesson-stand to a temporary folder (removed at the end) and 
 committed; check.sh prints "## Lessons: missing" and three checksum lines for AGENTS.md, "## Lessons: 20 lines" with
 no line about async calls for AGENTS.full.md, "AGENTS.md: missing" without AGENTS.md; for AGENTS.long.md in a
 committed copy "## Lessons: 20 lines", "over 300: 1", "missing ids: none", "lost: 0", and "lost: 1" once the glued line
-is deleted; a check.sh without its length count fails that check; the stand openspec is valid. The last line is the
+is deleted; with the glued line shortened and linked, "missing ids: retries" and "lost: 1" while its old text
+stands under another id, "missing ids: none" and "lost: 0" under its own; a check.sh without its length count
+fails the AGENTS.long.md check; the stand openspec is valid. The last line is the
 summary.
 """
 import os, re, shutil, subprocess, sys, tempfile
@@ -76,6 +78,19 @@ try:
         f.writelines(kept)
     code, out = run(["sh", "check.sh"], d)
     check("check.sh after the glued line is deleted: lost: 1", "lost: 1" in out.splitlines(), out)
+    glued = [line for line in open(os.path.join(STAND, "AGENTS.long.md"), encoding="utf-8")
+             if "retries a paid call" in line][0]
+    short = "- Every retry has a maximum count and a backoff. ([full text](LESSONS.md#retries))\n"
+    with open(os.path.join(d, "AGENTS.md"), "w", encoding="utf-8") as f:
+        f.writelines(short if line == glued else line
+                     for line in open(os.path.join(STAND, "AGENTS.long.md"), encoding="utf-8"))
+    for head, want in (("other", ("over 300: 0", "missing ids: retries", "lost: 1")),
+                       ("retries", ("over 300: 0", "missing ids: none", "lost: 0"))):
+        with open(os.path.join(d, "LESSONS.md"), "w", encoding="utf-8") as f:
+            f.write("# Lessons\n\n### %s\n\n%s\n" % (head, glued[2:].strip()))
+        code, out = run(["sh", "check.sh"], d)
+        check("check.sh, glued line shortened, its old text under ### %s: %s" % (head, ", ".join(want)),
+              all(w in out.splitlines() for w in want), out)
     with open(os.path.join(STAND, "check.sh"), encoding="utf-8") as f:
         source = f.read()
     mutated = source.replace(LENGTH, 'print("over 300: 0")')
