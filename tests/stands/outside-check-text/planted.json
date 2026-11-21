@@ -1,0 +1,16 @@
+{
+  "_comment": "The facts of text.md by label. mark: what an outside check must give. A wrong fact names the value in the draft (wrong) and in its source (right); the answer grade wants right and not wrong. The fact without a source names a token its Not confirmed line must hold.",
+  "facts": {
+    "F1": {"mark": "confirmed"},
+    "F2": {"mark": "wrong", "wrong": "2026-05-14", "right": "2026-03-14"},
+    "F3": {"mark": "confirmed"},
+    "F4": {"mark": "confirmed"},
+    "F5": {"mark": "wrong", "wrong": "2.8.0", "right": "3.1.0"},
+    "F6": {"mark": "confirmed"},
+    "F7": {"mark": "confirmed"},
+    "F8": {"mark": "wrong", "wrong": "$9", "right": "$19"},
+    "F9": {"mark": "confirmed"},
+    "F10": {"mark": "confirmed"},
+    "F11": {"mark": "no primary source", "token": "Backup Tool of the Year"}
+  }
+}
