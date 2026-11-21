@@ -45,7 +45,7 @@ The result is a set of changes, each of which closes in one `/spec-next` run. No
 5. **Creation.** Read `creation.md` each time this step starts, also after compaction: for every unit `solo-sdd new <name>`, then the artifacts in order by the "Writing rules" section, with what each must hold.
 6. **External conditions.** Access, a key, a person or a paid call is needed: write it into `Needs`. A change made up entirely of such conditions gets a `WAITING` file and a line in `docs/waiting.md`. The user's business facts under placeholders (step 5) does not give `WAITING`.
 7. **Check.** `solo-sdd validate --all`.
-7a. **Cross-check.** The `spec-analyze` skill on every created change; edits only in the artifacts. Then repeat step 7. `solo-sdd config get process.analyze` is `off`: no cross-check, the report's `Analyze:` line is `Analyze: off (solo-sdd/config)`. An agent changes `process.max-tasks`, `process.bugfix-max-tasks`, `process.requirement-max-chars`, `process.audit-every` and `process.analyze` only on the owner's words in the chat.
+7a. **Cross-check.** `spec-analyze` on every created change by its `Outside run` section: `Analyze:`, or `solo-sdd config get process.analyze-attackers` `Attack:` subagents on `agents.attack-model` and a `Judge:`; you edit only the artifacts, then repeat step 7. `solo-sdd config get process.analyze` is `off`: no cross-check, the line is `Analyze: off (solo-sdd/config)`. An agent changes `process.max-tasks`, `process.bugfix-max-tasks`, `process.requirement-max-chars`, `process.audit-every`, `process.analyze` and `process.analyze-attackers` only on the owner's words in the chat.
 8. **Coverage.** Match every input item with a change or with the light path of step 1a (its commit, or `to do` until the commit after step 9). Any other item without a change is an error: create a change or explain in the report why there is none.
 9. **Plan commit.** Read `plan-commit.md` each time this step starts, also after compaction: after gate G1 (steps 7, 7a, 8), the plan commit on `plan/<first id>` (`plan/`: `solo-sdd config get delivery.plan-prefix`) under `delivery.mode` `pr` or on the main branch under `local`.
 
@@ -95,7 +95,7 @@ Changes created: <n>
 
 Map: <change> — <map files of its type rows>, one line per change | Map: none
 Map stale: <file>, <n> commits since <hash>; refresh: /project-init map (one line per printed stale file, no line otherwise)
-Analyze: CRITICAL <n> · HIGH <n>, fixed <n> | Analyze: off (solo-sdd/config)
+Analyze: <n> findings, kept <k>, dropped <d>; CRITICAL <c> · HIGH <h>, fixed <f> | Analyze: off (solo-sdd/config) | Analyze: in session (no subagent tool)
 Coverage: <input items> of <input items>; light path: <item — `light:` <hash> | to do> | none; without a change: <item — reason> | none
 Plan: commit <hash> | commit <hash> on plan/<id>, PR <url> | commit <hash> on plan/<id>, PR <url>, waits for human merge | plan outside git | no change: light path only (plan/: the delivery.plan-prefix value)
 Waiting for external conditions: <change — what is needed> | none
@@ -112,7 +112,6 @@ Next: /spec-next | /spec-next after the merge of <PR url> | the light path items
 | Retelling the request in your own words in `Source` | Only a verbatim quote |
 | Dependencies in the task text | Only in `Depends On` |
 | A bug fix without the bug scenario in the spec | The scenario is added through MODIFIED or ADDED, otherwise the bug comes back |
-| A requirement longer than `process.requirement-max-chars` (500) | Examples into scenarios, behaviours into separate requirements; `MODIFIED` is shortened in the same delta |
 | A scenario without a WHEN/GIVEN or THEN step, a section like `## DEPRECATED Requirements` in a delta | Steps `**WHEN**` (or `**GIVEN**`) and `**THEN**` in every scenario; only the sections ADDED, MODIFIED, REMOVED, RENAMED Requirements |
 | Dials derived from the user's words | Only a `Dial` line with three numbers, otherwise 1/1/1 and the mark "draft without direction" |
 | Invented reviews or numbers in tasks | The placeholder `[data needed: …]` and `Needs` |

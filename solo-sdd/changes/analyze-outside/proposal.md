@@ -32,10 +32,9 @@ The owner decided on 2026-11-20 to run the check outside the author: attackers o
 - `skills/spec-analyze/SKILL.md`
 - `skills/spec-plan/SKILL.md`
 - `skills/spec-next/SKILL.md`
+- `skills/codex-orchestration/SKILL.md`
 - `ALGORITHM.md`
 - `global/AGENTS.md`
-- `targets.json`
-- `tests/affected.json`
 - `solo_sdd/settings.py`
 - `global/work_hooks.py`
 - `global/sdd_dispatch_plan.py`

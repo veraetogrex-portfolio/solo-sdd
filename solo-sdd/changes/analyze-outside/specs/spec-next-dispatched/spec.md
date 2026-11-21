@@ -9,4 +9,4 @@ In the "Under the dispatcher" mode the orchestrator SHALL do all tasks of the ch
 
 #### Scenario: A small change
 - **WHEN** a change has two tasks in one module
-- **THEN** the orchestrator does them itself and launches only the reviewer
+- **THEN** the orchestrator does them itself and launches only the reviewer and the `Analyze:`, `Attack:` and `Judge:` subagents of step 4a

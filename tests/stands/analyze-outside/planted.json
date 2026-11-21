@@ -1,0 +1,13 @@
+{
+  "change": "add-export",
+  "holes": [
+    {"id": "requirement-without-task", "passes": ["1"], "token": "Export date filter",
+     "what": "the requirement Export date filter has no task and no Live Scenario step"},
+    {"id": "hostile-archive", "passes": ["2"], "token": "--merge",
+     "what": "--merge reads a ZIP file the user names, and tasks.md has no task of tests on hostile input"},
+    {"id": "incompatible-requirements", "passes": ["7a", "7"], "token": "1 MB",
+     "what": "Full history in the bundle (every version, whatever the number) and Export size (always at most 1 MB) cannot hold together"},
+    {"id": "term-drift", "passes": ["6", "5"], "token": "snapshot",
+     "what": "the proposal calls the file a snapshot, the delta and the tasks a bundle"}
+  ]
+}

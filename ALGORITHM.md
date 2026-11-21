@@ -54,7 +54,7 @@ A code edit takes the light path when it changes no behaviour a main spec descri
 
 Input: a plan, a bug list, the result of a discussion. Output: a queue of small changes. No code is written, except the light path items, after the plan commit.
 
-- A unit fits if it has one checkable result, one area of code, at most `solo-sdd config get process.max-tasks` tasks (default 10) and a live check scenario; a requirement text holds at most `solo-sdd config get process.requirement-max-chars` characters (default 500). An agent changes `process.max-tasks`, `process.bugfix-max-tasks`, `process.requirement-max-chars`, `process.audit-every` and `process.analyze` only on the owner's words in the chat. Bugs are grouped by a common cause, not "one bug, one change".
+- A unit fits if it has one checkable result, one area of code, at most `solo-sdd config get process.max-tasks` tasks (default 10) and a live check scenario; a requirement text holds at most `solo-sdd config get process.requirement-max-chars` characters (default 500). An agent changes `process.max-tasks`, `process.bugfix-max-tasks`, `process.requirement-max-chars`, `process.audit-every`, `process.analyze` and `process.analyze-attackers` only on the owner's words in the chat. Bugs are grouped by a common cause, not "one bug, one change".
 - A unit that leads away from the "Intent" of `solo-sdd/project.md` does not become a change and goes into the report.
 - `solo-sdd new <id>` lays out the change; the artifacts are written in the order proposal → specs → verification → tasks by the "Writing rules" of `spec-plan` (see "Change artifacts").
 - Whatever waits for a person, access or paid consent does not become a task. It is `Needs` in `verification.md`. A change made up entirely of such conditions gets a `WAITING` file.
@@ -62,13 +62,17 @@ Input: a plan, a bug list, the result of a discussion. Output: a queue of small 
 - A bug with a found cause takes the short track (the "Bug fix" section in `spec-plan`): the reproduction and the place of the cause in the proposal, the bug scenario is added to the spec, the first task is a failing test for this scenario, at most `solo-sdd config get process.bugfix-max-tasks` tasks (default 5, never more than `process.max-tasks`), side edits in Out of Scope. Cause not found: `debug-profile` first.
 - A UI change starts What Changes with a Design Read line from `DESIGN.md` (no `Dial` line with three numbers means dials 1/1/1 and "draft without direction"); the Live Scenario is a list "element → action → result"; the user's business facts (numbers, reviews, customers) are placeholders `[data needed: …]`.
 
-**Gate G1:** `solo-sdd validate --all`; then `spec-analyze` on every created change (stage 4), unless `solo-sdd config get process.analyze` is `off`: then the report says `Analyze: off (solo-sdd/config)`; full coverage of the input.
+**Gate G1:** `solo-sdd validate --all`; then `spec-analyze` on every created change (stage 4, the outside run), unless `solo-sdd config get process.analyze` is `off`: then the report says `Analyze: off (solo-sdd/config)`; full coverage of the input.
 
 After G1 the folders of created and changed changes go in one commit `change: <id>, …`, without other edits; under `delivery.mode` `pr` it goes on a new branch `plan/<first id>` (`plan/`: the `delivery.plan-prefix` setting) in a temporary worktree and reaches the main branch through `ship`. If `solo-sdd/changes` is ignored, there is no commit, and the report says "plan outside git".
 
 ### 4. Check before code: `spec-analyze`
 
 Before the first task of every change, unless `process.analyze` is `off`. The spec is checked against itself while there is no code: a hole in `tasks.md` costs one line, after implementation a rework.
+
+The check runs outside the author (the `Outside run` section of `spec-analyze`): with `solo-sdd config get process.analyze-attackers` N = 0 one `Analyze:` subagent on the main model; with N > 0 (default 3) N `Attack:` subagents on `agents.attack-model`, each trying to prove the change is not ready on its pass group, then a `Judge:` on the main model that marks every finding `keep` or `drop`.
+
+The author fixes what was kept; the repeat after its edits runs in one `Analyze:` subagent. Passes run in place only inside these subagents, on a direct `/spec-analyze` call and in an agent without a subagent tool.
 
 Passes:
 
@@ -86,7 +90,7 @@ Passes:
 
 Checks derived from the defects of a specific project live in its `solo-sdd/analyze.md` (laid out by `solo-sdd init`). The skill picks them up itself.
 
-The agent fixes CRITICAL and HIGH findings in the artifacts and writes the decisions into `Decisions Without Owner`. Code does not change in this pass.
+The author fixes the kept CRITICAL and HIGH findings in the artifacts and writes the decisions into `Decisions Without Owner`. Code does not change in this pass.
 
 **Gate G2:** no open CRITICAL and HIGH; everything from `Depends On` is archived. Otherwise the change is not ready, and `spec-next` takes another.
 
@@ -97,8 +101,8 @@ One run closes one change, from selection to archive.
 1. Step 0: a project with `openspec/` and no `solo-sdd/` stops here with the next step `solo-sdd import openspec`; the skills never import by themselves.
 2. Selection: the named change; else the one with the most done; else the next one with closed dependencies. A change with a `CLAIM` file (taken by another agent) or `WAITING` is skipped.
 3. Claim: `solo-sdd/changes/<id>/CLAIM` in the main project folder with the line `<agent> <date>`; Claude adds `session=<session id>` (`$CLAUDE_CODE_SESSION_ID`), by which the write hook recognises its own `CLAIM`. The hook itself places the marker only on a `tasks.md` edit that checks a new task: analysis and audit that edit artifacts do not take the change.
-4. Check: `spec-analyze` (stage 4); with `process.analyze: off` it is skipped, the report says `Analyze: off (solo-sdd/config)`, and the `Depends On` check stays.
-5. The lead agent does the tasks from `tasks.md` itself, including code. Subagents are only for acceptance (item 7) and heavy reading (`Lookup:`, Explore). Executors only if the user named `codex-orchestration` (Codex CLI) or the project sets `agents.executor: codex` (`solo-sdd config get agents.executor`); an agent changes `agents.executor` only on the owner's words in the chat; then the orchestration rules apply:
+4. Check: `spec-analyze` (stage 4, the outside run); with `process.analyze: off` it is skipped, the report says `Analyze: off (solo-sdd/config)`, and the `Depends On` check stays.
+5. The lead agent does the tasks from `tasks.md` itself, including code. Subagents are only for acceptance (item 7), the outside `spec-analyze` run of item 4 (`Analyze:`, `Attack:`, `Judge:`) and heavy reading (`Lookup:`, Explore). Executors only if the user named `codex-orchestration` (Codex CLI) or the project sets `agents.executor: codex` (`solo-sdd config get agents.executor`); an agent changes `agents.executor` only on the owner's words in the chat; then the orchestration rules apply:
    - Split by file ownership. Independent units go in a parallel wave, units on one file in different waves or separate worktrees.
    - A unit has one proof, at most two or three. If more, the unit is split.
    - The spec for an executor starts with the header "do it yourself, do not ask" and holds own and foreign files, a sample, all literal values, a ban on commits and the report format.
@@ -111,7 +115,7 @@ One run closes one change, from selection to archive.
 
    Later rounds read only the new diff and the list of findings already given; an open `Important` after the last round (`process.review-rounds` of `solo-sdd/config`, default 5) or two reviewer failures in one round means `Not Verified`, no archive. When the last round is the second or later and every open `Important` has all its places in lines the rework before it changed (`git diff` of that rework), one extra round runs without asking the owner; there is no second extra round.
 
-Several ready changes at once (Claude Code only): `spec-dispatch`: the main session on the main model with `/effort low` hands them out in waves to Opus orchestrators, one per change in its own worktree in a temporary folder. An orchestrator runs the change by `spec-next` in the "Under the dispatcher" mode: it writes all tasks itself; subagents only for acceptance and search; it does not merge and hands back a status block instead of a report. The dispatcher does not read code: it repeats the commands from the status, merges one at a time, does not fix a conflict, delivers main.
+Several ready changes at once (Claude Code only): `spec-dispatch`: the main session on the main model with `/effort low` hands them out in waves to Opus orchestrators, one per change in its own worktree in a temporary folder. An orchestrator runs the change by `spec-next` in the "Under the dispatcher" mode: it writes all tasks itself; subagents only for acceptance, the outside `spec-analyze` run and search; it does not merge and hands back a status block. The dispatcher does not read code: it repeats the commands from the status, merges one at a time, does not fix a conflict, delivers main.
 
 ### 6. Proof
 
@@ -170,8 +174,8 @@ Project markers and files:
 | Gate | When | Who checks | What | On failure |
 |---|---|---|---|---|
 | G0 | After `project-init` | The lead agent | validate, the commands from AGENTS.md run, the project comes up by the README | Fix the project or the README |
-| G1 | After `spec-plan` | The lead agent | validate, analyze (not with `process.analyze: off`), input coverage | Split or complete the changes |
-| G2 | Before code | `spec-analyze`; with `process.analyze: off` the lead agent | No CRITICAL and HIGH (no pass with `process.analyze: off`), dependencies archived | Fix the artifacts; the change is not taken |
+| G1 | After `spec-plan` | The lead agent | validate, analyze outside the author (not with `process.analyze: off`), input coverage | Split or complete the changes |
+| G2 | Before code | `spec-analyze` outside the author (`Analyze:`, or `Attack:` and `Judge:`); with `process.analyze: off` the lead agent | No CRITICAL and HIGH (no pass with `process.analyze: off`), dependencies archived | Fix the artifacts; the change is not taken |
 | G3 | After every task | The lead agent, by own commands | The diff, the task's checks, `git status` of own tree | Rework until the checks are green |
 | G4 | Before closing | The lead agent and an independent reviewer | The test failed on the previous code; the property test catches a mutation; the Live Scenario passed; the reviewer has no open `Important` | "Not done", Not Verified |
 | G5 | Closing | The lead agent | verification.md, `solo-sdd validate`, archive | Do not archive |
