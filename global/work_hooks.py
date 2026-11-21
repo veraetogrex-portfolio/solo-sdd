@@ -2754,7 +2754,7 @@ def cmd_stop(inp):
         return
     if any(isinstance(t, dict) and t.get("status") == "running" and t.get("type") not in ("shell", "monitor")
            for t in inp.get("background_tasks") or []):
-        return  # background agents are still running: the dispatcher waits for them; a dev server or a watch alone does not count
+        return  # background agents are running: the dispatcher waits; a dev server or a watch alone does not count
     sid, cwd = inp.get("session_id", ""), os.path.realpath(inp.get("cwd") or os.getcwd())
     tp = inp.get("transcript_path") or ""
     signs = browser_signs()
