@@ -80,6 +80,42 @@ A skill with a task set under `tests/stands/skill-ablation/` is measured by `tes
 | 3. A bug in code | 4. One hypothesis | method |  |  |
 | 3. A bug in code | 5. Fix | gate (text) | hook: no | the route through the bug fix section is a judgement of what was found |
 
+### Run 2026-11-22 claude-opus-5-5
+
+```text
+skill: debug-profile; run: skill-ablation-debug-profile-uxgm21_w
+models: claude-opus-5-5
+| task | variant | outcome | path | tokens | note |
+|---|---|---|---|---|---|
+| dp-code | full | pass | 2 of 2 | 82817 |  |
+| dp-code | cut | pass | 2 of 2 | 82550 |  |
+| dp-code | none | pass | 2 of 2 | 80893 |  |
+| dp-service | full | fail | 1 of 2 | 83255 |  |
+| dp-service | cut | fail | 1 of 2 | 82343 |  |
+| dp-service | none | fail | 1 of 2 | 80907 |  |
+compare: full 1 of 2, cut 1 of 2, none 1 of 2
+not run: 0; leaked: 0; unreadable: 0; not made: 0
+```
+
+The `dp-service` rows of this run had no `logs/` in the work folder: the fixture's `logs/*.log` are ignored by the `*.log` line of `.gitignore` and were never committed. The run below repeats `dp-service` with the three logs restored in the working folder.
+
+### Run 2026-11-22 claude-opus-5-5
+
+```text
+skill: debug-profile; run: skill-ablation-debug-profile-7zqkopy3
+models: claude-opus-5-5
+| task | variant | outcome | path | tokens | note |
+|---|---|---|---|---|---|
+| dp-code | full | not run | - | - |  |
+| dp-code | cut | not run | - | - |  |
+| dp-code | none | not run | - | - |  |
+| dp-service | full | pass | 2 of 2 | 82653 |  |
+| dp-service | cut | fail | 1 of 2 | 81806 |  |
+| dp-service | none | fail | 1 of 2 | 81372 |  |
+compare: full 1 of 1, cut 0 of 1, none 0 of 1
+not run: 3; leaked: 0; unreadable: 0; not made: 0
+```
+
 ## evidence-research
 
 | Heading | Step | Mark | Hook | Why |
@@ -93,6 +129,23 @@ A skill with a task set under `tests/stands/skill-ablation/` is measured by `tes
 | Order | 7. Recommendation | method |  |  |
 | Order | 8. Unknowns | method |  |  |
 | Order | 9. Outside check | gate (text) | hook: yes | the `stop` hook could return a final answer with a source table when no `Check:` subagent ran |
+
+### Run 2026-11-22 claude-opus-5-5
+
+```text
+skill: evidence-research; run: skill-ablation-evidence-research-s6_mqkm7
+models: claude-opus-5-5
+| task | variant | outcome | path | tokens | note |
+|---|---|---|---|---|---|
+| er-alive | full | pass | 2 of 2 | 84838 |  |
+| er-alive | cut | pass | 2 of 2 | 84834 |  |
+| er-alive | none | fail | 0 of 2 | 80342 |  |
+| er-hosting | full | pass | 2 of 2 | 87170 |  |
+| er-hosting | cut | fail | 0 of 2 | 87144 |  |
+| er-hosting | none | pass | 2 of 2 | 80801 |  |
+compare: full 2 of 2, cut 1 of 2, none 1 of 2
+not run: 0; leaked: 0; unreadable: 0; not made: 0
+```
 
 ## health
 
