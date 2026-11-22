@@ -84,57 +84,76 @@ SEARCHES = ("grep", "egrep", "fgrep", "rg", "ugrep")
 LISTERS = ("ls", "find", "tree", "du")
 OPTION_ARGS = ("-A", "-B", "-C", "-m", "-f", "-g", "-t", "-T", "--include", "--exclude", "--exclude-dir", "--glob",
                "--type", "--max-count", "--context", "--after-context", "--before-context", "--file")
-SEPARATORS = ("&&", "||", ";", "|", "&", "(", ")", "{", "}")
+SEPARATORS = ("&&", "||", ";", "|", "&", "(", ")", "{", "}", "\n", ";;")
+REDIRECTS = (">", ">>", "<", "<<", ">&", "&>", "<&", ">|")
+FIND_ARGS = ("-name", "-iname", "-path", "-ipath", "-regex", "-iregex", "-type", "-maxdepth", "-mindepth", "-size",
+             "-mtime", "-newer", "-wholename", "-perm")  # their value is a pattern or a number, not a path
 
 
 def shell_outside(cmd, inside):
     """Paths of a shell command outside the copy. The command starts in the session folder, outside the copy, until a
-    `cd` into it; there a relative path (`.`, or a word with `/` and no glob character) is outside too, and so is a search or listing with no
-    path, which reads the folder it runs in. A `..` segment, `~` and `$HOME` are always outside, every absolute path in
-    a word is checked, and the pattern of a grep is no path. A command shlex cannot split is refused as outside."""
-    lex = shlex.shlex(cmd, posix=True, punctuation_chars=True)
-    lex.whitespace_split = True
+    `cd` into it (a newline separates commands as `;` does); there a relative path (`.`, a word with `/`, a glob) is
+    outside too, and so is a search or listing with no path and no pipe into it, which reads the folder it runs in. A
+    `..` segment, `~` and `$HOME` are always outside, every absolute path in a word is checked, a redirection target
+    and the pattern of a search are no paths. A command shlex cannot split is refused as outside."""
+    lex = shlex.shlex(cmd, posix=True, punctuation_chars="();<>|&\n")
+    lex.whitespace, lex.whitespace_split = " \t\r", True
     try:
         toks = list(lex)
     except ValueError:
         return [cmd]
-    out, here, words = [], False, []
+    out, here, words, piped = [], False, [], False
     for tok in toks + [";"]:
         if tok not in SEPARATORS:
             words.append(tok)
             continue
-        if words and words[0] == "cd" and len(words) > 1:
-            here = words[1].startswith("/") and inside(words[1]) and ".." not in words[1].split("/")
-            out += [] if here else [words[1]]
-            words = []
+        if words and words[0] == "cd":
+            target = words[1] if len(words) > 1 else "~"
+            here = target.startswith("/") and inside(target) and ".." not in target.split("/")
+            out += [] if here else [target]
+        elif words:
+            out += simple_outside(words, here, piped, inside)
+        words, piped = [], tok == "|"
+    return out
+
+
+def simple_outside(words, here, piped, inside):
+    """Paths one simple command (`words`, its name first) reads outside the copy; see `shell_outside`."""
+    search = words[0] in SEARCHES or words[:2] == ["git", "grep"]
+    i = 2 if words[0] == "git" else 1
+    pattern, args = search and "--files" not in words, []
+    while i < len(words):
+        w = words[i]
+        if w in REDIRECTS:
+            i += 2
             continue
-        args, i, search = [], 1, bool(words) and (words[0] in SEARCHES or words[:2] == ["git", "grep"])
-        i += search and words[0] == "git"
-        pattern = search and "--files" not in words
-        while i < len(words):
-            w = words[i]
-            if w in OPTION_ARGS or (search and w in ("-e", "--regexp")):
-                pattern = pattern and w not in ("-e", "--regexp")
-                i += 2
-                continue
-            if not w.startswith("-") and pattern:
-                pattern, i = False, i + 1
-                continue
-            args.append(w)
+        if w.isdigit() and i + 1 < len(words) and words[i + 1] in REDIRECTS:
             i += 1
-        lists = bool(words) and (search or words[0] in LISTERS)
-        paths = [w for w in args if not w.startswith("-")]
-        if lists and not here and not paths:
-            out.append("%s in the session folder" % words[0])
-        for w in (words[:1] if not search else []) + args:
-            if w.startswith("~") or "$HOME" in w or "${HOME}" in w or ".." in w.split("/"):
-                out.append(w)
-            elif not here and (w == "." or ("/" in w and not w.startswith(("-", "/")) and "://" not in w
-                                               and not any(ch in w for ch in "*?["))):  # a glob is a pattern
-                out.append(w)
-            else:
-                out += [m for m in PATH.findall(w) if m != "/dev/null" and not inside(m)]
-        words = []
+            continue
+        if words[0] == "find" and w in FIND_ARGS:
+            i += 2
+            continue
+        if search and (w in OPTION_ARGS or w in ("-e", "--regexp")):
+            pattern = pattern and w not in ("-e", "--regexp")
+            i += 2
+            continue
+        if search and pattern and not w.startswith("-"):
+            pattern, i = False, i + 1
+            continue
+        args.append(w)
+        i += 1
+    glob = lambda w: any(ch in w for ch in "*?[") and re.fullmatch(r"[\w.*?\[\]/-]+", w)  # a file glob, not a text
+    pathlike = [w for w in args if not w.startswith("-") and (w == "." or "/" in w or glob(w))]
+    out = []
+    if (search or words[0] in LISTERS) and not here and not pathlike and not piped:
+        out.append("%s in the session folder" % words[0])
+    for w in words[:1] + args:
+        if w.startswith("~") or "$HOME" in w or "${HOME}" in w or ".." in w.split("/"):
+            out.append(w)
+        elif not here and w in pathlike and not w.startswith("/"):
+            out.append(w)
+        else:
+            out += [m for m in PATH.findall(w) if m != "/dev/null" and not inside(m)]
     return out
 
 

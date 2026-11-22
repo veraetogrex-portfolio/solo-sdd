@@ -2,3 +2,4 @@
 {"type":"assistant","message":{"content":[{"type":"tool_use","name":"Monitor","input":{"command":"cd /var && ls log"}}]}}
 {"type":"assistant","message":{"content":[{"type":"tool_use","name":"Glob","input":{"path":"/","pattern":"**/app.log"}}]}}
 {"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Grep", "input": {"pattern": "Exception"}}]}}
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Bash", "input": {"command": "grep -rn \"up to 500 MB\" 2>/dev/null"}}]}}

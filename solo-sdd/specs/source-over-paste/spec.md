@@ -1,8 +1,9 @@
-## Purpose
+# source-over-paste Specification
 
+## Purpose
 A pasted excerpt of a file, log, report or chat is read at its source when the agent can reach it, because an excerpt may be cut or stale; a source out of reach is named with the access that would give it.
 
-## ADDED Requirements
+## Requirements
 
 ### Requirement: Read the source of a pasted excerpt
 The global rules SHALL require a pasted excerpt of a file, log, report or chat to be read at its source before use when within reach: the project folder, the session's added working folders, this project's agent session logs and its PRs. The source SHALL be what the excerpt or message names, else the file within reach holding its lines verbatim, outside archives first. The source SHALL win over a differing excerpt, said to differ, and the answer SHALL quote the source line it rests on.
