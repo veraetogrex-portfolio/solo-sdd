@@ -8,5 +8,5 @@
 
 ## 2. Acceptance
 
-- [ ] 2.1 Run the Live Scenario (or its Fallback) from verification.md and record the Result, Not Verified and Decisions Without Owner sections
+- [x] 2.1 Run the Live Scenario (or its Fallback) from verification.md and record the Result, Not Verified and Decisions Without Owner sections
 - [ ] 2.2 Run `solo-sdd validate eval-process-signals` and archive the change with `solo-sdd archive eval-process-signals --yes`

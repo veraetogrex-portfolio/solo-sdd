@@ -17,11 +17,12 @@ Not needed: the fixtures are local, no replay run and no model call.
 
 ## Result
 
-<!-- Filled during apply: date, what was run, what was observed. -->
+2026-11-22: `python3 tests/stands/eval-process-signals.py` printed `eval-process-signals: 3 of 3 checks passed` (metrics r1 signals of honest and guess and the role count; compare marks `done` / `done, path incomplete`, both counted, `Path:` listed; without the honest orchestrator journal: null signals, `done, path unknown`, metrics exit 0). `python3 tests/run.py --jobs 5 --tier slow`: 41 files, 0 failed; `SOLO_SDD_TESTS=release python3 tests/test_sdd_eval.py`: OK; lint and `solo-sdd validate --all` clean.
 
 ## Not Verified
 
-<!-- Filled during apply: what stayed unproven and why. Write: nothing - if all proven. -->
+- Independent acceptance did not pass: 5 rounds and the extra round, every round after the first left an `Important` in the `important` reader (counting `Important` findings in a reviewer's free text). After the extra round: Russian "net" (none) read as a finding (6 real results 1 instead of 0); Nits: an empty Important section or a status paragraph counted as one finding, a status word at the text start without the clause-end check, a status after a bold colon missed. The commit after the extra round (`29018f6`) fixes these, but no reviewer saw it.
+- Reconsider the approach: a heuristic over free text keeps missing forms (measured 143 of 193 exact, 163 of 193 zero-or-not on this computer's journals, 2026-11-22). A fixed verdict line that every `Review:` agent writes (for example `Important: <n>`), set in `skills/spec-next/acceptance.md` and read by `sdd-eval.py`, would make `important` exact; that is a spec-next change outside this one.
 
 ## Decisions Without Owner
 
@@ -34,3 +35,7 @@ Not needed: the fixtures are local, no replay run and no model call.
 - analyze: the code-edit rule (MEDIUM) → the gate's `transcript_events` copied as a synced block; paths are judged against the status `WORKTREE` and the copy, since the gate's `git_root` cannot see a removed worktree.
 - analyze repeat: hostile journal input (HIGH) → one test row with a broken line and a non-object `.meta.json`; the readers already skip broken lines, a wider fuzz task is out of proportion for the owner's own logs.
 - analyze repeat: a reviewer error result (MEDIUM) → only an empty final message is a failed review: an error ends the subagent without a handback or text, so it is empty too.
+- review: the `important` reader was measured on the real `Review:` results of this computer's journals each round, besides the reviewer's probes; the README states the figure with its date and status.
+- review round 1, I3 (`parentAgentId` in nested `.meta.json`, not verified by the reviewer) → closed without a code edit: this session's own `agent-aa03d6174ed08492f.meta.json` holds `"parentAgentId":"adaec169971171f0a"`.
+- review round 5: `jlines` split JSONL with `str.splitlines`, which cuts a record at a raw U+2028 or U+0085 inside a JSON string → split at `\n` only, with a test row; it also makes token counting of such lines complete.
+- review round 4, Nit "a label without a separator" (`- Important x`) → left: rare in real results.
