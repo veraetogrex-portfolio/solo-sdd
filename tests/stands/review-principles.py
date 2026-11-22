@@ -6,15 +6,18 @@
                                  as a git repository (a base commit, then the commits of `commits/add-coupons` and
                                  `commits/add-refunds`; `archive/` as the ignored change archive), with the remote `https://github.com/example/shop.git`, the
                                  fake `gh` in `bin/` and `prompt.md`; modes: `gh-fail` (every `gh` call exits 1),
-                                 `gh-broken` (exit 0, the JSON cut), `no-remote`, `moved` (a `REVIEW.md` whose rules
-                                 hold the size pattern), `held-out` (a `REVIEW.md` with the cents rule, and the parallel
-                                 mode's held-out file asked for); prints `copy:`, `bin:` and `prompt:`
+                                 `gh-broken` (exit 0, the JSON cut), `no-remote`, `no-login` (no `Owner GitHub login:`
+                                 line), `moved` (a `REVIEW.md` whose rules hold the size pattern), `held-out` (a
+                                 `REVIEW.md` with the cents rule, and the parallel mode's held-out file asked for),
+                                 `full` (a `REVIEW.md` of 25 rules without the docstring rule); prints `copy:`, `bin:`
+                                 and `prompt:`
   clean <folder>                 remove a folder `prepare` made
   review-prompt <diff> [<answer> [--confirmed]]  the prompt of a `Review:` subagent: the diff, and the `REVIEW.md` block
                                  of an answer without `## Unconfirmed` (as `acceptance.md` hands it) or, `--confirmed`,
                                  with its Unconfirmed lines moved up into the rules (the control)
   --grade <answer>               the lines of a run on the plain fixture
-  --grade-unread <mode> <answer> the lines of a run after `prepare gh-fail|gh-broken|no-remote`
+  --grade-unread <mode> <answer> the lines of a run after `prepare gh-fail|gh-broken|no-remote|no-login`
+  --grade-full <answer>          the lines of a run after `prepare full`
   --grade-moved <answer>         the lines of a run after `prepare moved`
   --grade-held-out <answer>      the lines of a run after `prepare held-out`
   --grade-review <findings>      the lines of a `Review:` answer on `review.diff`
@@ -39,7 +42,7 @@ import tempfile
 REPO = pathlib.Path(__file__).resolve().parents[2]
 HERE = pathlib.Path(__file__).resolve().parent / "review-principles"
 PREFIX = "review-principles."
-MODES = ("gh-fail", "gh-broken", "no-remote", "moved", "held-out")
+MODES = ("gh-fail", "gh-broken", "no-remote", "no-login", "moved", "held-out", "full")
 GIT = ["git", "-c", "user.name=stand", "-c", "user.email=stand@example.com", "-c", "init.defaultBranch=main",
        "-c", "commit.gpgsign=false", "-c", "core.autocrlf=false"]
 COMMITS = (("add-coupons", "add-coupons: coupons (archived) (#3)"), ("add-refunds", "add-refunds: refunds (archived) (#5)"))
@@ -48,7 +51,8 @@ URL = "https://github.com/example/shop/pull/"
 RULES = {"named exception": (("except",), (URL + "1#discussion_r101", URL + "2#discussion_r104")),
          "files with `with`": ((r"\bwith\b", "file"), (URL + "1", URL + "4#discussion_r108")),
          "docstrings": (("docstring",), (URL + "2#discussion_r105", URL + "4#discussion_r109"))}
-OWNER_RULES = {"cents": (r"cents|float",), "expired": (r"expired",), "logged": (r"log",), "exceed": (r"exceed",)}
+OWNER_RULES = {"cents": (r"cents|float",), "expired": (r"expired",), "logged": (r"\blog(?:ged|s)?\b",),
+               "exceed": (r"exceed",)}
 PATTERN = ("2#discussion_r103", "1#discussion_r102", "4#discussion_r110", "4#discussion_r111")
 SIZE15 = r"(?<![:\d])15[- ]lines?|(?:over|more than|longer than|above|exceeds?|past) (?:the )?15\b"
 SIZE = re.compile(SIZE15 + "|split")
@@ -154,7 +158,19 @@ def review_md(rules, unconfirmed=()):
         "\n".join("%d. %s" % (n, r) for n, r in enumerate(rules, 1)), "\n".join("- " + u for u in unconfirmed))
 
 
+FULL = ["Never catch a bare `except:`; name the exception. - [#1](%s1#discussion_r101), [#2](%s2#discussion_r104)" % (URL, URL),
+        "Every function that opens a file uses `with`. - [#1](%s1), [#4](%s4#discussion_r108)" % (URL, URL),
+        "Every money amount is kept in integer cents, never a float. - [#3](%s3#discussion_r107)" % URL,
+        "Every expired coupon is refused with an error, never ignored silently. - "
+        "solo-sdd/changes/archive/2026-11-10-add-coupons/verification.md:13",
+        "Every refund is logged with its order id. - solo-sdd/changes/archive/2026-11-12-add-refunds/verification.md:12",
+        "A refund never exceeds the paid amount. - solo-sdd/changes/archive/2026-11-12-add-refunds/verification.md:13"] + [
+        "Module %d keeps its public names in `__all__`. - [#%d](%s%d)" % (n, 20 + n, URL, 20 + n) for n in range(1, 20)]
+
+
 def existing(mode):
+    if mode == "full":
+        return review_md(FULL)
     base = ["Never catch a bare `except:`; name the exception. - [#1](%s1#discussion_r101), [#2](%s2#discussion_r104)"
             % (URL, URL)]
     if mode == "moved":
@@ -178,7 +194,12 @@ def prepare(mode):
         run(["add", "-A"], copy)
         run(["commit", "-q", "-m", subject], copy)
     shutil.copytree(HERE / "archive", copy / "solo-sdd/changes/archive")  # ignored, as the archive is not in git
-    if mode in ("moved", "held-out"):
+    if mode == "no-login":
+        agents = copy / "AGENTS.md"
+        agents.write_text(agents.read_text(encoding="utf-8").replace("Owner GitHub login: shop-owner\n", ""),
+                          encoding="utf-8")
+        run(["commit", "-q", "-am", "AGENTS.md without the owner login"], copy)
+    if mode in ("moved", "held-out", "full"):
         (copy / "REVIEW.md").write_text(existing(mode), encoding="utf-8")
         run(["add", "-A"], copy)
         run(["commit", "-q", "-m", "REVIEW.md by the owner"], copy)
@@ -300,17 +321,34 @@ def grade(answer):
             "skipped remarks: %s" % (skipped.group(1) if skipped else "none")]
 
 
-REASON = {"gh-fail": r"exit(?: code)?:? 1\b|\b1\b", "gh-broken": r"json|cut|truncat|broken|invalid|pars",
-          "no-remote": r"remote"}
+REASON = {"gh-fail": r"exit(?:ed)?(?: code| status| with)?:? 1\b|code 1\b",
+          "gh-broken": r"json|cut|truncat|broken|invalid|pars", "no-remote": r"remote",
+          "no-login": r"no owner login in the project rules"}
 
 
 def grade_unread(mode, answer):
     _, rules, _ = sections(answer_md(answer))
     unread = labelled(blocks(answer)["report"], "unread")
     named = re.search(r"\bprs?\b|pull request|review|comment", unread) and re.search(REASON[mode], unread)
+    read_ = labelled(blocks(answer)["report"], "read")
+    zero = re.search(r"(?:\bprs?\b|pull request|review|comment)[^,;]*?:\s*0\b", read_)
     return ["PR sources unread with the reason: %s" % ("yes" if named else "no"),
+            "not counted as 0 remarks: %s" % ("no" if zero else "yes"),
             "owner lines %d of 4" % owner_rules(rules),
             "rules from PR comments: %d" % pr_rules(rules)]
+
+
+def rule_text(line):
+    return flat(re.split(r" [-\u2014] ", re.sub(r"^\s*\d+[.)]\s+", "", line), maxsplit=1)[0])
+
+
+def grade_full(answer):
+    _, rules, _ = sections(answer_md(answer))
+    kept = sum(1 for r in FULL if any(rule_text(r) == rule_text(x) for x in rules))
+    left = re.search(r"rules not kept:\s*(\d+)", flat(blocks(answer)["report"]))
+    return ["rules %d" % len(rules), "existing rules kept: %d of 25" % kept,
+            "rules not kept: %s" % (left.group(1) if left else "none"),
+            "docstring rule left out: %s" % ("no" if any("docstring" in flat(r) for r in rules) else "yes")]
 
 
 def grade_moved(answer):
@@ -329,7 +367,7 @@ def held_out(md):
 def grade_held_out(answer):
     b = blocks(answer)
     return ["held out: %s" % ("yes" if held_out(b.get("REVIEW.md (held out)", "")) else "no"),
-            "project REVIEW.md unchanged: %s" % ("no" if "REVIEW.md" in b else "yes")]
+            "no REVIEW.md block over the project's: %s" % ("no" if "REVIEW.md" in b else "yes")]
 
 
 def grade_review(findings):
@@ -414,7 +452,8 @@ def review_prompt(diff, answer=None, confirmed=False):
 STEP2 = ["rules 3 of 3 with links", "owner lines 4 of 4", "unconfirmed 1 of 1 with 4 links", "rules from the pattern: 0",
          "rules from others: 0", "rules from agent lines: 0", "one Unconfirmed heading: yes",
          "form of the template: yes", "owner login named: yes", "skipped remarks: 4"]
-UNREAD = ["PR sources unread with the reason: yes", "owner lines 4 of 4", "rules from PR comments: 0"]
+UNREAD = ["PR sources unread with the reason: yes", "not counted as 0 remarks: yes", "owner lines 4 of 4",
+          "rules from PR comments: 0"]
 MOVED_LINES = ["moved rule kept: yes", "unconfirmed 0 for the moved rule", "rules 3 of 3 with links"]
 TABLE = ["rows 2", "matched + missed = 5 for each row: yes", "extra counted: yes", "matched remarks on their files: yes",
          "held out: yes"]
@@ -423,8 +462,15 @@ REFERENCES = [(grade, "expected-answer.md", STEP2), (grade, "empty-answer.md", [
               (lambda x: grade_unread("gh-fail", x), "expected-unread.md", UNREAD),
               (lambda x: grade_unread("gh-fail", x), "empty-answer.md", ["PR sources unread with the reason: no"]),
               (grade_moved, "expected-moved.md", MOVED_LINES), (grade_moved, "expected-answer.md", ["moved rule kept: no"]),
-              (grade_held_out, "expected-held-out.md", ["held out: yes", "project REVIEW.md unchanged: yes"]),
-              (grade_held_out, "expected-answer.md", ["held out: no", "project REVIEW.md unchanged: no"]),
+              (grade_held_out, "expected-held-out.md", ["held out: yes", "no REVIEW.md block over the project's: yes"]),
+              (grade_held_out, "expected-answer.md", ["held out: no", "no REVIEW.md block over the project's: no"]),
+              (grade_full, "expected-full.md", ["rules 25", "existing rules kept: 25 of 25", "rules not kept: 1",
+                                                "docstring rule left out: yes"]),
+              (grade_full, "expected-answer.md", ["rules not kept: 0", "docstring rule left out: no"]),
+              (lambda x: grade_unread("no-login", x), "expected-no-login.md",
+               ["PR sources unread with the reason: yes", "owner lines 4 of 4", "rules from PR comments: 0"]),
+              (lambda x: grade_unread("gh-broken", x), "zero-unread.md", ["not counted as 0 remarks: no"]),
+              (lambda x: grade_unread("gh-fail", x), "zero-unread.md", ["PR sources unread with the reason: no"]),
               (grade_review, "expected-findings.md", ["broken rule found: yes", "unconfirmed pattern applied: no"]),
               (grade_review, "control-findings.md", ["broken rule found: yes", "unconfirmed pattern applied: yes"]),
               (grade_table, "expected-table.md", TABLE), (grade_table, "leaked-table.md", ["held out: no"]),
@@ -454,7 +500,7 @@ def read(path, what):
 
 if __name__ == "__main__":
     a = sys.argv[1:]
-    one = {"--grade": grade, "--grade-moved": grade_moved, "--grade-held-out": grade_held_out,
+    one = {"--grade": grade, "--grade-moved": grade_moved, "--grade-held-out": grade_held_out, "--grade-full": grade_full,
            "--grade-review": grade_review, "--grade-table": grade_table}
     if a[:1] == ["prepare"] and (a[1:] == [] or (len(a) == 2 and a[1] in MODES)):
         prepare(a[1] if len(a) == 2 else "")
@@ -473,5 +519,5 @@ if __name__ == "__main__":
         print("grading out of reach: %s" % ("yes" if confined(read(a[1], "transcript")) else "no"))
     else:
         fail("usage: review-principles.py prepare [%s] | clean <folder> | review-prompt <diff> [<answer> [--confirmed]]"
-             " | --grade|--grade-moved|--grade-held-out|--grade-review|--grade-table <file>"
-             " | --grade-unread gh-fail|gh-broken|no-remote <answer> | --grade-confined <transcript> | --references" % "|".join(MODES))
+             " | --grade|--grade-moved|--grade-held-out|--grade-full|--grade-review|--grade-table <file>"
+             " | --grade-unread gh-fail|gh-broken|no-remote|no-login <answer> | --grade-confined <transcript> | --references" % "|".join(MODES))

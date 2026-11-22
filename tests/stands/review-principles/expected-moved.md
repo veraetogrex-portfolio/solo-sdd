@@ -21,5 +21,5 @@ Owner login: shop-owner (AGENTS.md)
 Read: PR review comments: 9 remarks, PR reviews: 3 remarks, owner lines: 4 remarks
 Unread: none
 Skipped remarks: 4 by other authors, 1 not review remarks
-Rules: 7 in REVIEW.md, 7 new; rules not kept: 0
-Unconfirmed: 1 lines
+Rules: 8 in REVIEW.md, 6 new; rules not kept: 0
+Unconfirmed: 0 lines

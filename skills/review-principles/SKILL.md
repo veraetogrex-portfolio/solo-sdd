@@ -67,7 +67,7 @@ Set: <k> of K changes: <id>, ... | fewer than K: <k>
 | with REVIEW.md | <n> | <n> | <n> |
 | Change | Remark | File | Without | With |
 |---|---|---|---|---|
-| <id> | <remark, short> | <file> | matched: <finding> | missed | matched: <finding> | missed |
+| <id> | <remark, short> | <file> | matched: <finding>, or missed | matched: <finding>, or missed |
 === REVIEW.md (held out)
 <the held-out file>
 ```
