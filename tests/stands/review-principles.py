@@ -10,8 +10,9 @@
                                  hold the size pattern), `held-out` (a `REVIEW.md` with the cents rule, and the parallel
                                  mode's held-out file asked for); prints `copy:`, `bin:` and `prompt:`
   clean <folder>                 remove a folder `prepare` made
-  review-prompt <diff> [<answer> [--full]]  the prompt of a `Review:` subagent: the diff, and the `REVIEW.md` block of
-                                 an answer without `## Unconfirmed` (as `acceptance.md` hands it) or, `--full`, whole
+  review-prompt <diff> [<answer> [--confirmed]]  the prompt of a `Review:` subagent: the diff, and the `REVIEW.md` block
+                                 of an answer without `## Unconfirmed` (as `acceptance.md` hands it) or, `--confirmed`,
+                                 with its Unconfirmed lines moved up into the rules (the control)
   --grade <answer>               the lines of a run on the plain fixture
   --grade-unread <mode> <answer> the lines of a run after `prepare gh-fail|gh-broken|no-remote`
   --grade-moved <answer>         the lines of a run after `prepare moved`
@@ -237,7 +238,8 @@ def sections(md):
 
 
 def links(line):
-    return re.findall(r"https?://[^\s)\]>,]+|[\w./-]+verification\.md:\d+", line)
+    """The link targets of a line: a Markdown link counts by its target only, its text is dropped."""
+    return re.findall(r"https?://[^\s)\]>,]+|[\w./-]+verification\.md:\d+", re.sub(r"\[[^\]]*\]\(", "(", line))
 
 
 def has(line, words):
@@ -395,11 +397,15 @@ def confined(text):
                    if c.get("name") != "SubagentHandback")
 
 
-def review_prompt(diff, answer=None, full=False):
+def review_prompt(diff, answer=None, confirmed=False):
     rules = ""
     if answer is not None:
         md = answer_md(answer) or answer_md(answer, "REVIEW.md (held out)")
-        rules = md if full else re.split(r"(?m)^## Unconfirmed\s*$", md)[0].rstrip()
+        rules = re.split(r"(?m)^## Unconfirmed\s*$", md)[0].rstrip()
+        if confirmed:  # the control: the owner moved every Unconfirmed line up into the rules
+            _, kept, unconf = sections(md)
+            rules += "".join("\n%d. %s" % (len(kept) + n, re.sub(r"^\s*[-*]\s+", "", u))
+                             for n, u in enumerate(unconf, 1))
         rules = "\nThe project's review rules (`REVIEW.md`):\n\n%s\n" % rules
     return ("Review this diff of the shop project. List your review findings, one per line, each naming its file and "
             "line and the problem; end with the line `Important: <n>`.\n%s\n```diff\n%s```\n" % (rules, diff))
@@ -407,7 +413,7 @@ def review_prompt(diff, answer=None, full=False):
 
 STEP2 = ["rules 3 of 3 with links", "owner lines 4 of 4", "unconfirmed 1 of 1 with 4 links", "rules from the pattern: 0",
          "rules from others: 0", "rules from agent lines: 0", "one Unconfirmed heading: yes",
-         "form of the template: yes", "owner login named: yes", "skipped remarks: 3"]
+         "form of the template: yes", "owner login named: yes", "skipped remarks: 4"]
 UNREAD = ["PR sources unread with the reason: yes", "owner lines 4 of 4", "rules from PR comments: 0"]
 MOVED_LINES = ["moved rule kept: yes", "unconfirmed 0 for the moved rule", "rules 3 of 3 with links"]
 TABLE = ["rows 2", "matched + missed = 5 for each row: yes", "extra counted: yes", "matched remarks on their files: yes",
@@ -457,7 +463,7 @@ if __name__ == "__main__":
     elif len(a) == 2 and a[0] == "clean":
         clean(a[1])
     elif a[:1] == ["review-prompt"] and len(a) in (2, 3) or a[:1] == ["review-prompt"] and len(a) == 4 \
-            and a[3] == "--full":
+            and a[3] == "--confirmed":
         print(review_prompt(read(a[1], "diff"), read(a[2], "answer") if len(a) > 2 else None, len(a) == 4), end="")
     elif len(a) == 2 and a[0] in one:
         print("\n".join(one[a[0]](read(a[1], "file"))))
@@ -466,6 +472,6 @@ if __name__ == "__main__":
     elif len(a) == 2 and a[0] == "--grade-confined":
         print("grading out of reach: %s" % ("yes" if confined(read(a[1], "transcript")) else "no"))
     else:
-        fail("usage: review-principles.py prepare [%s] | clean <folder> | review-prompt <diff> [<answer> [--full]]"
+        fail("usage: review-principles.py prepare [%s] | clean <folder> | review-prompt <diff> [<answer> [--confirmed]]"
              " | --grade|--grade-moved|--grade-held-out|--grade-review|--grade-table <file>"
              " | --grade-unread gh-fail|gh-broken|no-remote <answer> | --grade-confined <transcript> | --references" % "|".join(MODES))

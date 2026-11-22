@@ -21,7 +21,7 @@ The owner's review rules.
 1. Never catch a bare `except:`; name the exception. — [#1](https://github.com/example/shop/pull/1#discussion_r101), [#2](https://github.com/example/shop/pull/2#discussion_r104)
 2. Every function that opens a file uses `with`. — [#1 review](https://github.com/example/shop/pull/1), [#4](https://github.com/example/shop/pull/4#discussion_r108)
 3. Every public function has a docstring.
-4. A refund never exceeds the paid amount. - solo-sdd/changes/archive/2026-11-12-add-refunds/verification.md:14 — [#2](https://github.com/example/shop/pull/2#discussion_r105), [#4](https://github.com/example/shop/pull/4#discussion_r109)
+4. A refund never exceeds the paid amount. - solo-sdd/changes/archive/2026-11-12-add-refunds/verification.md:13 — [#2](https://github.com/example/shop/pull/2#discussion_r105), [#4](https://github.com/example/shop/pull/4#discussion_r109)
 
 ## Unconfirmed
 
