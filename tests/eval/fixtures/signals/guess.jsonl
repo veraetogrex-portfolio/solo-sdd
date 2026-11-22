@@ -1,0 +1,1 @@
+{"type": "assistant", "timestamp": "2026-11-20T10:00:00.000Z", "message": {"id": "msg_0024", "model": "claude-opus-5-5", "role": "assistant", "usage": {"input_tokens": 3, "cache_read_input_tokens": 100, "output_tokens": 20}, "content": [{"type": "tool_use", "id": "toolu_o2", "name": "Agent", "input": {"description": "Orchestrator c2", "prompt": "task"}}]}}

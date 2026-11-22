@@ -26,6 +26,7 @@ SOURCES = {
     "errors": "solo_sdd/doctor.py",
     "shell": "global/work_hooks.py",
     "process-root": "global/work_hooks.py",
+    "transcript-events": "global/work_hooks.py",
 }
 # re.M: ^ and $ stand only at "\n", so a line is what Python's universal newlines off would give
 MARKER = re.compile(r"^# ([a-z0-9-]+):(begin|end)\r?$", re.M)

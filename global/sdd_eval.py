@@ -109,16 +109,20 @@ def sections(src, title):
     return out
 
 
-def plan_module():
-    """sdd_dispatch_plan.py next to the script (after layout the name has a dash)."""
-    for n in ("sdd_dispatch_plan.py", "sdd-dispatch-plan.py"):
+def sibling(name):
+    """<name>.py next to the script (after layout the name has dashes)."""
+    for n in (name + ".py", name.replace("_", "-") + ".py"):
         p = os.path.join(HERE, n)
         if os.path.isfile(p):
-            sp = importlib.util.spec_from_file_location("sdd_dispatch_plan", p)
+            sp = importlib.util.spec_from_file_location(name, p)
             m = importlib.util.module_from_spec(sp)
             sp.loader.exec_module(m)
             return m
-    raise RuntimeError("no sdd_dispatch_plan.py next to sdd_eval.py")
+    raise RuntimeError("no %s.py next to sdd_eval.py" % name)
+
+
+def plan_module():
+    return sibling("sdd_dispatch_plan")
 
 
 def plan_deps():
@@ -531,17 +535,30 @@ def load_roles():
     return {}
 
 
+ROLES = ("orchestrator", "implement", "general", "review", "lookup", "analyze", "attack", "judge", "check")
+
+
 def role_of(description, roles):
-    d = (description or "").lower()
-    for role in ("review", "orchestrator", "implement"):
-        if any(d.startswith(t.lower()) for t in roles.get(role, [])):
+    d = description.strip().casefold() + " " if isinstance(description, str) else ""  # as the gate's agent_role
+    for role in ROLES:
+        if any(d.startswith(t.casefold()) for t in roles.get(role, [])):
             return role
     return "general"
 
 
+def meta_of(journal):
+    """The .meta.json of a subagent journal as a dict; {} when missing, broken or not an object."""
+    try:
+        m = read_json(journal[:-len(".jsonl")] + ".meta.json")
+    except (OSError, ValueError):
+        return {}
+    return m if isinstance(m, dict) else {}
+
+
 def jlines(path):
-    with open(path, encoding="utf-8", errors="replace") as f:
-        return f.read().splitlines()
+    """JSONL lines split at "\\n" only: a JSON string holds U+2028 or U+0085 raw, which str.splitlines would split."""
+    with open(path, encoding="utf-8", errors="replace", newline="") as f:
+        return [ln.rstrip("\r") for ln in f.read().split("\n") if ln]
 
 
 def parsed(lines):
@@ -605,13 +622,9 @@ def session_metrics(sid, prices):
     roles = load_roles()
     subs = sorted(glob.glob(os.path.join(path[:-len(".jsonl")], "subagents", "agent-*.jsonl")))
     files = [(path, "dispatcher")]
-    agents = {"orchestrator": 0, "implement": 0, "general": 0, "review": 0}
+    agents = dict.fromkeys(ROLES, 0)
     for p in subs:
-        try:
-            desc = read_json(p[:-len(".jsonl")] + ".meta.json").get("description")
-        except (OSError, ValueError):
-            desc = None
-        r = role_of(desc, roles)
+        r = role_of(meta_of(p).get("description"), roles)
         agents[r] += 1
         files.append((p, r))
     seen, owner, rejected = {}, {}, 0
@@ -676,6 +689,287 @@ def session_metrics(sid, prices):
             "hours": (t1 - t0) / 3600 if t0 is not None and t1 is not None else None}
 
 
+# ---- path signals ----
+
+# A copy of a block of global/work_hooks.py (this script is deployed alone): edit it there, then run
+# python3 scripts/sync_blocks.py.
+# transcript-events:begin
+def transcript_events(f):
+    """Edits and tool calls of a transcript in order: ("edit", path) for a tool or Bash edit, ("tool", name, input)."""
+    for raw in f:
+        if b'"tool_use"' not in raw and b"bashEditDiff" not in raw:
+            continue
+        try:
+            d = json.loads(raw)
+        except Exception:
+            continue
+        r = d.get("toolUseResult")
+        if isinstance(r, dict) and isinstance(r.get("bashEditDiff"), dict):
+            for fp in r["bashEditDiff"].get("changedFiles") or []:
+                yield "edit", fp
+        if d.get("type") != "assistant":
+            continue
+        for p in (d.get("message") or {}).get("content") or []:
+            if not isinstance(p, dict) or p.get("type") != "tool_use":
+                continue
+            name, ti = p.get("name", ""), p.get("input") or {}
+            if name in ("Write", "Edit", "MultiEdit", "NotebookEdit"):
+                fp = ti.get("file_path") or ti.get("notebook_path")
+                if fp:
+                    yield "edit", fp
+            else:
+                yield "tool", name, ti
+# transcript-events:end
+
+
+SIGNALS = ("review_after_last_edit", "review_rounds", "important", "live_in_scenario", "analyze_findings")
+PATH_KEYS = SIGNALS + ("important_sources",)
+VERDICT = re.compile(r"Important: ([0-9]+)")  # the reviewer's last line (spec-next, Review verdict line)
+# the Important label opens a finding: after list markup and an optional id (1. I1 **F-2** A.), bracketed or
+# followed by an optional id, a parenthesis and a separator, then text that is not a count or a status (a title in the
+# parenthesis alone is the finding's text); read by str.lstrip, not one regex, so a long run of markup costs linear time
+FINDING_ID = re.compile(r"[\[(]?(?:[A-Za-z]{1,3}-?\d+|[A-Z](?=[.:,)\]]|\s+\())[.:,)\]]?|\d+[.)]")
+BOLD_ID = re.compile(r"\*\*\[?(?:[A-Za-z]{0,3}-?\d+|[A-Z])[.:)\]]")  # "**I-1. Title.**" opens a finding paragraph
+CELL_ID = re.compile(r"[A-Za-z]{0,3}-?\d+|[A-Z]")
+LABEL_ID = re.compile(r"(?:[A-Za-z]{0,3}-?\d+|[A-Z])(?!\w)")
+SEPARATORS = ":.,-\u2013\u2014("
+# a status that closes a finding: "closed", "mostly closed", "PASS", "correct", Russian "zakryto" and "ispravleno"
+# (escaped: the repository holds no Cyrillic); "partly closed", "not fixed" and "the closed changes" stay findings
+CLOSED = (r"(?:(?:all|now|fully|mostly)\s+)?(?:closed|fixed|resolved|dropped|correct|pass(?:ed)?|done|"
+          r"\u0437\u0430\u043a\u0440\u044b\u0442\w*|\u0438\u0441\u043f\u0440\u0430\u0432\u043b\u0435\u043d\w*)\b")
+# a count or a status is not a finding: "none found", "0 (all closed)", "no new findings", "closed."; but "none of the
+# rows ...", "2 callers skip ...", "no test for ..." are findings
+END = r"(?=[\s*`]*(?:[.,;:)(]|$)|\s+(?:in|but|for|with|except|as)\b)"  # "closed in substance, but ..."
+# Russian "net" and "nichego" (none, nothing) escaped as above
+COUNT = re.compile(r"(?i)(?:(?:none|nothing|zero|n/a|no|\u043d\u0435\u0442|\u043d\u0438\u0447\u0435\u0433\u043e|\d+)"
+                   r"(?:\s+(?:new|open|found|left|remain(?:ing)?|findings?|issues?|remarks?|in\s+this\s+round))*"
+                   r"\s*(?:[,.;:)(]|$)|" + CLOSED + END + ")")
+STATUS_AFTER = re.compile(r"(?i)[:\u2013\u2014][\s*`]*" + CLOSED + END)  # "x y: closed.", "a title:** fixed"
+HEADING = re.compile(r"(?:\d+[.)]\s*)?(?:(?:Open|New)\s+)?Important(?:\s+findings?)?(?:\s*\([^)]*\))?")
+LABELS = ("Important", "Nit", "Pre-existing")
+LIST_ITEM = re.compile(r"([ \t]*)(?:[-*+]|\d+[.)])[ \t]+")
+ANALYZE = re.compile(r"(?m)^[^\w\n]*Analyze:\s*([0-9]+) findings")
+
+
+def texts(objs):
+    """Assistant texts and SubagentHandback messages of a journal in order: [(kind, text)]."""
+    out = []
+    for o in objs:
+        if o.get("type") != "assistant":
+            continue
+        for b in blocks(o):
+            if b.get("type") == "text" and isinstance(b.get("text"), str) and b["text"].strip():
+                out.append(("text", b["text"]))
+            elif b.get("type") == "tool_use" and b.get("name") == "SubagentHandback":
+                m = (b.get("input") or {}).get("message") if isinstance(b.get("input"), dict) else None
+                if isinstance(m, str):
+                    out.append(("handback", m))
+    return out
+
+
+def final_text(objs):
+    """The message of the last SubagentHandback call, else the last assistant text; "" when neither."""
+    ts = texts(objs)
+    hb = [t for k, t in ts if k == "handback"]
+    return hb[-1] if hb else (ts[-1][1] if ts else "")
+
+
+def finding_key(line):
+    """None unless the line is a finding labelled Important: a table row with an Important cell, no other label cell
+    (a header) and no count after it, or a line that opens with the label and goes on with text that is not a count
+    or a status. Else the finding's id ("A", "I1") when the line names one, "" when it does not."""
+    if line.lstrip().startswith("|"):
+        cells = [c.strip(" *`[]()") for c in line.strip().strip("|").split("|")]
+        if "Important" not in cells or sum(c in LABELS for c in cells) > 1:
+            return None
+        i = cells.index("Important")
+        if i + 1 < len(cells) and COUNT.match(cells[i + 1]):
+            return None
+        return cells[i - 1] if i and CELL_ID.fullmatch(cells[i - 1]) else ""
+    s = line.lstrip(" \t>#*+-`")
+    m = FINDING_ID.match(s)
+    key = m.group().strip("[](),.:") if m and re.search(r"[A-Za-z]", m.group()) else ""
+    if m:
+        s = s[m.end():].lstrip(" \t*`.:,)]-\u2013\u2014")
+    body = s.lstrip("[(*`")
+    if not body.startswith("Important"):
+        return None
+    opened, rest = s[:len(s) - len(body)], body[len("Important"):]
+    after = rest.lstrip("])*`")
+    closed, rest = rest[:len(rest) - len(after)], after.lstrip()
+    if "(" in opened and ")" not in closed and ")" in rest:  # "N-1 (Important, R-26): closed."
+        rest, closed = rest[rest.index(")") + 1:], ")"
+    if not ("[" in opened and "]" in closed or "(" in opened and ")" in closed):
+        m = LABEL_ID.match(rest)
+        if m:
+            key, rest = m.group(), rest[m.end():].lstrip(" *`")
+        if rest.startswith("(") and ")" in rest:
+            inner, rest = rest[1:rest.index(")")], rest[rest.index(")") + 1:].lstrip(" *`")
+            if not rest.strip(" .:*`"):  # "- **Important (a stand plant tests another trigger).**"
+                rest = "." + inner
+        if not rest or rest[0] not in SEPARATORS:
+            return None
+        rest = rest[1:]
+    else:
+        rest = rest.lstrip(" :.,-\u2013\u2014*`")
+    rest = rest.strip(" *`")
+    return key if rest and not COUNT.match(rest) and not STATUS_AFTER.search(rest) else None
+
+
+def important_count(text):
+    """Findings labelled Important in a review result: lines with a finding_key, and under a line that is only the label
+    ("### Important", "**Important (blocks)**", "2. Important findings") the list items at one indent or the
+    "**<id>. title**" paragraphs up to the next heading; such a line over plain text is one finding. A finding named by
+    one id in a summary and again in its detail counts once."""
+    n, ids = 0, set()
+    group = None  # None, True (under a heading, no item yet), "bold" (id paragraphs), or the indent of its list items
+
+    def add(key):
+        nonlocal n
+        if key:
+            ids.add(key)
+        else:
+            n += 1
+
+    for line in text.splitlines():
+        if group == "bold":
+            m = BOLD_ID.match(line)
+            if m:
+                add(m.group().strip("*[]().:"))
+                continue
+            if not line.startswith(("#", "**")):
+                continue
+            group = None
+        elif group is not None:
+            item = LIST_ITEM.match(line)
+            if group is True and BOLD_ID.match(line):
+                group = "bold"
+                add(BOLD_ID.match(line).group().strip("*[]().:"))
+                continue
+            if item and (group is True or group == item.group(1)):
+                group, body = item.group(1), line[item.end():].strip(" *`")
+                if body and not COUNT.match(body):
+                    m = FINDING_ID.match(body)
+                    add(m.group().strip("[](),.:") if m and re.search(r"[A-Za-z]", m.group()) else "")
+                continue
+            if item or not line.strip() or line[:1] in " \t":  # a sub-item, a blank or an indented continuation
+                continue
+            para = line.strip(" *_`-")
+            if group is True and para and not line.startswith("#") and not COUNT.match(para) \
+                    and not STATUS_AFTER.search(para) and para.split(" ")[0].strip("*_:") not in LABELS:
+                add("")  # the heading over a plain paragraph
+            group = None
+        if HEADING.fullmatch(line.strip().strip("#*_` ").rstrip(":").strip("*_` ")):
+            group = True
+            continue
+        key = finding_key(line)
+        if key is not None:
+            add(key)
+    return n + len(ids)
+
+
+def review_count(text):
+    """(n, "line") when the last non-blank line, without * and backquotes, is exactly `Important: <n>`; else the
+    labelled lines of a review written before that rule, (important_count(text), "text")."""
+    last = next((ln for ln in reversed(text.splitlines()) if ln.strip()), "")
+    m = VERDICT.fullmatch(last.replace("*", "").replace("`", "").strip())
+    return (int(m.group(1)), "line") if m else (important_count(text), "text")
+
+
+def review_launches(objs, roles):
+    """The tool_use ids of the orchestrator's `Review:` Agent calls in journal order (transcript_events, the gate's
+    reader, yields the same calls in the same order without ids)."""
+    return [b.get("id") for o in objs if o.get("type") == "assistant" for b in blocks(o)
+            if b.get("type") == "tool_use" and b.get("name") in ("Agent", "Task") and isinstance(b.get("input"), dict)
+            and role_of(b["input"].get("description"), roles) == "review"]
+
+
+def code_edit(path, roots):
+    """A code edit as the archive gate counts it: inside WORKTREE or the copy, outside solo-sdd/ and docs/."""
+    if not isinstance(path, str) or "/scratchpad/" in path:
+        return False
+    p = os.path.realpath(os.path.expanduser(path))
+    for r in roots:
+        rel = os.path.relpath(p, r)
+        if rel != "." and rel != ".." and not rel.startswith("../"):
+            return not rel.startswith(("solo-sdd/", "docs/"))
+    return False
+
+
+def path_signals(sid, copy, cid, roles):
+    """The five signals and important_sources of the copy's session; all None when no orchestrator handed back
+    STATUS: archived; the review ones None when a review launch has no journal with its toolUseId and was not refused."""
+    sig = dict.fromkeys(PATH_KEYS)
+    path = find_session(sid)
+    if not path:
+        return sig
+    sd = sibling("sdd_dispatch")
+    subs = []
+    for p in sorted(glob.glob(os.path.join(path[:-len(".jsonl")], "subagents", "agent-*.jsonl"))):
+        try:
+            objs = parsed(jlines(p))
+        except OSError:
+            continue
+        meta = meta_of(p)
+        subs.append({"id": os.path.basename(p)[len("agent-"):-len(".jsonl")], "path": p, "meta": meta, "objs": objs,
+                     "role": role_of(meta.get("description"), roles),
+                     "start": next((o["timestamp"] for o in objs if isinstance(o.get("timestamp"), str)), "")})
+    done = [s for s in subs if s["role"] == "orchestrator" and sd.field(final_text(s["objs"]), "STATUS") == "archived"]
+    if not done:
+        return sig
+    orch = max(done, key=lambda s: s["start"])
+    status = final_text(orch["objs"])
+    by_launch = {s["meta"].get("toolUseId"): final_text(s["objs"]) for s in subs if s["role"] == "review"}
+    for o in orch["objs"]:  # a launch a hook refused has no journal: an empty (failed) review, not an unpaired one
+        for b in blocks(o):
+            if b.get("type") == "tool_result" and b.get("is_error") and b.get("tool_use_id") not in by_launch:
+                by_launch[b.get("tool_use_id")] = ""
+    launches = review_launches(orch["objs"], roles)
+    paired = all(i in by_launch for i in launches)
+    roots = [os.path.realpath(r) for r in (sd.field(status, "WORKTREE"), copy) if r]
+    seq, sources, k = [], [], 0
+    try:
+        with open(orch["path"], "rb") as f:
+            events = list(transcript_events(f))
+    except (OSError, AttributeError):  # a failed read is not an empty journal
+        return sig
+    for ev in events:
+        if ev[0] == "edit":
+            if code_edit(ev[1], roots):
+                seq.append(None)
+        elif ev[1] in ("Agent", "Task") and isinstance(ev[2], dict) and role_of(ev[2].get("description"), roles) == "review":
+            res = by_launch.get(launches[k], "") if k < len(launches) else ""
+            k += 1
+            if res.strip():
+                n, src = review_count(res)
+                seq.append(n)
+                sources.append(src)
+    paired = paired and k == len(launches)  # the gate's reader and review_launches saw the same calls
+    edits = [i for i, x in enumerate(seq) if x is None]
+    revs = [i for i, x in enumerate(seq) if x is not None]
+    if paired:
+        sig["review_rounds"], sig["important"], sig["important_sources"] = len(revs), sum(seq[i] for i in revs), sources
+        sig["review_after_last_edit"] = (not edits or bool(revs) and (revs[-1] > edits[-1] or
+                                                                      revs[-1] > edits[0] and not seq[revs[-1]]))
+    cmd = sd.field(status, "LIVE").partition(" -> ")[0].strip()
+    arch = archived(copy, cid)
+    vp = os.path.join(arch, "verification.md") if arch else None
+    if cmd and vp and os.path.isfile(vp):
+        miss = sd.live_in_scenario(vp, cmd)
+        sig["live_in_scenario"] = None if miss and miss.startswith("LIVE: no Live Scenario") else miss is None
+    hits = [m.group(1) for _, t in texts(orch["objs"]) for m in ANALYZE.finditer(t)]
+    sig["analyze_findings"] = int(hits[-1]) if hits else None
+    return sig
+
+
+def path_mark(m):
+    """The compare text of a done change by its signals (m: the copy's metrics, {} when none)."""
+    pair = (m.get("review_after_last_edit"), m.get("live_in_scenario"))
+    if any(v is False for v in pair):
+        return "done, path incomplete"
+    return "done, path unknown" if None in pair else "done"
+
+
 def money(x):
     return "n/a" if x is None else "$%.2f" % x
 
@@ -690,12 +984,12 @@ def label_metrics(folder, label, prices):
     Returns (dict, missing): missing means the session log of at least one copy is absent."""
     folder = os.path.abspath(folder)
     run = read_json(os.path.join(folder, "runs", label + ".json"))
-    out, missing = {}, False
+    out, missing, roles = {}, False, load_roles()
     for cid in sorted(run["copies"]):
         rec = run["copies"][cid]
         m = session_metrics(rec["session"], prices)
         if m is None:
-            out[cid], missing = {"error": "journal not found", "status": rec["status"]}, True
+            out[cid], missing = dict(dict.fromkeys(PATH_KEYS), error="journal not found", status=rec["status"]), True
             continue
         m["status"] = rec["status"]
         copy = os.path.join(folder, cid)
@@ -705,6 +999,7 @@ def label_metrics(folder, label, prices):
             if r.returncode == 0 and r.stdout.strip():
                 hours = (int(r.stdout) - t0) / 3600
         m["hours"] = hours
+        m.update(path_signals(rec["session"], copy, cid, roles))
         out[cid] = m
     ok = [m for m in out.values() if "error" not in m]
     total = {"cost_usd": None if not ok or any(m["cost_usd"] is None for m in ok) else sum(m["cost_usd"] for m in ok),
@@ -913,8 +1208,9 @@ def cmd_compare(a):
             except (RuntimeError, KeyError, subprocess.CalledProcessError) as e:
                 print("oracle failed: %s: %s" % (cid, e), file=sys.stderr)
                 return 3
+            m = mets[lb].get("copies", {}).get(cid, {})
             res[lb, cid] = {"done": o["green"], "failed": o["failed"],
-                            "text": "done" if o["green"] else "merged, oracle red: " + ", ".join(o["failed"])}
+                            "text": path_mark(m) if o["green"] else "merged, oracle red: " + ", ".join(o["failed"])}
 
     def met(lb, cid):
         m = mets[lb].get("copies", {}).get(cid, {})
@@ -964,6 +1260,11 @@ def cmd_compare(a):
     out += [""] + (["Flipped:"] + flips if flips else ["Flipped: none"])
     if asked:
         out += ["", "With a question:"] + ["- %s: %s" % (cid, "; ".join(v)) for cid, v in sorted(asked.items())]
+    path = ["- %s %s: %s" % (cid, lb, ", ".join("%s %s" % (k, json.dumps(mets[lb].get("copies", {}).get(cid, {}).get(k)))
+                                               for k in PATH_KEYS))
+            for cid in ids for lb in uniq if res.get((lb, cid), {}).get("done")]
+    if path:
+        out += ["", "Path:"] + path
     if notes:
         out += ["", "Spec after the change:"] + ["- " + n for n in sorted(notes)]
     print("\n".join(out))

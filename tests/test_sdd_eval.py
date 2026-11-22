@@ -839,7 +839,8 @@ class MetricsSession(unittest.TestCase):
         self.assertEqual(m["models"][OP]["output_source"], "cost-state")
         self.assertEqual(m["models"][SN]["output"], 7)
         self.assertEqual(m["models"][SN]["output_source"], "journal")
-        self.assertEqual(m["agents"], {"orchestrator": 0, "implement": 1, "general": 1, "review": 0})
+        self.assertEqual(m["agents"], {"orchestrator": 0, "implement": 1, "general": 1, "review": 0, "lookup": 0,
+                                       "analyze": 0, "attack": 0, "judge": 0, "check": 0})
         self.assertEqual((m["returns"], m["rejected"], m["merged"]), (2, 1, 3))
         self.assertEqual(m["first_orchestrator"], DAY + "10:00:00.000Z")
         self.assertEqual(m["last_merge"], DAY + "13:00:00.000Z")
@@ -886,7 +887,7 @@ class MetricsSession(unittest.TestCase):
         self.assertEqual(r.stdout.splitlines(), [
             "merged: 3", "time: 3.00 h",
             "dispatcher/%s: 2.00M per change" % OP, "implement/%s: 1.00M per change" % SN,
-            "agents: orchestrator 0, implement 1, general 1, review 0",
+            "agents: orchestrator 0, implement 1, general 1, review 0, lookup 0, analyze 0, attack 0, judge 0, check 0",
             "returns: 2, rejected statuses: 1", "cost: $1.52 (cost-state $2.50)"])
 
     def test_fixture(self):
@@ -1143,7 +1144,7 @@ class CompareTests(unittest.TestCase):
         r = e.compare(e.E, ["p1", "p2"], ["q1", "q2"])
         self.assertEqual(r.returncode, 0, r.stderr)
         row = [ln for ln in r.stdout.splitlines() if ln.startswith("| c1 ")][0]
-        self.assertEqual(row.count("done 1.25 h $2.50"), 4, row)
+        self.assertEqual(row.count("done, path unknown 1.25 h $2.50"), 4, row)
         self.assertIn("| a | 2, 2 of 2 | 5.00 | $10.00 |", r.stdout)
         self.assertIn("| b | 2, 2 of 2 | 5.00 | $10.00 |", r.stdout)
 
@@ -1413,6 +1414,215 @@ class ParseFailed(unittest.TestCase):
         self.assertEqual(ev.test_command(str(d)), "a | b")
         (d / "AGENTS.md").write_text("## Commands\n\n| What | C |\n|---|---|\n| Build | `make` |\n")
         self.assertIsNone(ev.test_command(str(d)))
+
+
+WT = "/tmp/wt-row"
+LIVE_DOC = "## Live Scenario\n\n1. Run `sh demo.sh` -> `ok`.\n"
+
+
+def jl(ts, content, typ="assistant", **extra):
+    o = {"type": typ, "timestamp": "2026-11-20T10:%02d:00.000Z" % ts, "message": {"role": typ, "content": content}}
+    o.update(extra)
+    return json.dumps(o)
+
+
+def agent_use(desc, tid="t"):
+    return {"type": "tool_use", "id": tid, "name": "Agent", "input": {"description": desc}}
+
+
+def edit_use(path):
+    return {"type": "tool_use", "id": "e", "name": "Edit", "input": {"file_path": path}}
+
+
+def handback(msg):
+    return {"type": "tool_use", "id": "h", "name": "SubagentHandback", "input": {"message": msg}}
+
+
+def row_status(live="sh demo.sh -> ok"):
+    return "STATUS: archived\nWORKTREE: %s\n" % WT + ("LIVE: %s\n" % live if live is not None else "")
+
+
+@marks.release
+class ProcessSignals(unittest.TestCase):
+    """The path signals of metrics over journals built per row (the fixtures of tests/eval/fixtures/signals: the stand)."""
+
+    def setUp(self):
+        self.root = pathlib.Path(tempfile.mkdtemp()).resolve()
+        self.addCleanup(shutil.rmtree, self.root, True)
+        self.proj = self.root / "home/.claude/projects/x"
+        self.proj.mkdir(parents=True)
+        old = os.environ.get("HOME")
+        os.environ["HOME"] = str(self.root / "home")
+        self.addCleanup(os.environ.__setitem__, "HOME", old)
+        self.roles = ev.load_roles()
+
+    def copy(self, cid, verification=LIVE_DOC):
+        c = self.root / "copies" / cid
+        d = c / ("solo-sdd/changes/archive/2026-11-20-%s" % cid)
+        d.mkdir(parents=True, exist_ok=True)
+        if verification is None:
+            (d / "verification.md").unlink(missing_ok=True)
+        else:
+            (d / "verification.md").write_text(verification)
+        return str(c)
+
+    def session(self, events, reviews=(), status=None, sid="row", verification=LIVE_DOC):
+        """events: ("edit", path) | ("review", desc) | ("text", t) | ("bash", path); reviews: results in order."""
+        (self.proj / (sid + ".jsonl")).write_text(jl(0, [agent_use("Orchestrator c")]) + "\n")
+        sub = self.proj / sid / "subagents"
+        sub.mkdir(parents=True)
+        lines, launched = [jl(1, [{"type": "text", "text": "start"}])], 0
+        for i, (kind, arg) in enumerate(events, 2):
+            if kind == "edit":
+                lines.append(jl(i, [edit_use(arg)]))
+            elif kind == "review":
+                lines.append(jl(i, [agent_use(arg, "toolu_r%d" % launched)]))
+                launched += 1
+            elif kind == "text":
+                lines.append(jl(i, [{"type": "text", "text": arg}]))
+            elif kind == "bash":
+                lines.append(jl(i, [{"type": "tool_use", "id": "b", "name": "Bash", "input": {"command": "sed"}}]))
+                lines.append(jl(i, [], typ="user", toolUseResult={"bashEditDiff": {"changedFiles": [arg]}}))
+        lines.append(jl(59, [handback(status if status is not None else row_status())]))
+        (sub / "agent-o.jsonl").write_text("\n".join(lines) + "\n")
+        (sub / "agent-o.meta.json").write_text(json.dumps({"description": "Orchestrator c"}))
+        for i, res in enumerate(reviews):
+            (sub / ("agent-r%d.jsonl" % i)).write_text(jl(10 + i, [{"type": "text", "text": res}] if res else []) + "\n")
+            (sub / ("agent-r%d.meta.json" % i)).write_text(json.dumps({"description": "Review: c",
+                                                                       "toolUseId": "toolu_r%d" % i}))
+        return ev.path_signals(sid, self.copy("c", verification), "c", self.roles)
+
+    def test_review_rows(self):
+        code, imp = WT + "/a.py", "| F1 | Important | x |"
+        rows = [  # (events, review results, review_after_last_edit, review_rounds, important)
+            ([("edit", code), ("review", "Review: c"), ("edit", code)], ["- Nit: a name"], True, 1, 0),
+            ([("edit", code)], [], False, 0, 0),
+            ([("edit", WT + "/solo-sdd/changes/c/tasks.md"), ("edit", WT + "/docs/x.md")], [], True, 0, 0),
+            ([("edit", code), ("review", "Review: c"), ("review", "Review: c")],
+             ["", "no Important findings\n- Nit: x"], True, 1, 0),
+            ([("edit", code), ("review", "Review: c"), ("edit", "/x/scratchpad/s.txt"), ("edit", "/elsewhere/b.py")],
+             [imp], True, 1, 1),
+            ([("review", "Review: c"), ("edit", code)], ["- Nit: x"], False, 1, 0),
+        ]
+        for i, (events, reviews, after, rounds, important) in enumerate(rows):
+            s = self.session(events, reviews, sid="row%d" % i)
+            self.assertEqual((s["review_after_last_edit"], s["review_rounds"], s["important"]),
+                             (after, rounds, important), i)
+
+    def test_live_and_analyze_sources(self):
+        s = self.session([("text", "Analyze: off (solo-sdd/config)")], status=row_status(None), sid="n1")
+        self.assertEqual((s["live_in_scenario"], s["analyze_findings"]), (None, None))
+        self.assertIs(self.session([("text", "- Analyze: 3 findings, kept 1\nAnalyze: 4 findings")],
+                                   sid="n2")["analyze_findings"], 4)
+        s = self.session([], status=row_status("sh other.sh -> ok"), sid="n3")
+        self.assertIs(s["live_in_scenario"], False)
+        for i, doc in enumerate((None, "## Result\n\n`sh demo.sh`\n")):
+            self.assertIsNone(self.session([], sid="m%d" % i, verification=doc)["live_in_scenario"], i)
+
+    def test_no_archived_status_and_broken_input(self):
+        s = self.session([("edit", WT + "/a.py")], status="STATUS: not_ready\n", sid="nr")
+        self.assertEqual(s, dict.fromkeys(ev.PATH_KEYS))
+        self.session([("edit", WT + "/a.py")], ["| F | Important | x |"], sid="br")
+        with open(self.proj / "br/subagents/agent-o.jsonl", "a") as f:
+            f.write("{broken line\n[1, 2]\n")
+        (self.proj / "br/subagents/agent-r0.meta.json").write_text("[]")
+        self.session([("edit", WT + "/a.py"), ("review", "Review: c")], ["x"], sid="ls")
+        raw = {"type": "assistant", "message": {"content": [{"type": "text", "text": "- Important: a\u2028split \x85line"}]}}
+        (self.proj / "ls/subagents/agent-r0.jsonl").write_text(json.dumps(raw, ensure_ascii=False) + "\n", encoding="utf-8")
+        self.assertEqual(ev.path_signals("ls", self.copy("c3"), "c3", self.roles)["important"], 1)  # raw U+2028 in JSONL
+        s = ev.path_signals("br", self.copy("c2"), "c2", self.roles)
+        self.assertEqual((s["review_after_last_edit"], s["review_rounds"]), (False, 0))
+        self.assertEqual(ev.session_metrics("br", {})["agents"]["general"], 1)
+
+    def test_important_label(self):
+        found = ("| F1 | Important | the row is missing |", "- Important: requirement A is not met",
+                 "**I1. Important (test duplicates a stand scenario).** x", "- [Important] x", "1. Important: no test for B",
+                 "**Important:** a gap", "| F1 | the row is missing | Important |", "| I1 | x | **Important** |",
+                 "- I1 (Important): x", "- I1 \u2014 Important: x", "- **I1** Important: x",
+                 "- Important: none of the rows are counted", "| I1 | Important | none of the callers check it |",
+                 "**Important 1: a contradiction between rules.**", "- **Important A (blocks).** More forms pass",
+                 "**Important I1: requirement clauses without a test.**", "**A. Important.** `init.py:101`. x",
+                 "Important: 2 callers skip the exit-code check", "| I1 | Important | 2 callers skip it |",
+                 "Important: nothing checks the exit code", "Important: no new test covers the grouped form",
+                 "Important: zero-length results are counted as rounds",
+                 "- **Important (test evidence; class: a stand plant tests a different trigger).**",
+                 "**N-1 Important (antislop R-26: a control that does nothing)**", "- **N1 (Important): partly closed, still open.**",
+                 "Important 1: not fixed. x", "Important 2: partially fixed; y", "Important: the closed changes are listed as open",
+                 "Important: a fixed timeout of 5 s kills slow runs")
+        counts = ("no Important findings", "Important: none", "Important: 0, Nit: 2", "0 Important, 1 Nit",
+                  "- Important findings: none", "Important findings were not found", "> Important: none remain",
+                  "| Important | 0 |", "| Important | none |", "Important: None.", "Important: Zero",
+                  "- Important: no findings", "Important: nothing", "Important: n/a", "Important: 1",
+                  "Important: 2, Nit: 0", "| Important | None |", "| Important | n/a |", "This is Important: x",
+                  "Important: none found", "Important: 0 open", "Important: none in this round",
+                  "Important: 0 (all closed)", "- Important: none (the open finding is closed)", "Important: No new findings",
+                  "| Important | Nit | Pre-existing |", "| Nit | Important |", "| Change | Important | Nit |",
+                  "- I2 (Important): closed. The reader now reads it", "| I2 | Important | fixed |",
+                  "**Important 1 (blockers import hint): closed.**", "Important A: **closed.**",
+                  "### Important 2: mostly closed; Important A is left", "- **Important 2: closed in substance, but a gap**",
+                  "1. **Important, judge `reason` in the worker log: closed.** `a.py:270`",
+                  "- **Important (round 2), 3xx accepted as data: closed.** x",
+                  "- **Important 1: \u0437\u0430\u043a\u0440\u044b\u0442\u043e.**", "1. **Important, three merge-rule scenarios: correct.**",
+                  "- **Important B (R-39): PASS.**", "- **Important 1 \u2014 \u0437\u0430\u043a\u0440\u044b\u0442.**",
+                  "*" * 50000)  # a long markup run: read in linear time, a backtracking regex took 30 s
+        self.assertEqual([ev.important_count(x) for x in found + counts], [1] * len(found) + [0] * len(counts))
+        grouped = ("Findings:\n\n### Important\n\n- I1: the row is missing\n  - Places: a.py:3\n  - Fix: b\n\n"
+                   "- I2: no test\n\n### Nit\n\n- N1: a name\n\n**Important**\n- none\n\nImportant:\n1. x\n   - a\n"
+                   "2. y\n\n  a continuation\n3. w\nChecks run.\n- z\n\n### 2. Important findings\n1. p\n2. q\n\n### Round 1 Important findings\n- r")
+        self.assertEqual(ev.important_count(grouped), 7)
+        once = ("**Important A: a false refusal.** x\n**Important B: a bypass.** y\n- Important A: summary again\n"
+                "1. **Important A:** `a.py` detail\n| B | Important | the bypass |\n- N-1 (Important, R-26): closed.\n"
+                "Important 1: closed.")
+        self.assertEqual(ev.important_count(once), 2)
+        self.assertEqual(ev.important_count("### Important (blocks the archive)\n1. A race in the reader\n2. A missing test\n"
+                                            "\n**Important (blocks)**\n- I think x"), 3)
+        bold = ("### Important (blocks the archive)\n\n**I-1. Quadratic regexes.**\n- Places: `a.mjs:25`\n- Measured: 7 s\n\n"
+                "**I-2. A missing row limit.**\ntext\n\n### Nit\n\n**N-1. A name.**\n\n### Important\n\nNone.\n\n"
+                "**Important**\n\nThe stand plants the wrong trigger.\n- **A (Important): partly closed, the cause has moved.**\n"
+                "1. Important, a crash on a wrong form \u2014 **\u0437\u0430\u043a\u0440\u044b\u0442\u0430**.\n"
+                "**Important, round 2 (row 4 and p. 1): closed.**")
+        self.assertEqual(ev.important_count(bold), 4)
+        self.assertEqual(ev.important_count("1. Important, a diff in rounds 2\u20133: closed. x"), 0)
+        for text in ("### Important\n\n\u041d\u0435\u0442.", "- Important: \u043d\u0435\u0442.", "### Important (none)\n\n### Nit\n- a",
+                     "**Important (0)**\n\n**Nit (1)**", "### Important\n### Nit\n- x", "Important:\n(1) Port busy: closed.",
+                     "- **Important 1, a title:** closed.", "Important: closed (NOTE.md:7).", "Important: done."):
+            self.assertEqual(ev.important_count(text), 0, text)
+        for text in ("Important: done markers are not read", "Important: closed PRs are reopened by the bot"):
+            self.assertEqual(ev.important_count(text), 1, text)
+
+    def test_review_verdict_count(self):
+        rows = (("- Important: requirement A is not met", (1, "text")), ("Important: \u0661", (0, "text")),
+                ("- Important: x\n**Important: 0**\n\n", (0, "line")), ("- Important: x\nImportant: none", (1, "text")),
+                ("- Important: x\nImportant: 2\nA note.", (1, "text")), ("`Important: 3`", (3, "line")))
+        for text, want in rows:
+            self.assertEqual(ev.review_count(text), want, text)
+        code = WT + "/a.py"
+        s = self.session([("edit", code), ("review", "Review: c"), ("review", "Review: c")],
+                         ["- Important: x", "Important: 0"], sid="v2")
+        self.assertEqual((s["review_after_last_edit"], s["important"], s["important_sources"]), (True, 1, ["text", "line"]))
+        s = self.session([("edit", code), ("review", "Review: c"), ("review", "Review: c")], ["Important: 0"], sid="v3")
+        self.assertEqual([s[k] for k in ("review_after_last_edit", "review_rounds", "important", "important_sources")],
+                         [None] * 4)  # the second launch has no journal with its toolUseId
+        self.session([("edit", code), ("review", "Review: c"), ("review", "Review: c")], ["Important: 0"], sid="v4")
+        with open(self.proj / "v4/subagents/agent-o.jsonl", "a") as f:  # a hook refused the second launch
+            f.write(jl(40, [{"type": "tool_result", "tool_use_id": "toolu_r1", "is_error": True, "content": "denied"}],
+                       typ="user") + "\n")
+        s = ev.path_signals("v4", self.copy("c"), "c", self.roles)
+        self.assertEqual([s[k] for k in ("review_after_last_edit", "review_rounds", "important", "important_sources")],
+                         [True, 1, 0, ["line"]])
+
+    @settings(max_examples=marks.examples(200, 30), deadline=None)
+    @given(st.lists(st.sampled_from(["- Important: a gap", "Important: 7", "| F1 | Important | x |", "prose", "",
+                                     "**Important: 4**", "- Nit: y", "### Important"]), max_size=12),
+           st.integers(0, 50))
+    def test_review_verdict_count_property(self, body, n):
+        """Requirement: Review verdict count: whatever precedes it, a final `Important: <n>` line gives n from `line`."""
+        self.assertEqual(ev.review_count("\n".join(body + ["Important: %d" % n, ""])), (n, "line"))
+
+    def test_path_marks(self):
+        for m, mark in (({"review_after_last_edit": False, "live_in_scenario": None}, "done, path incomplete"),
+                        ({"review_after_last_edit": True, "live_in_scenario": None}, "done, path unknown")):
+            self.assertEqual(ev.path_mark(m), mark, m)
 
 
 if __name__ == "__main__":
