@@ -38,6 +38,7 @@ WAITING = (("dispatch-ci", "red ci"), ("add-import", "csv"), ("release-040", "v0
 CLOSED = ("publish-docs", "v0.3.0")
 ITEM = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+")
 # an item labelled closed by its own form: "closed: ...", "already closed ..." or "<row>: closed ..."
+LABEL = re.compile(r"^blockers\b[^:]{0,60}:\s*")  # the map's label: the word, a short note, a colon
 CLOSED_LABEL = re.compile(r"^(?:already\s+)?closed\b|^[^:;,]*:\s*(?:already\s+)?closed\b")
 DESIGN = """# DESIGN
 
@@ -129,20 +130,22 @@ def split(text):
 def blocker_items(answer):
     """[(text, labelled closed)] of the map's Blockers line: its own text after the label split at `;`, then every list
     item under it (`-`, `*`, `+` or numbered), an indented plain line continuing the item above; a blank line is
-    skipped, any other line ends it. An item is labelled closed by its own form or by a less indented parent item
-    labelled closed."""
-    items, stack, on = [], [], False
+    skipped, any other line ends it, and so does a list item no deeper than a label that is itself a list item. An
+    item is labelled closed by its own form or by a less indented parent item labelled closed."""
+    items, stack, label = [], [], None
     for line in answer.splitlines():
-        f = nu.flat(line).lstrip("#-+ ")
-        if not on:
-            if f.startswith("blockers"):
-                on = True
-                for part in re.sub(r"^blockers[^:]*:\s*", "", f).split(";"):
+        indent = len(line) - len(line.lstrip())
+        f = nu.flat(ITEM.sub("", line, count=1)).lstrip("# ")
+        if label is None:
+            if LABEL.match(f):
+                label = indent if ITEM.match(line) else -1
+                for part in LABEL.sub("", f).split(";"):
                     items.append([part.strip(), bool(CLOSED_LABEL.match(part.strip()))])
         elif not f:
             continue
         elif ITEM.match(line):
-            indent = len(line) - len(line.lstrip())
+            if indent <= label:
+                break
             while stack and stack[-1][0] >= indent:
                 stack.pop()
             text = nu.flat(ITEM.sub("", line, count=1))
