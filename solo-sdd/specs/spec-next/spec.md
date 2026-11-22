@@ -62,7 +62,7 @@ The first acceptance round SHALL read the whole change diff; every later one onl
 - **THEN** there is no third round and the change is not archived
 
 ### Requirement: Reviewer failure
-If the reviewer ended with an error, returned an empty answer or gave no verdict on every requirement of the change, acceptance SHALL count as not passed, not passed successfully. In each round the agent SHALL once rerun the reviewer with the same task; such a run does not count as a round. A second failure in the same round sends the requirements without a verdict into `Not Verified`, the change is not archived, the report names the reviewer failure.
+If the reviewer ended with an error, returned an empty answer, an answer without the line `Important: <n>` or gave no verdict on every requirement, acceptance SHALL count as not passed. In each round the agent SHALL once rerun the reviewer with the same task; such a run does not count as a round. A second failure in the same round sends the requirements without a verdict, or the round's verdict, into `Not Verified`, the change is not archived, the report names the reviewer failure.
 
 #### Scenario: The reviewer crashed
 - **WHEN** the subagent `Review: <id>` returned a tool error without a verdict
@@ -75,6 +75,10 @@ If the reviewer ended with an error, returned an empty answer or gave no verdict
 #### Scenario: Failures in different rounds
 - **WHEN** in the first round the reviewer crashed and the rerun gave a verdict, and in the second round the reviewer crashed again
 - **THEN** the second round has its own rerun, this is not a second failure; if the rerun gave a verdict without open `Important` findings, the change is archived
+
+#### Scenario: No verdict line
+- **WHEN** a reviewer's answer has no line `Important: <n>`, and so has the rerun's
+- **THEN** the reviewer was rerun once, the change is not archived, and `Not Verified` names the round's missing verdict
 
 ### Requirement: Extra round for fix findings
 When the last round is the second or later and every `Important` open after it has all its places in lines the rework before that round changed, one more round SHALL run without asking the owner. An `Important` left after it SHALL mean no archive as in Review rounds; there SHALL be no second extra round. The report SHALL say whether the extra round ran.
@@ -94,3 +98,18 @@ When the last round is the second or later and every `Important` open after it h
 #### Scenario: A finding outside the fix
 - **WHEN** after the last round one open `Important` is on a line the last rework did not change
 - **THEN** no extra round runs, and the change is not archived
+
+### Requirement: Review verdict line
+The answer of every `Review:` agent of step 7a SHALL end with the line `Important: <n>`: the `Important` findings open after this round, new ones and given ones not closed (closed: fixed in the diff, or dropped with the reason the author gives in the list of given findings), `0` when none. The author SHALL gate rework, rounds and the archive on that line.
+
+#### Scenario: A round with one open finding
+- **WHEN** a reviewer closes both findings of the last round and gives one new `Important` finding
+- **THEN** its answer ends with the line `Important: 1`
+
+#### Scenario: A clean round
+- **WHEN** a reviewer gives only `Nit` findings
+- **THEN** its answer ends with the line `Important: 0`
+
+#### Scenario: A given finding still open
+- **WHEN** in round 2 a reviewer finds the round-1 `Important` finding not fixed and gives no new one
+- **THEN** its answer ends with the line `Important: 1`
