@@ -23,6 +23,26 @@ def texts(root=REPO):
                                                       if p.is_file()]
 
 
+PERSONA = re.compile(r"\b(?:you are|you're|act as)\s+(?:[\w,-]+\s+){0,3}(?:expert|senior|seasoned|"
+                     r"experienced|veteran|principal|world-class|top-notch)\b|\bworld-class\b", re.I)
+
+
+def persona_lines(root=REPO):
+    """'path:line: text' for every line of skills/, global/AGENTS.md, ALGORITHM.md and templates/ that gives the reader a
+    level of skill; integrations/ holds pinned copies and is not read."""
+    root = pathlib.Path(root)
+    paths = [p for p in (root / "global/AGENTS.md", root / "ALGORITHM.md") if p.is_file()]
+    paths += sorted(p for d in ("skills", "templates") for p in (root / d).rglob("*") if p.is_file())
+    hits = []
+    for path in paths:
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except UnicodeDecodeError:
+            continue
+        hits += ["%s:%d: %s" % (path.relative_to(root), n, l.strip()) for n, l in enumerate(lines, 1) if PERSONA.search(l)]
+    return hits
+
+
 def openspec_lines(root=REPO):
     """'path:line: text' for every line that names OpenSpec without the import hint."""
     hits = []
@@ -682,6 +702,44 @@ class ProjectInitIgnore(unittest.TestCase):
         self.assertIn("do not change `.gitignore` except its solo-sdd block (if this run changed it, a separate commit "
                       "of `.gitignore` alone), and do not commit the artifacts", commit)
         self.assertIn("reach a worktree only through `sdd-worktree.py`", commit)
+
+
+class NoPersonaPrompts(unittest.TestCase):
+    """Requirement: No persona prompts: no line of the read trees sets a level of skill; a role line passes."""
+
+    def test_the_tree(self):
+        self.assertEqual(persona_lines(), [])
+
+    def test_persona_fails_role_line_passes(self):
+        with tempfile.TemporaryDirectory() as root:
+            skill = pathlib.Path(root) / "skills/x/SKILL.md"
+            skill.parent.mkdir(parents=True)
+            roles = ["You are the dispatcher: you launch orchestrators.", "You are the Opus orchestrator of change <ID>.",
+                     "Act as the orchestrator."]
+            skill.write_text("\n".join(roles) + "\n", encoding="utf-8")
+            self.assertEqual(persona_lines(root), [])
+            personas = ["You are an expert reviewer.", "You are now an expert.", "You are a highly skilled, senior engineer."]
+            skill.write_text("\n".join(roles + personas) + "\n", encoding="utf-8")
+            self.assertEqual(persona_lines(root), ["skills/x/SKILL.md:%d: %s" % (n, l) for n, l in enumerate(personas, 4)])
+            pinned = pathlib.Path(root) / "integrations/a/SKILL.md"
+            pinned.parent.mkdir(parents=True)
+            pinned.write_text("You are a world-class designer.\n", encoding="utf-8")
+            self.assertEqual(len(persona_lines(root)), 3)
+
+    def test_practitioner_rules(self):
+        """Requirements: Practitioner list in a new field (section 14), Practitioner list in a plan (creation.md)."""
+        flat = lambda text: " ".join(text.split())
+        rules = flat((REPO / "global/AGENTS.md").read_text(encoding="utf-8").split("## 14. Skills", 1)[1]
+                     .split("\n## ", 1)[0])
+        for w in ("no project spec, `## Lessons` line or laid-out skill names any of the field's checks",
+                  "a `Practitioner checks:` list of at least three tools, techniques or checks a practitioner",
+                  "each `<check> — <source>`", "a `Practitioner checks run: <items>` line",
+                  "A prompt to a subagent sets no level of skill"):
+            self.assertIn(w, rules)
+        plan = flat(skill_text.read(REPO / "skills/spec-plan/creation.md"))
+        for w in ("What Changes gets a line `Practitioner checks: <check> — <source>; …` with at least three",
+                  "each item gets a task or a Live Scenario step that names it"):
+            self.assertIn(w, plan)
 
 
 if __name__ == "__main__":
