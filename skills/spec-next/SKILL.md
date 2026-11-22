@@ -31,7 +31,7 @@ Argument (optional): the name or number of a change. Without an argument, choose
    - Integrations: when `solo-sdd config get integrations` is not empty, after the `Tests` run `solo-sdd check --point checks --changed --change <id>`. Code 1 (a `gate` FAIL) holds the step as a red test does: fix, then run the call again; an `advice` FAIL does not hold it. The CLI writes the `Integrations checks (tree <hash>): …` line into `## Result` of `verification.md`: when you fill `## Result`, keep the `Integrations` lines (a repeated call restores them).
 7. **Live test** of the affected scenario on real input or a stand. Paid calls to the product model in it go to the cheapest product model and with the user's consent.
 7a. **Independent acceptance.** Read `acceptance.md` each time this step starts, also after compaction: a `Review:` reviewer who did not write the code, what it gets and does not get, its task, the finding labels and the rounds; an open `Important` blocks the archive.
-8. **Blockers.** Items that wait for external access or a person's decision: into `verification.md` (the "Not Verified" section) and a line in `docs/waiting.md`. A new change only for work beyond the specification's boundaries. If the project rules require otherwise, they apply.
+8. **Blockers.** Items that wait for external access or a person's decision: into `verification.md` (the "Not Verified" section) and a row in the first table of `docs/waiting.md`. A new change only for work beyond the specification's boundaries. If the project rules require otherwise, they apply.
 9. **Closing.** Read `closing.md` each time this step starts, also after compaction: the archive conditions (the mandatory tasks, the live scenario or a fallback the rules allow, no open `Important`) and an allowed external remainder; then `solo-sdd validate <id>`, `solo-sdd archive <id> --yes` and `solo-sdd validate --all`.
 10. **Delivery.** Delete `CLAIM`. Go through `/ship` up to a merged main branch, unless the project rules explicitly forbid it. The exception: push or merge triggers a prod deploy (`/ship`, the "Deploy" step): stop before this action and ask, naming what rolls out and where.
 11. **Stop.** Do not start the next change.
@@ -71,7 +71,7 @@ Decide yourself and record the decision in the report. The only allowed question
 |---|---|
 | "The tests are green, so it is done" | Not done until there is a live test and an archive |
 | "I checked everything myself, no reviewer needed" | Own work is not accepted by its author: step 7a |
-| "No key or access, I will wait" | Look for a workaround: mocks, old project data, `.env`, a neighbouring service. Not found: a blocker in `verification.md` ("Not Verified") and `docs/waiting.md`, close the rest |
+| "No key or access, I will wait" | Look for a workaround: mocks, old project data, `.env`, a neighbouring service. Not found: a blocker in `verification.md` ("Not Verified") and the first table of `docs/waiting.md`, close the rest |
 | "I will ask which option to choose" | Choose a reasoned one, record it in the report |
 | "I will archive, the live test later" | The test first |
 | "I will start the next change too" | No. Another agent may be running it |

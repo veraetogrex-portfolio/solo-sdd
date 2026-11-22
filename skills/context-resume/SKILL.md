@@ -29,7 +29,7 @@ Goal: <what must come out, in one sentence>
 Source of truth: <files, service, table I rely on>
 Last confirmed state: <what was checked and where, with a date>
 Decisions and constraints: <what the user already decided or forbade>
-Blockers: <what we wait for and from whom> | none
+Blockers: <what we wait for and from whom; from `docs/waiting.md` only its first table, the rows under `## Closed` are closed> | none
 Next step: <one action>
 History versus fact divergences: <what is outdated> | none
 ```

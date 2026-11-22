@@ -8,14 +8,18 @@
 
 - `context-resume` takes its blockers only from the first table of `docs/waiting.md`.
 - `spec-next`, `spec-plan`, `blockers` and `project-init` write a new waiting row into the first table.
-- `project-init` moves its met `DESIGN.md` row to `## Closed` instead of deleting it.
+- `project-init` moves its met `DESIGN.md` row to `## Closed` with the evidence `DESIGN.md: no empty fields` and the date instead of deleting it; a later empty field gets a new row in the first table.
+- `ALGORITHM.md` (the blocker rule, the external remainder, the `WAITING` and waiting-table rows) and section 4 of `global/AGENTS.md` name the first table.
+- The template `templates/docs/waiting.md` names `project-init` as the mover of its own `DESIGN.md` row.
+- A stand `tests/stands/waiting-readers.py` grades subagent runs of `context-resume`, `blockers` and `project-init` on a copy of the `next-up` fixture.
 
 ## Capabilities
 
 ### New Capabilities
 
 ### Modified Capabilities
-- `next-up`: the requirement "Readers of waiting lines" names every skill that reads or writes `docs/waiting.md`.
+- `next-up`: the requirement "Readers of waiting lines" names every skill besides `next-up` that reads or writes the waiting rows of `docs/waiting.md` (`spec-dispatch` writes only its `## Run decisions` section, not rows).
+- `ui-direction`: the requirements "Project design direction" and "Design file rerun" write the `DESIGN.md` row into the first table; "Design file rerun" moves the met `DESIGN.md` row to `## Closed` instead of deleting it.
 
 ## Impact
 
@@ -27,7 +31,10 @@
 - `skills/spec-next/closing.md`
 - `ALGORITHM.md`
 - `global/AGENTS.md`
+- `templates/docs/waiting.md`
 - `tests/test_skill_commands.py`
+- `tests/stands/waiting-readers.py`
+- `tests/stands/waiting-readers/`
 
 ## Out of Scope
 
@@ -39,4 +46,4 @@
 
 ## Source
 
-Review round 1 of `work-pull`, 2026-11-22, finding Important 3 (outside that change's delta).
+The owner, 2026-11-20, in the `Source` of `work-pull` (translated from Russian): "`next-up` closes a `docs/waiting.md` line itself if it found evidence". The finding that leads here: `solo-sdd/changes/archive/2026-11-22-work-pull/verification.md`, Decisions Without Owner, 2026-11-22: "review round 1, Important 3 (other readers and writers of `docs/waiting.md`: `context-resume`, `project-init`, `spec-next`, `spec-plan`, `blockers`) → outside this change's delta, moved to the new change `waiting-readers` (Depends On `work-pull`)."

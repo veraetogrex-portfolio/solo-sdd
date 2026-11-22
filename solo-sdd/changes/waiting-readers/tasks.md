@@ -1,6 +1,8 @@
 ## 1. Implementation
 
-- [ ] 1.1 Requirement Readers of waiting lines: name the first table in `skills/context-resume/SKILL.md`, `skills/spec-next/SKILL.md` and its `closing.md`, `skills/spec-plan/SKILL.md`, `skills/blockers/SKILL.md` and `skills/project-init/SKILL.md`, and the move to `## Closed` in `project-init`; the same in `ALGORITHM.md` and section 4 of `global/AGENTS.md`; rows in `test_next_up` of `tests/test_skill_commands.py`; proven by `python3 tests/test_skill_commands.py`
+- [ ] 1.1 Requirement Readers of waiting lines: `skills/context-resume/SKILL.md` (its Blockers line "from `docs/waiting.md` only its first table, the rows under `## Closed` are closed"), `skills/spec-next/SKILL.md` and its `closing.md`, `skills/spec-plan/SKILL.md` and `skills/blockers/SKILL.md` write "in the first table of `docs/waiting.md`"; the same in `ALGORITHM.md`, section 4 of `global/AGENTS.md`, and `templates/docs/waiting.md` names "`project-init` for its own `DESIGN.md` row"; proven by the new rows of `test_next_up` in `tests/test_skill_commands.py`, which fail on the text before this change (`python3 -m unittest test_skill_commands.SkillCommandsTest.test_next_up` from `tests/`)
+- [ ] 1.2 Requirement Design file rerun: step 5a of `skills/project-init/SKILL.md` writes its row into the first table and, with no empty fields left, moves it to `## Closed` with the evidence `DESIGN.md: no empty fields` and the date, never deleting it; proven by the `project-init` rows of `test_next_up`
+- [ ] 1.3 The stand `tests/stands/waiting-readers.py` (`prepare`, `clean`, `--grade`, `--grade-confined`) with the references `tests/stands/waiting-readers/expected-*.md` and `old-*.md`; proven by Live Scenario step 4
 
 ## 2. Acceptance
 
