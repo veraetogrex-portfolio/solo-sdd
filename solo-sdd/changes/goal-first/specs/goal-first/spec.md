@@ -20,4 +20,4 @@ Every step the owner named SHALL get a task as asked. A note that a named step d
 
 #### Scenario: A step that does not move the check
 - **WHEN** the check is the test round time, the owner named a slow test and a fast test, and only the slow one costs time
-- **THEN** both removal tasks exist, and the report has a `Proposals:` line that names the fast test
+- **THEN** both removal tasks exist, and the item of the fast test in the report's `Proposals:` line says `moves the check: no`

@@ -31,4 +31,4 @@ The owner: "remove the tests test_usual_bill and test_not_a_number"
 === report
 Changes created: 1
 
-Proposals: test_not_a_number — does not move the check, it runs in milliseconds
+Proposals: test_usual_bill — moves the check: yes, it sleeps 2 s; test_not_a_number — moves the check: no, it runs in milliseconds; cheaper way to the goal: delete the sleep in test_usual_bill and keep both tests

@@ -298,16 +298,22 @@ class SkillCommandsTest(unittest.TestCase):
         creation = plan.split("5. **Creation.**", 1)[1].split("6. **External conditions.**", 1)[0]
         for name, text in (("global rules 6", boundaries), ("spec-plan step 5", creation)):
             for words in ("steps without the goal they serve", "`Goal: <what the steps serve, not the steps restated> (inferred)`",
-                          "`Check: <what shows", "with a number", "`(inferred)` goes only from a line", "`Proposals:` line", "a cheaper way to reach the goal"):
+                          "`Check: <what shows", "with a number", "`(inferred)` goes only from a line", "`Proposals:` line", "a cheaper way to reach the goal",
+                          "one item per step (`<step> — moves the check: yes | no, <why>`)",
+                          "`Goal: free disk space (inferred)`"):
                 self.assertIn(words, text, name)
         self.assertIn("the first two lines of the report are `Goal:", boundaries)
         self.assertIn("Every named step is done as asked", boundaries)
         for words in ("the last two lines of Why are `Goal:", "`- goal inferred: <goal>; check: <check>",
                       "Every named step gets a task as asked", "never into a task"):
             self.assertIn(words, creation)
-        self.assertIn("2-4 plain lines (after the `Goal:` and `Check:` lines of section 6", talk)
+        self.assertIn("before those plain lines, the report opens with the `Goal:` and `Check:` lines of section 6, "
+                      "also when the report is short, the edit is on the light path or the work is already done", talk)
+        self.assertIn("Before step 6, for a request of steps without a goal:", creation)
         report = plan.split("## Report", 1)[1].split("## Mistakes", 1)[0]
-        self.assertIn("Proposals: <named step — does not move the check> | <a cheaper way to the goal> | none", report)
+        self.assertIn("Proposals: <each named step> — moves the check: <yes | no>, <why>; …; cheaper way to the goal: "
+                      "<way | none> | none (the request names its goal)", report)
+        self.assertIn("`Proposals: build/ — moves the check: yes, it holds 1.2 GB; tmp/ — moves the check: no", report)
 
     def test_project_rules_through_config(self):
         """Requirements: Project rules in config, Project lines as the old source, Lesson from a correction or a fix:

@@ -6,7 +6,8 @@
                            both tests renamed and committed, and the prompts `plan.md` (on the copy) and `outside.md`
                            (on `renamed`) next to them; prints `copy:`, `plan:`, `renamed:` and `outside:`
   clean <copy>             remove a copy `prepare` made
-  --grade <answer>         the five lines of a plan answer: `=== <path>` blocks of the files the plan creates, then
+  --grade <answer>         the five lines of a plan answer (the last: the `Proposals:` item of `test_not_a_number`
+                           says `moves the check: no`, or `n/a` when the check names no time): `=== <path>` blocks of the files the plan creates, then
                            `=== report` and the plan report
   --grade-report <report>  `goal first`: the report (the whole answer, or its `=== report` block when it has one)
                            opens with the `Goal:` and `Check:` lines, both `(inferred)`
@@ -130,6 +131,23 @@ def section(lines, header):
     return out
 
 
+def proposal_items(lines):
+    """The items of the report's `Proposals:` line: its text after the label and the list lines right under it, split
+    at `;`, each normalised."""
+    out, inside = [], False
+    for line in lines:
+        flat = norm(line)
+        if flat.startswith("proposals:"):
+            inside, text = True, flat[len("proposals:"):]
+        elif inside and re.match(r"\s*(?:[-*+]|\d+[.)]|\([a-z]\))\s", line):
+            text = flat
+        else:
+            inside = False
+            continue
+        out += [s.strip() for s in text.split(";") if s.strip()]
+    return out
+
+
 def grade(text):
     found = blocks(text)
     why = section(block(found, "proposal.md"), "Why")
@@ -137,9 +155,9 @@ def grade(text):
     has_goal = goal.startswith("goal:") and check.startswith("check:")
     decisions = section(block(found, "verification.md"), "Decisions Without Owner")
     tasks = [l for l in block(found, "tasks.md") if re.match(r"\s*- \[ \]", l)]
-    report = [norm(l) for l in block(found, "report")]
+    report = block(found, "report")
     timed = has_goal and TIME.search(check)
-    proposals = any(l.startswith("proposals:") and "test_not_a_number" in l for l in report)
+    proposals = any("test_not_a_number" in item and "moves the check: no" in item for item in proposal_items(report))
     yes = lambda ok: "yes" if ok else "no"
     print("goal in Why: %s" % yes(has_goal))
     print("check with a number: %s" % yes(has_goal and re.search(r"\d", check)))
@@ -147,7 +165,7 @@ def grade(text):
                                       and any("goal inferred:" in l for l in decisions)))
     print("both steps have tasks: %s" % yes(all(any(n in l for l in tasks) for n in ("test_usual_bill",
                                                                                      "test_not_a_number"))))
-    print("Proposals names test_not_a_number: %s" % (yes(proposals) if timed else "n/a (the check names no time)"))
+    print("fast test does not move the check: %s" % (yes(proposals) if timed else "n/a (the check names no time)"))
 
 
 def grade_report(text):

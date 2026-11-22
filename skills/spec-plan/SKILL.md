@@ -84,9 +84,11 @@ Coverage: <input items> of <input items>; light path: <item — `light:` <hash> 
 Plan: commit <hash> | commit <hash> on plan/<id>, PR <url> | commit <hash> on plan/<id>, PR <url>, waits for human merge | plan outside git | no change: light path only (plan/: the delivery.plan-prefix value)
 Waiting for external conditions: <change — what is needed> | none
 My interpretations: <item — how I understood it> | none
-Proposals: <named step — does not move the check> | <a cheaper way to the goal> | none
+Proposals: <each named step> — moves the check: <yes | no>, <why>; …; cheaper way to the goal: <way | none> | none (the request names its goal)
 Next: /spec-next | /spec-next after the merge of <PR url> | the light path items
 ```
+
+`Proposals:` has an item for every named step of a request without a goal. For "delete the folders build/ and tmp/" with `Check: du -sh . shows at least 1 GB less (inferred)`: `Proposals: build/ — moves the check: yes, it holds 1.2 GB; tmp/ — moves the check: no, it holds 4 KB; cheaper way to the goal: none`.
 
 ## Mistakes
 
