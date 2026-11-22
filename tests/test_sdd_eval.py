@@ -1416,7 +1416,6 @@ class ParseFailed(unittest.TestCase):
         self.assertIsNone(ev.test_command(str(d)))
 
 
-SIG = FIX / "signals"
 WT = "/tmp/wt-row"
 LIVE_DOC = "## Live Scenario\n\n1. Run `sh demo.sh` -> `ok`.\n"
 
@@ -1445,7 +1444,7 @@ def row_status(live="sh demo.sh -> ok"):
 
 @marks.release
 class ProcessSignals(unittest.TestCase):
-    """The path signals of metrics over the fixtures of tests/eval/fixtures/signals and journals built per row."""
+    """The path signals of metrics over journals built per row (the fixtures of tests/eval/fixtures/signals: the stand)."""
 
     def setUp(self):
         self.root = pathlib.Path(tempfile.mkdtemp()).resolve()
@@ -1466,11 +1465,6 @@ class ProcessSignals(unittest.TestCase):
         else:
             (d / "verification.md").write_text(verification)
         return str(c)
-
-    def fixture(self, name):
-        shutil.copy(SIG / (name + ".jsonl"), self.proj / (name + ".jsonl"))
-        shutil.copytree(SIG / name / "subagents", self.proj / name / "subagents")
-        return self.copy(name, (SIG / name / "verification.md").read_text())
 
     def session(self, events, reviews=(), status=None, sid="row", verification=LIVE_DOC):
         """events: ("edit", path) | ("review", desc) | ("text", t) | ("bash", path); reviews: results in order."""
@@ -1538,10 +1532,13 @@ class ProcessSignals(unittest.TestCase):
     def test_important_label(self):
         found = ("| F1 | Important | the row is missing |", "- Important: requirement A is not met",
                  "**I1. Important (test duplicates a stand scenario).** x", "- [Important] x", "1. Important: no test for B",
-                 "**Important:** a gap")
+                 "**Important:** a gap", "| F1 | the row is missing | Important |", "| I1 | x | **Important** |",
+                 "- I1 (Important): x", "- I1 \u2014 Important: x", "- **I1** Important: x")
         counts = ("no Important findings", "Important: none", "Important: 0, Nit: 2", "0 Important, 1 Nit",
                   "- Important findings: none", "Important findings were not found", "> Important: none remain",
-                  "| Important | 0 |", "| Important | none |")
+                  "| Important | 0 |", "| Important | none |", "Important: None.", "Important: Zero",
+                  "- Important: no findings", "Important: nothing", "Important: n/a", "Important: 1",
+                  "Important: 2, Nit: 0", "| Important | None |", "| Important | n/a |", "This is Important: x")
         self.assertEqual([ev.labelled(x) for x in found + counts], [True] * len(found) + [False] * len(counts))
 
     def test_path_marks(self):

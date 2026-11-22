@@ -722,11 +722,12 @@ def transcript_events(f):
 
 
 SIGNALS = ("review_after_last_edit", "review_rounds", "important", "live_in_scenario", "analyze_findings")
-# the Important label opens a finding: after list markup or an id (1. I1 F-2), bracketed or followed by a
-# separator, then text that is not a count (none, 0)
-LABEL = re.compile(r"[\s>#*+\-`]*(?:\d+[.)]\s*|[A-Za-z]{1,3}-?\d+[.:)]?\s+)?[*`]*"
-                   r"(?:\[Important\]|Important[*`]*\s*[:.)(\-\u2013\u2014])[*`\s]*(?!(?:none|0|zero)\b)\w")
-COUNT_CELL = re.compile(r"(?:none|zero|-|\d+)?")
+# the Important label opens a finding: after list markup and an optional id (1. I1 **F-2**), bracketed or followed
+# by a separator, then text that is not a count (none, 0, n/a, no findings)
+HEAD = re.compile(r"[\s>#*+\-`]*(?:[\[(*`]*[A-Za-z]{0,3}-?\d+[.:)\]*`]*\s*[\-\u2013\u2014]?\s*)?"
+                  r"([\[(*`]*)Important([\])*`]*)\s*(.*)$")
+COUNT = re.compile(r"(?i)(?:none|nothing|n/a|zero|no|\d+)(?:\s+(?:findings?|issues?|remarks?))?(?:\s+remain(?:ing)?)?"
+                   r"\s*(?:[.,;)]|$)")
 ANALYZE = re.compile(r"(?m)^[^\w\n]*Analyze:\s*(\d+) findings")
 
 
@@ -754,12 +755,22 @@ def final_text(objs):
 
 
 def labelled(line):
-    """The line carries the Important label: at its start after list markup, or as a whole table cell."""
-    if LABEL.match(line):
-        return True
-    cells = [c.strip(" *`[]") for c in line.split("|")] if line.lstrip().startswith("|") else []
-    return any(c == "Important" and i + 1 < len(cells) and not COUNT_CELL.fullmatch(cells[i + 1])
-               for i, c in enumerate(cells))
+    """The line is a finding labelled Important: a table row with an Important cell not followed by a count cell,
+    or a line that opens with the label (see HEAD) and goes on with text that is not a count."""
+    if line.lstrip().startswith("|"):
+        cells = [c.strip(" *`[]()") for c in line.strip().strip("|").split("|")]
+        return any(c == "Important" and not (i + 1 < len(cells) and COUNT.match(cells[i + 1]))
+                   for i, c in enumerate(cells))
+    m = HEAD.match(line)
+    if not m:
+        return False
+    opened, closed, rest = m.groups()
+    if not ("[" in opened and "]" in closed or "(" in opened and ")" in closed):
+        if not rest or rest[0] not in ":.-\u2013\u2014(":
+            return False
+        rest = rest[1:]
+    rest = rest.strip(" *`")
+    return bool(rest) and not COUNT.match(rest)
 
 
 def code_edit(path, roots):
