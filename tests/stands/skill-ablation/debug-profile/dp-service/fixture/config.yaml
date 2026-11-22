@@ -1,0 +1,4 @@
+# nightly sales import
+period: 2025-11
+currency: EUR
+table: sales
