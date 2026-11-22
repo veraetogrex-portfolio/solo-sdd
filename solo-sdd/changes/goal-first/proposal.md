@@ -31,7 +31,6 @@ An owner often hands over steps ("remove tests X and Y") rather than the goal th
 - `tests/targets-before.json`
 - `templates/solo-sdd/change/proposal.md`
 - `tests/stands/goal-first/`
-- `tests/test_skill_commands.py`
 - `tests/stands/goal-first.py`
 
 ## Out of Scope

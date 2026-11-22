@@ -13,7 +13,8 @@
                            opens with the `Goal:` and `Check:` lines, both `(inferred)`
 
 A line is matched with `*` and backquotes stripped, a leading list, quote or heading marker removed, whitespace
-collapsed and case folded. A missing block, an unreadable file and a wrong argument exit 1. The answers come from
+collapsed and case folded; an HTML comment line of a section is not counted. A change is the folder of a `proposal.md`
+block, and every change is graded. A missing block, an unreadable file and a wrong argument exit 1. The answers come from
 Claude Code subagents of the lead session, never `claude -p`."""
 import pathlib
 import re
@@ -25,7 +26,7 @@ import tempfile
 REPO = pathlib.Path(__file__).resolve().parents[2]
 PREFIX = "goal-first."
 RENAMED = ("test_tip_and_total_of_a_usual_bill", "test_refuses_a_bill_or_percent_that_is_not_a_number")
-TIME = re.compile(r"\d\s*(?:ms|s|secs?|seconds?|mins?|minutes?)\b")
+TIME = re.compile(r"\d\s*(?:ms|s|h)\b|\b(?:milli)?(?:secs?|seconds?)\b|\b(?:mins?|minutes?|hours?)\b")
 GIT = ["git", "-c", "user.name=stand", "-c", "user.email=stand@example.com", "-c", "init.defaultBranch=main",
        "-c", "commit.gpgsign=false", "-c", "core.autocrlf=false"]
 sys.path.insert(0, str(REPO / "tests"))
@@ -102,10 +103,10 @@ def norm(line):
 
 
 def blocks(text):
-    """{name: lines} of the `=== <name>` blocks of an answer."""
+    """{name: lines} of the `=== <name>` blocks of an answer; a line of `=` signs alone opens no block."""
     out, cur = {}, None
     for line in text.splitlines():
-        m = re.fullmatch(r"\s*[*`]*===\s*(.+?)\s*[*`]*\s*", line)
+        m = re.fullmatch(r"\s*[*`]*===\s*([^=\s].*?)\s*[*`]*\s*", line)
         if m:
             cur = out.setdefault(m.group(1).strip("`* "), [])
         elif cur is not None:
@@ -113,20 +114,25 @@ def blocks(text):
     return out
 
 
-def block(found, suffix):
-    names = [n for n in found if n.casefold() == suffix or n.casefold().endswith("/" + suffix)]
-    if not names:
+def named(found, suffix):
+    """{folder: lines} of the blocks whose path ends in `suffix` (`report` matches only itself)."""
+    out = {}
+    for name, lines in found.items():
+        low = name.casefold()
+        if low == suffix or low.endswith("/" + suffix):
+            out[low[:-len(suffix)]] = lines
+    if not out:
         fail("the answer has no `=== <path ending in %s>` block" % suffix)
-    return found[names[0]]
+    return out
 
 
 def section(lines, header):
-    """The non-empty lines of a `## <header>` section, normalised."""
+    """The non-empty lines of a `## <header>` section, normalised; an HTML comment line is not counted."""
     out, inside = [], False
     for line in lines:
         if line.startswith("## "):
             inside = line[3:].strip().casefold() == header.casefold()
-        elif inside and line.strip():
+        elif inside and line.strip() and not re.fullmatch(r"\s*<!--.*-->\s*", line):
             out.append(norm(line))
     return out
 
@@ -150,29 +156,31 @@ def proposal_items(lines):
 
 def grade(text):
     found = blocks(text)
-    why = section(block(found, "proposal.md"), "Why")
-    goal, check = (why[-2:] + ["", ""])[:2] if len(why) >= 2 else ("", "")
-    has_goal = goal.startswith("goal:") and check.startswith("check:")
-    decisions = section(block(found, "verification.md"), "Decisions Without Owner")
-    tasks = [l for l in block(found, "tasks.md") if re.match(r"\s*- \[ \]", l)]
-    report = block(found, "report")
-    timed = has_goal and TIME.search(check)
-    proposals = any("test_not_a_number" in item and "moves the check: no" in item for item in proposal_items(report))
+    proposals, checks = named(found, "proposal.md"), named(found, "verification.md")
+    tasks = [l for lines in named(found, "tasks.md").values() for l in lines if re.match(r"\s*- \[ \]", l)]
+    report = named(found, "report")[""]
+    pairs = {f: (section(lines, "Why")[-2:] + ["", ""])[:2] for f, lines in proposals.items()}
+    has_goal = all(g.startswith("goal:") and c.startswith("check:") for g, c in pairs.values())
+    inferred = has_goal and all(g.endswith("(inferred)") and c.endswith("(inferred)") for g, c in pairs.values()) \
+        and all(any("goal inferred:" in l for l in section(checks.get(f, []), "Decisions Without Owner")) for f in pairs)
+    timed = has_goal and any(TIME.search(c) for _, c in pairs.values())
+    moved = any("test_not_a_number" in item and re.search(r"\bmoves the check: no\b", item)
+                for item in proposal_items(report))
     yes = lambda ok: "yes" if ok else "no"
     print("goal in Why: %s" % yes(has_goal))
-    print("check with a number: %s" % yes(has_goal and re.search(r"\d", check)))
-    print("inferred marked: %s" % yes(has_goal and "(inferred)" in goal and "(inferred)" in check
-                                      and any("goal inferred:" in l for l in decisions)))
+    print("check with a number: %s" % yes(has_goal and all(re.search(r"\d", c) for _, c in pairs.values())))
+    print("inferred marked: %s" % yes(inferred))
     print("both steps have tasks: %s" % yes(all(any(n in l for l in tasks) for n in ("test_usual_bill",
                                                                                      "test_not_a_number"))))
-    print("fast test does not move the check: %s" % (yes(proposals) if timed else "n/a (the check names no time)"))
+    print("fast test does not move the check: %s" % (yes(moved and has_goal) if timed or not has_goal
+                                                      else "n/a (the check names no time)"))
 
 
 def grade_report(text):
     found = blocks(text)
     lines = [norm(l) for l in (found["report"] if "report" in found else text.splitlines()) if l.strip()]
     first = (lines + ["", ""])[:2]
-    ok = first[0].startswith("goal:") and first[1].startswith("check:") and all("(inferred)" in l for l in first)
+    ok = first[0].startswith("goal:") and first[1].startswith("check:") and all(l.endswith("(inferred)") for l in first)
     print("goal first: %s" % ("yes" if ok else "no"))
 
 
