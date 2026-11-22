@@ -68,6 +68,7 @@
     "skills/spec-dispatch/report.md": {"skills": {"spec-dispatch": "report.md"}},
     "skills/spec-next/acceptance.md": {"skills": {"spec-next": "acceptance.md"}},
     "skills/spec-next/closing.md": {"skills": {"spec-next": "closing.md"}},
+    "skills/spec-plan/codebase-map.md": {"skills": {"spec-plan": "codebase-map.md"}},
     "skills/spec-plan/creation.md": {"skills": {"spec-plan": "creation.md"}},
     "skills/spec-plan/plan-commit.md": {"skills": {"spec-plan": "plan-commit.md"}},
     "templates/**": ["~/.local/share/solo-sdd/templates/"]

@@ -23,23 +23,7 @@ The result is a set of changes, each of which closes in one `/spec-next` run. No
    - there is a live check scenario.
    
    Group bugs by a common cause or area, not one per change.
-2a. **Codebase map.** No `docs/codebase/` (`test -d docs/codebase` fails): the map is not read, the report has `Map: none`. Otherwise each unit reads only the map files of its type row, never the whole map; a unit of several types reads the union of their rows, each file once; a type not in the table reads `ARCHITECTURE.md` only. A file already read for an earlier unit is not read again, but the report still names it for every change whose row has it.
-
-   | Unit type | Map files in `docs/codebase/` |
-   |---|---|
-   | interface | CONVENTIONS, ARCHITECTURE |
-   | API, backend | ARCHITECTURE, CONVENTIONS |
-   | database, schemas | ARCHITECTURE, STACK |
-   | tests | CONVENTIONS |
-   | external integrations | STACK |
-   | refactoring | CONCERNS, ARCHITECTURE |
-   | configuration | STACK, ARCHITECTURE |
-   | bugfix | ARCHITECTURE, CONCERNS |
-   | other | ARCHITECTURE |
-
-   Stale map: from the project root run once for the map files read (`<files read>` as paths, `docs/codebase/ARCHITECTURE.md …`): `for f in <files read>; do h=$(sed -n 's/^Commit: \([0-9a-fA-F]*\).*/\1/p;q' "$f"); if [ -n "$h" ] && git merge-base --is-ancestor "$h" HEAD 2>/dev/null; then n=$(git rev-list --count "$h..HEAD" -- . ':!docs' ':!solo-sdd'); if [ "$n" -gt 20 ]; then echo "Map stale: $f, $n commits since $h; refresh: /project-init map"; fi; else echo "Map stale: $f, unknown commits since ${h:-none}; refresh: /project-init map"; fi; done`.
-
-   It counts the commits since the file's `Commit:` stamp that change files outside `docs/` and `solo-sdd/`; more than 20, a stamp commit that is not an ancestor of `HEAD` (rebased away, another branch, unknown) or no stamp prints the line. Every printed line goes into the report as is; planning goes on with the map, it is not refreshed here.
+2a. **Codebase map.** Read `codebase-map.md` each time this step starts, also after compaction: which map files a unit reads by its type, and the stale map check.
 3. **Order and dependencies.** What must be archived earlier. Names follow the project's pattern (in a project with numbers, continue the numbering); `solo-sdd new` takes only a kebab-case id (`add-csv`, `12-fix-export`) that is neither open nor archived.
 4. **Check against the intent.** A unit that leads away from the intent in `solo-sdd/project.md` does not become a change: put it into the report as a separate line.
 5. **Creation.** Read `creation.md` each time this step starts, also after compaction: for every unit `solo-sdd new <name>`, then the artifacts in order by the "Writing rules" section, with what each must hold.
@@ -55,7 +39,7 @@ More than five changes: you write the artifacts yourself; Codex executors only i
 
 `solo-sdd new <name>` lays out `proposal.md`, `verification.md` and `tasks.md` from templates and prints the path of the delta template; a delta goes into `specs/<capability>/spec.md` by that template. HTML comments in them are hints and never count as content. `solo-sdd validate` accepts a change by these rules:
 
-- `proposal.md`: the sections `## Why`, `## What Changes`, `## Capabilities` (with `### New Capabilities` and `### Modified Capabilities`), `## Impact`, `## Out of Scope`, `## Depends On`, `## Source`; every one except `Capabilities` holds text.
+- `proposal.md`: the sections `## Why`, `## What Changes`, `## Capabilities` (with `### New Capabilities` and `### Modified Capabilities`), `## Impact`, `## Out of Scope`, `## Depends On`, `## Source`; every one except `Capabilities` holds text. A request of steps without a goal ends Why with the `Goal:` and `Check:` lines of step 5.
 - Deltas: one `specs/<capability>/spec.md` per capability named in `Capabilities`. A capability without a main spec (`solo-sdd/specs/<capability>/spec.md`) starts its delta with `## Purpose` of at least 50 characters; an existing one has no `## Purpose`. `## MODIFIED Requirements` copies the whole block of the main spec under the same requirement name, with every scenario it had, and then changes it; `## REMOVED Requirements` holds one `### Requirement: <name>` per removed name; `## RENAMED Requirements` a `- FROM: ### Requirement: <old>` line and then a `- TO: ### Requirement: <new>` line.
 - A change without deltas (documents only) has no `specs/` and writes a bare line `Specs: none` (not a list item) under `## Capabilities`.
 - Every requirement under `## ADDED` or `## MODIFIED Requirements` has at least one `#### Scenario:` with a `- **WHEN** …` (or `GIVEN`) and a `- **THEN** …` step.
@@ -100,8 +84,11 @@ Coverage: <input items> of <input items>; light path: <item — `light:` <hash> 
 Plan: commit <hash> | commit <hash> on plan/<id>, PR <url> | commit <hash> on plan/<id>, PR <url>, waits for human merge | plan outside git | no change: light path only (plan/: the delivery.plan-prefix value)
 Waiting for external conditions: <change — what is needed> | none
 My interpretations: <item — how I understood it> | none
+Proposals: <each named step> — moves the check: <yes | no>, <why>; …; cheaper way to the goal: <way | none> | none (the request names its goal)
 Next: /spec-next | /spec-next after the merge of <PR url> | the light path items
 ```
+
+`Proposals:` has an item for every named step of a request without a goal. For "delete the folders build/ and tmp/" with `Check: du -sh . shows at least 1 GB less (inferred)`: `Proposals: build/ — moves the check: yes, it holds 1.2 GB; tmp/ — moves the check: no, it holds 4 KB; cheaper way to the goal: none`.
 
 ## Mistakes
 

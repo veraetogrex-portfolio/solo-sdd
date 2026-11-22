@@ -2,7 +2,7 @@
 
 ## Why
 
-<!-- The problem or the gap this change closes, with a number and its date where there is one. -->
+<!-- The problem or the gap this change closes, with a number and its date where there is one. A request of steps without a goal ends Why with `Goal: <what the steps serve> (inferred)` and `Check: <what shows it is reached, with a number> (inferred)` (spec-plan step 5). -->
 
 ## What Changes
 
