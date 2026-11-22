@@ -15,29 +15,22 @@ A session judges its own work poorly. When `spec-plan` step 7a or `spec-next` st
 
 **Passes in place**, with no subagent launched: inside an `Analyze:`, `Attack:` or `Judge:` subagent; on a direct `/spec-analyze` call by the user; in an agent without a subagent tool, whose report line is `Analyze: in session (no subagent tool)`. Inside those three subagents edit no file: return the findings table to the author, who alone edits the artifacts.
 
-**Every subagent gets** the absolute paths of the change artifacts, of the main specs of the affected capabilities, of the project rules (`AGENTS.md`, `CLAUDE.md`, `solo-sdd/project.md`, `solo-sdd/analyze.md`) and of this skill, and the passes to run. It never gets the planner's reasoning, reports or chat history. Under the dispatcher it also gets the ban on writing outside `WORKTREE`.
-
-**The run.** N is `solo-sdd config get process.analyze-attackers` (default 3).
-- N = 0: one `Analyze: <id>` subagent, without `model` or with `agents.review-model` when it is set, runs every pass. Every finding counts as kept.
-- N > 0: N `Attack: <id> <passes>` subagents in one message, `model` from `solo-sdd config get agents.attack-model` (default `haiku`), each tasked to prove the change is not ready on its pass group: group one `1 2 3 3a`, group two `4 4a`, group three `5 6 7 7a 7b`. With 1 the attacker takes all three groups; with 2 the first takes groups one and two and the second group three; with N of 3 or more attacker i takes group ((i - 1) mod 3) + 1.
-- Then one `Judge: <id>` subagent, without `model` or with `agents.review-model`, gets every attacker's table, each named by its attacker, and the artifacts. It merges duplicates into one finding naming every attacker that reported it, and marks each finding in the column `Mark`: `keep <level>`, or `drop: <reason>` (the artifacts already answer it, a misread, outside the change).
-
-**The author** fixes every kept CRITICAL and HIGH by "What to do with findings". A kept finding it does not fix gets a `Decisions Without Owner` line: "analyze: <finding> kept by the judge, not fixed → <reason>"; the change still starts. Then `solo-sdd validate <id>` and one `Analyze: <id> 1 2 7 7a` subagent for the repeat; its findings go to the author with no judge.
-
-**The report line** of `spec-plan` and `spec-next`: `Analyze: <n> findings, kept <k>, dropped <d>; CRITICAL <c> · HIGH <h>, fixed <f>`, where n counts the findings after the merge (k + d) and c and h the kept ones. Without the outside run the line is `Analyze: off (solo-sdd/config)` or `Analyze: in session (no subagent tool)`.
+Read `outside-run.md` each time this skill runs from `spec-plan` step 7a or `spec-next` step 4a or inside one of those subagents, also after compaction: what every subagent gets, the `Analyze:` run or the `Attack:` and `Judge:` run with the `Retell:` block, the author's fixes and the report line.
 
 ## What to read
 
 0. Legacy tree: the project has `openspec/` and no `solo-sdd/`: stop before any change work, change no file and name the next step `solo-sdd import openspec`; do not import by yourself.
 1. The project rules: `AGENTS.md`, `CLAUDE.md`, `solo-sdd/project.md` (the intent). This is the constitution: violating it is always CRITICAL.
-2. The change artifacts: `proposal.md`, `specs/*/spec.md`, `verification.md`, `tasks.md`, `design.md` (if any).
+2. The change artifacts: `tasks.md` and `specs/*/spec.md` first, for the retell of pass 1; then `proposal.md`, `verification.md`, `design.md` (if any).
 3. The main specs of the affected capabilities: `solo-sdd/specs/<cap>/spec.md`.
 4. `solo-sdd/analyze.md`, if the project has it: the extra checks of this project. Run them on a par with the passes below.
 5. Code only to check an artifact's claim about the current state ("X is not connected now"). No code review is done here.
 
 ## Passes
 
-**1. Coverage.** Every requirement and scenario of the delta spec is implemented by at least one task and checked by a test or a Live Scenario step. A scenario a Live Scenario step checks needs no unit test: it counts as covered, no finding. A task without a requirement is extra work or a missed requirement. A REMOVED requirement needs a task to delete the code and tests.
+**1. Coverage.** Start with a retell: read only `tasks.md` and the delta specs, write at most five lines of what the user gets, then read `proposal.md`. A line covers a What Changes item when it names the file, command, setting or behaviour the item names. An item no line covers is HIGH; a retell line, task or delta requirement no item covers is MEDIUM, whether or not the retell names it. The retell stands as a `Retell:` block above the findings table, also when it gives no finding.
+
+Then: every requirement and scenario of the delta spec is implemented by at least one task and checked by a test or a Live Scenario step. A scenario a Live Scenario step checks needs no unit test: it counts as covered, no finding. A task without a requirement is extra work or a missed requirement. A REMOVED requirement needs a task to delete the code and tests.
 
 **2. The change frame.** A change without `verification.md` (written before this process): skip this pass, except the "Hostile input" and requirement length items, and note it in the report.
 - `Out of Scope` is not empty; the neighbouring changes of the plan are named in it.
@@ -70,11 +63,13 @@ A property test complements the `Live Scenario`, it does not replace it.
 
 Fix: a requirement "who may <action>; any other actor gets <answer>" with a scenario of the refused actor; for a command or a path, which input is refused (outside the folder, a shell metacharacter). A change that adds no boundary gives no finding. Pass 2 "Hostile input" covers parsing foreign input; the code itself is checked by the security pass of `spec-audit`.
 
-**5. Ambiguities.** Where a decision is not made: the boundaries of the area; states and transitions of entities; empty, erroneous and partial cases (no data, an external system failure, a break, a repeated run); telling "no data" from "could not read"; idempotence on a repeat; what the user sees in each outcome; one term named differently in different artifacts. `TBD`, `[NEEDS CLARIFICATION]`, "clarify later": HIGH.
+**5. Ambiguities.** Where a decision is not made: the boundaries of the area; states and transitions of entities; empty, erroneous and partial cases (no data, an external system failure, a break, a repeated run); telling "no data" from "could not read"; idempotence on a repeat; what the user sees in each outcome; one term named differently in different artifacts (a task value in backquotes that differs from its requirement goes under pass 7, not here). `TBD`, `[NEEDS CLARIFICATION]`, "clarify later": HIGH.
 
 **6. Wording.** A method instead of a property ("look for the substring X" instead of "git history does not change"); places by line numbers instead of structure; hard-coded values that should be asked from the system; words without a measure: "fast", "reliable", "convenient", "if needed", "etc.". MEDIUM if acceptance depends on the wording, otherwise LOW.
 
 **7. Consistency.** The delta spec contradicts the main one without MODIFIED/REMOVED; `design.md` chooses a decision that is not in the tasks; a task uses what appears later; the change leads away from the intent in `solo-sdd/project.md`: CRITICAL.
+
+Task values: compare every value a task names in backquotes (a number, a setting key, a path, a command, an output line) with the value any requirement or scenario of the deltas names for the same thing, known by what both texts say it is for: a key spelled otherwise names the same setting. A different value is one HIGH finding naming both values. Fix the task, or, when the task's value is the right one, the delta with a `Decisions Without Owner` line naming both values. A value for a thing no requirement names (a task's own test file) gives no finding.
 
 **7a. Requirement compatibility.** Pass 7 looks for a divergence of the delta spec from the main one, this one for requirements that are true one by one and unsatisfiable together. Look at the whole set at once: the requirements and scenarios of the delta spec plus the main specs of the affected capabilities.
 
@@ -97,8 +92,8 @@ Fix: add the earlier one to the `Depends On` of the later one by number or name 
 | Level | What | Consequence |
 |---|---|---|
 | CRITICAL | a violation of the intent or the project rules; a requirement without a task; an unarchived dependency | do not start code |
-| HIGH | an uncheckable task; no consumer; a trust boundary without a rule on who may act; an unresolved ambiguity that affects behaviour; waiting for a person in tasks | fix before code |
-| MEDIUM | a vague criterion; term drift; a task without a requirement | fix if the scope does not change |
+| HIGH | an uncheckable task; a task value that differs from its requirement; a What Changes item no retell line covers; no consumer; a trust boundary without a rule on who may act; an unresolved ambiguity that affects behaviour; waiting for a person in tasks | fix before code |
+| MEDIUM | a vague criterion; term drift; a task without a requirement; work no What Changes item names | fix if the scope does not change |
 | LOW | style, repeats | only list |
 
 ## What to do with findings
@@ -114,6 +109,9 @@ Code does not change. After the edits: `solo-sdd validate <change>` and a repeat
 ```
 analyze <change>: requirements <n>, scenarios <n>, tasks <n>; covered <x>/<n>
 CRITICAL <n> · HIGH <n> · MEDIUM <n> · LOW <n>, fixed <n>
+
+Retell:
+<at most five lines of what the user gets, from tasks.md and the deltas, written before proposal.md>
 
 | ID | Pass | Level | Where | Finding | What was done |
 
