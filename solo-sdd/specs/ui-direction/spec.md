@@ -17,7 +17,7 @@ The project's interface direction: a `DESIGN.md` the owner fills in, a Design Re
 - **THEN** `DESIGN.md` is not created
 
 ### Requirement: Project design direction
-`project-init` in a project with an interface SHALL create `DESIGN.md` by the template `templates/DESIGN.md` and an "Interface" section in the project's `AGENTS.md` with a link to it. The fields are filled only with the owner's answers. Unfilled fields stay empty, a `Dial` line with the letters `n` instead of numbers counts as an empty field. If there are empty fields, the `docs/waiting.md` table gets one line about them; if there are none, there is no line.
+`project-init` in a project with an interface SHALL create `DESIGN.md` by the template `templates/DESIGN.md` and an "Interface" section in the project's `AGENTS.md` with a link to it. The fields are filled only with the owner's answers. Unfilled fields stay empty, a `Dial` line with the letters `n` instead of numbers counts as an empty field. If there are empty fields, the first table of `docs/waiting.md` gets one line about them; if there are none, there is no line.
 
 #### Scenario: A new project without owner answers
 - **WHEN** `project-init` runs in a folder with `index.html`, and the owner said nothing about the style
@@ -36,15 +36,19 @@ The project's interface direction: a `DESIGN.md` the owner fills in, a Design Re
 - **THEN** the file is created by the template `templates/docs/waiting.md`, with a line about the empty fields
 
 ### Requirement: Design file rerun
-A repeated run of `project-init` SHALL keep the existing `DESIGN.md`: filled fields do not change, missing fields are added empty, empty fields are filled only with the owner's answers from this request, and the line about `DESIGN.md` in `docs/waiting.md` is updated, not duplicated; if no empty fields are left, the line is deleted.
+A repeated run of `project-init` SHALL keep the existing `DESIGN.md`: filled fields do not change, missing fields are added empty, empty fields are filled only with the owner's answers from this request, and the line about `DESIGN.md` in the first table of `docs/waiting.md` is updated, not duplicated, or added when absent; if no empty fields are left, that line moves to `## Closed` with the evidence `DESIGN.md: no empty fields` and the date, never deleted.
 
 #### Scenario: A repeated run
 - **WHEN** `project-init` runs again in a folder where the owner already filled part of `DESIGN.md`
-- **THEN** the filled fields did not change, missing fields are added empty, there is one line about `DESIGN.md` in `docs/waiting.md`
+- **THEN** the filled fields did not change, missing fields are added empty, there is one line about `DESIGN.md` in the first table of `docs/waiting.md`
 
 #### Scenario: No empty fields left
-- **WHEN** `project-init` runs again, and the owner filled all fields of `DESIGN.md`, including the numbers in the `Dial` line
-- **THEN** `DESIGN.md` did not change, `docs/waiting.md` has no line about it
+- **WHEN** `project-init` runs again, the first table of `docs/waiting.md` has the line about `DESIGN.md`, and the owner filled all fields of `DESIGN.md`, including the numbers in the `Dial` line
+- **THEN** `DESIGN.md` did not change, the first table of `docs/waiting.md` has no line about it, and `## Closed` holds that line with the evidence `DESIGN.md: no empty fields` and the date
+
+#### Scenario: An empty field after the closing
+- **WHEN** the line about `DESIGN.md` is under `## Closed`, and a repeated run adds a missing field empty
+- **THEN** the first table gets one new line about `DESIGN.md`, and the `## Closed` line stays as it was
 
 ### Requirement: Direction predicate
 The interface direction SHALL count as set only if `DESIGN.md` has the line `Dial: ENERGY n / RHYTHM n / MOTION n` with three numbers from 1 to 3. The agent SHALL NOT derive dials from the owner's words. If the direction is not set, everywhere dials are needed, ENERGY 1 / RHYTHM 1 / MOTION 1 is put with the mark "draft without direction".
