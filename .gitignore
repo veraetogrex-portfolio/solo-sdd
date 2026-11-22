@@ -24,6 +24,11 @@ tests/.last-failed
 
 # logs
 *.log
+# a stand fixture's logs are task input; the secrets rules are repeated so a log name cannot re-include them
+!tests/stands/**/fixture/**/*.log
+.env
+.env.*
+!.env.example
 
 # the change archive: kept only in the working folder, not published
 solo-sdd/changes/archive/

@@ -18,6 +18,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import unicodedata
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "tests"))
@@ -366,16 +367,41 @@ def check(checks, ans):
         return False
 
 
+def tracked(root):
+    """(NFC paths git lists in the index of `root`, None) or (None, the reason git could not answer)."""
+    root = pathlib.Path(root).resolve()
+    try:
+        top = subprocess.run(["git", "-C", str(root), "rev-parse", "--show-toplevel"], capture_output=True, text=True)
+        if top.returncode or pathlib.Path(top.stdout.strip()).resolve() != root:
+            return None, "not a git work tree"
+        ls = subprocess.run(["git", "-C", str(root), "ls-files", "-z"], capture_output=True)
+    except OSError as e:
+        return None, "git not run: %s" % e
+    if ls.returncode:
+        return None, "git ls-files failed: %s" % ls.stderr.decode(errors="replace").strip()
+    return {unicodedata.normalize("NFC", p) for p in ls.stdout.decode("utf-8", "surrogateescape").split("\0") if p}, None
+
+
 def task_errors(root=REPO):
-    """`task set <skill>/<task>: ...` for every task folder that misses a file, whose reference.jsonl does not grade
-    `pass`, or whose check.py passes an empty answer."""
+    """`task set <skill>/<task>: ...` for every task folder that misses a file, has a fixture file git does not
+    track, whose reference.jsonl does not grade `pass`, or whose check.py passes an empty answer; `task sets: <root>:
+    <reason>` when git cannot list the tracked files."""
     errors = []
+    index, reason = tracked(root)
+    if reason:
+        errors.append("task sets: %s: %s" % (root, reason))
     for task in sorted(p.parent for p in sets_dir(root).glob("*/*/prompt.md")):
         name = "task set %s/%s" % (task.parent.name, task.name)
         missing = [f for f in ("check.py", "required.txt", "reference.jsonl", "fixture") if not (task / f).exists()]
         if missing:
             errors.append("%s: no %s" % (name, ", ".join(missing)))
             continue
+        if index is not None:
+            for f in sorted(p for p in (task / "fixture").rglob("*") if p.is_file()):
+                rel = unicodedata.normalize("NFC", f.relative_to(root).as_posix())
+                if rel not in index:
+                    errors.append("%s: fixture file not tracked by git: %s"
+                                  % (name, unicodedata.normalize("NFC", f.relative_to(task / "fixture").as_posix())))
         with tempfile.TemporaryDirectory() as d:
             ans = pathlib.Path(d) / "answer.md"
             outcome = judge(task.parent.name, task / "reference.jsonl", task, ans)[0]
