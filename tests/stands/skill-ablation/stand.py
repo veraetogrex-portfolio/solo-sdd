@@ -4,6 +4,8 @@ on the committed task sets, each task's `reference.jsonl` standing in for the tr
 
 Usage: python3 tests/stands/skill-ablation/stand.py
 Code 0 means every check matched. The stand creates and removes its temporary folder itself."""
+import importlib.util
+import json
 import shutil
 import subprocess
 import sys
@@ -43,6 +45,13 @@ def full_run(tmp, skill):
           "compare: full 2 of 2, cut 2 of 2, none 2 of 2" in text, text)
 
 
+def work_folders(run):
+    try:
+        return [Path(p["work"]) for p in json.loads((run / "manifest.json").read_text())["prompts"]]
+    except (OSError, ValueError, KeyError):
+        return []
+
+
 def main():
     code, text = run("audit")
     check("audit: docs/skills-audit.md matches every skill of targets.json", code == 0, text)
@@ -58,8 +67,15 @@ def main():
         check("grade without transcripts: 4 rows not run, 2 calls not made",
               "not run: 4; leaked: 0; unreadable: 0; not made: 2" in text, text)
     finally:
+        spec = importlib.util.spec_from_file_location("skill_ablation", RUNNER)
+        runner = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(runner)
+        works = [p for folder in tmp.iterdir() for p in work_folders(folder)]
+        for folder in tmp.iterdir():
+            runner.remove(folder)
         shutil.rmtree(tmp, ignore_errors=True)
-    check("temporary folder removed", not tmp.exists())
+    check("temporary folders removed (the runs and their %d work folders)" % len(works),
+          not tmp.exists() and len(works) == 16 and not any(p.exists() for p in works))
     print("skill-ablation stand: %d of %d checks passed" % (sum(results), len(results)))
     return 0 if all(results) else 1
 

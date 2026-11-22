@@ -50,7 +50,7 @@ def title(bold, rest):
         t = rest[2:].split("**", 1)[0]
     else:
         t = re.split(r":|\. |\(", rest, maxsplit=1)[0]
-    return " ".join(t.replace("`", "").replace("|", "").strip().rstrip(".").split()[:6])
+    return " ".join(t.replace("`", "").replace("|", "").strip().rstrip(".:").split()[:6])
 
 
 def steps(name, root=REPO):
@@ -110,7 +110,7 @@ def table(root=REPO):
         if CANDIDATE in line:
             sec["candidate"] = True
         m = COMPARE.search(line)
-        if m and part:
+        if m and part and part.startswith("Run "):
             sec["runs"].append((int(m.group(1)), int(m.group(2)), int(m.group(3))))
         if part is None and line.startswith("|"):
             c = cells(line)
@@ -216,12 +216,15 @@ def prepare(skill, budget, out=None, root=REPO):
     prompts = []
     for t, v in made:
         pid = "%s-%s" % (t, v)
-        shutil.copytree(sets_dir(root) / skill / t / "fixture", run / pid)
+        # each work folder in a temporary folder of its own: nothing of the run (prompts, checks) or of another
+        # variant lies next to it
+        work = pathlib.Path(tempfile.mkdtemp(prefix="skill-ablation-work-%s-" % pid)).resolve() / "work"
+        shutil.copytree(sets_dir(root) / skill / t / "fixture", work)
         desc = "Ablation: %s %s %s %s" % (skill, v, t, run.name)
-        (run / (pid + ".prompt.md")).write_text(prompt(skill, v, t, run / pid, texts[v], run.name,
-                                                             (run / "checks" / t / "prompt.md").read_text(encoding="utf-8")), encoding="utf-8")
-        prompts.append({"id": pid, "task": t, "variant": v, "description": desc})
-        lines.append("prompt: %s | description: %s" % (run / (pid + ".prompt.md"), desc))
+        ask = (run / "checks" / t / "prompt.md").read_text(encoding="utf-8")
+        (run / (pid + ".prompt.md")).write_text(prompt(skill, v, t, work, texts[v], run.name, ask), encoding="utf-8")
+        prompts.append({"id": pid, "task": t, "variant": v, "description": desc, "work": str(work.parent)})
+        lines.append("prompt: %s | description: %s | work: %s" % (run / (pid + ".prompt.md"), desc, work))
     manifest = {"skill": skill, "run": run.name, "variants": [v for v in VARIANTS if v in texts], "tasks": tasks,
                 "prompts": prompts, "total": len(order), "not_made": len(order) - len(made)}
     (run / "manifest.json").write_text(json.dumps(manifest, indent=1) + "\n", encoding="utf-8")
@@ -231,15 +234,30 @@ def prepare(skill, budget, out=None, root=REPO):
     return 0, lines
 
 
+def remove(run):
+    """Remove a run folder and the work folders its manifest names; the stand and the tests use it."""
+    run = pathlib.Path(run)
+    try:
+        prompts = json.loads((run / "manifest.json").read_text(encoding="utf-8"))["prompts"]
+    except (OSError, ValueError, KeyError):
+        prompts = []
+    for p in prompts:
+        work = pathlib.Path(p.get("work", ""))
+        if work.name.startswith("skill-ablation-work-"):
+            shutil.rmtree(work, ignore_errors=True)
+    shutil.rmtree(run, ignore_errors=True)
+
+
 def read_manifest(run, root):
     """The manifest when every field is one prepare writes, else None."""
     try:
         m = json.loads((run / "manifest.json").read_text(encoding="utf-8"))
-        ok = (m["skill"] in target_skills(root) and isinstance(m["prompts"], list)
-              and set(m["variants"]) <= set(VARIANTS) and all(NAME.match(t) for t in m["tasks"])
-              and isinstance(m["not_made"], int))
+        ok = (isinstance(m, dict) and m["skill"] in target_skills(root) and isinstance(m["prompts"], list)
+              and m["variants"] in (list(VARIANTS), ["full", "none"]) and isinstance(m["tasks"], list)
+              and all(isinstance(t, str) and NAME.match(t) for t in m["tasks"])
+              and isinstance(m["not_made"], int) and isinstance(m["run"], str))
         for p in m["prompts"] if ok else ():
-            ok = ok and (p["variant"] in m["variants"] and p["task"] in m["tasks"]
+            ok = ok and isinstance(p, dict) and (p["variant"] in m["variants"] and p["task"] in m["tasks"]
                          and p["id"] == "%s-%s" % (p["task"], p["variant"]) and isinstance(p["description"], str)
                          and (run / "checks" / p["task"] / "check.py").is_file())
         return m if ok else None
@@ -300,23 +318,28 @@ def read_transcript(path):
     return calls, answer if answer is not None else last_text, models, tokens, None
 
 
-def leaked(skill, calls):
+def leaked(skill, calls, run=None):
+    """True when a call loads the skill, names its folder (`skills/<skill>`, any copy), the task sets or the run
+    folder that holds the prompts with the full text and the checks."""
+    near = [re.escape("skills/" + skill), re.escape("tests/stands/skill-ablation")]
+    if run is not None:
+        near += [re.escape(str(run)), re.escape(re.sub(r"^/private(?=/)", "", str(run)))]
+    pattern = re.compile(r"(?:%s)(?![A-Za-z0-9_.-])" % "|".join(near))
     for name, inp in calls:
         if name == "Skill" and str(inp.get("skill", "")).split(":")[-1] == skill:
             return True
-        text = json.dumps(inp, sort_keys=True)
-        if "skills/%s/" % skill in text or "tests/stands/skill-ablation/" in text:
+        if pattern.search(json.dumps(inp, sort_keys=True)):
             return True
     return False
 
 
-def judge(skill, path, checks, ans):
+def judge(skill, path, checks, ans, run=None):
     """(outcome, path, tokens, note, models) of one transcript, first match wins: unreadable, not run, leaked, pass
     (the check exits 0 on the answer file and every required call is there), fail. The answer goes to ans."""
     calls, answer, models, tok, err = read_transcript(path)
     tokens = "-" if tok is None else str(tok)
     required = [l.strip() for l in (checks / "required.txt").read_text(encoding="utf-8").splitlines()
-                if l.strip() and not l.startswith("#")]
+                if l.strip() and not l.strip().startswith("#")]
     texts = ["%s %s" % (n, json.dumps(i, sort_keys=True)) for n, i in calls]
     hit = sum(any(re.search(r, t) for t in texts) for r in required)
     req = "%d of %d" % (hit, len(required))
@@ -324,8 +347,10 @@ def judge(skill, path, checks, ans):
         return "unreadable", "-", tokens, err, models
     if not answer or not answer.strip():
         return "not run", req, tokens, "", models
-    if leaked(skill, calls):
+    if leaked(skill, calls, run):
         return "leaked", req, tokens, "", models
+    if ans.is_symlink():
+        ans.unlink()
     ans.write_text(answer, encoding="utf-8")
     ok = check(checks, ans) and hit == len(required)
     return ("pass" if ok else "fail"), req, tokens, "", models
@@ -373,14 +398,17 @@ def grade(run, src=None, root=REPO):
         pid, path = p["id"], run / (p["id"] + ".jsonl")
         hits = found.get(p["description"], [])
         note = ""
-        if src and not path.exists() and len(hits) == 1:
-            shutil.copyfile(hits[0], path)
-        if src and not path.exists() and len(hits) > 1:
+        if src and path.is_symlink():
+            path.unlink()
+        if src and len(hits) == 1:
+            shutil.copyfile(hits[0], path)  # with --from only the subagents folder's transcript counts
+        if src and len(hits) > 1:
             outcome, req, tokens, note = "unreadable", "-", "-", "%d transcripts for one description" % len(hits)
-        elif not path.is_file() or path.is_symlink():
+        elif (src and not hits) or not path.is_file() or path.is_symlink():
             outcome, req, tokens = "not run", "-", "-"
         else:
-            outcome, req, tokens, note, mods = judge(m["skill"], path, run / "checks" / p["task"], run / (pid + ".answer.md"))
+            outcome, req, tokens, note, mods = judge(m["skill"], path, run / "checks" / p["task"], run / (pid + ".answer.md"),
+                                                   run)
             models |= mods
         rows.append((p["task"], p["variant"], outcome, req, tokens, note))
     lines = ["skill: %s; run: %s" % (m["skill"], m["run"]), "models: %s" % (", ".join(sorted(models)) or "none"),

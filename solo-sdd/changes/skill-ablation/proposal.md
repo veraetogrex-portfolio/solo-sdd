@@ -23,6 +23,7 @@ A skill written for one model can stop helping the next one, and sometimes the m
 
 - `docs/skills-audit.md`
 - `docs/release.md`
+- `README.md`
 - `tests/stands/skill-ablation.py`
 - `tests/stands/skill-ablation/`
 - `tests/test_skill_ablation.py`

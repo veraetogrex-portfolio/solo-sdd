@@ -210,7 +210,7 @@ A skill with a task set under `tests/stands/skill-ablation/` is measured by `tes
 | Order | 6. Status acceptance | gate (code) |  | the handback hook and `sdd-dispatch.py accept` check the status block |
 | Order | 7. Merge one at a time | gate (code) |  | `sdd-dispatch.py land-local` and `sdd-pr.py` merge with their gates |
 | Order | 8. The pipeline runs | method |  |  |
-| Order | 9. Questions to the user | gate (code) |  | the AskUserQuestion guard holds the reply language |
+| Order | 9. Questions to the user | gate (text) | hook: no | which decision needs the user is a judgement; the AskUserQuestion guard holds only the window's language |
 | Order | 10. Delivery | gate (code) |  | the `stop` hook returns the agent on uncommitted edits and an unmerged PR |
 | Order | 11. Report | method |  |  |
 
@@ -242,7 +242,7 @@ A skill with a task set under `tests/stands/skill-ablation/` is measured by `tes
 | Order | 1a. Light path | method |  |  |
 | Order | 2. Units | gate (code) |  | `solo-sdd validate` refuses a change above `process.max-tasks` |
 | Order | 2a. Codebase map | method |  |  |
-| Order | 3. Order and dependencies | gate (code) |  | `solo-sdd new` takes only a kebab-case id that is neither open nor archived |
+| Order | 3. Order and dependencies | gate (text) | hook: no | `solo-sdd new` holds only the id form; what must be archived earlier is a judgement |
 | Order | 4. Check against the intent | method |  |  |
 | Order | 5. Creation | method |  |  |
 | Order | 6. External conditions | gate (text) | hook: no | what needs a person or a paid call is a judgement |
@@ -263,8 +263,8 @@ A skill with a task set under `tests/stands/skill-ablation/` is measured by `tes
 |---|---|---|---|---|
 | Order | 1. Reference | method |  |  |
 | Order | 2. Build | method |  |  |
-| Order | 3. Screenshots | gate (code) |  | the `stop` hook returns the agent when an interface file changed and no browser check ran |
-| Order | 4. Check against the reference: | method |  |  |
+| Order | 3. Screenshots | gate (text) | hook: yes | the `stop` hook checks only that a browser check ran; it could count a screenshot per width of `ui.widths` |
+| Order | 4. Check against the reference | method |  |  |
 | Order | 5. Clicks | gate (text) | hook: no | a click line is read from the report, not from a tool event |
 | Order | 6. Texts | method |  |  |
 | Order | 7. Gate | gate (text) | hook: no | the Hard Gate is a judgement on the rules |
@@ -300,3 +300,4 @@ The `hook: yes` rows above, for the owner to plan as changes.
 | `spec-plan` | Order | 0. Legacy tree | a write guard refusing change edits in a project with `openspec/` and no `solo-sdd/` |
 | `spec-plan` | Order | 7a. Cross-check | a Bash guard refusing the plan commit when no `Analyze:` or `Judge:` subagent ran after the changes were created |
 | `spec-plan` | Bug fix | 5. tasks.md | `solo-sdd validate` could check `process.bugfix-max-tasks` for a change whose name holds `fix` |
+| `ui-check` | Order | 3. Screenshots | the `stop` hook checks only that a browser check ran; it could count a screenshot per width of `ui.widths` |

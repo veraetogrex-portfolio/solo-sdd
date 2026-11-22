@@ -152,6 +152,7 @@ pip uninstall solo-sdd
 - [What goes where](https://github.com/veraetogrex-portfolio/solo-sdd/blob/main/docs/layout.md)
 - [Moving from an `openspec/` tree](https://github.com/veraetogrex-portfolio/solo-sdd/blob/main/docs/migrate.md)
 - [Developing solo-sdd](https://github.com/veraetogrex-portfolio/solo-sdd/blob/main/docs/development.md) and [releases](https://github.com/veraetogrex-portfolio/solo-sdd/blob/main/docs/release.md)
+- [Skills audit](https://github.com/veraetogrex-portfolio/solo-sdd/blob/main/docs/skills-audit.md): each skill step marked as a gate or a method, and what each skill gives the main model
 - [The whole algorithm](https://github.com/veraetogrex-portfolio/solo-sdd/blob/main/ALGORITHM.md), [the lessons it grew from](https://github.com/veraetogrex-portfolio/solo-sdd/blob/main/LESSONS.md), [third-party files](https://github.com/veraetogrex-portfolio/solo-sdd/blob/main/SOURCES.md)
 
 ## Contributing
