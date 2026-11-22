@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import unicodedata
 import unittest
 
 from hypothesis import given, settings, strategies as st
@@ -23,6 +24,12 @@ METHOD, GATE = "Think about the WIDGET-METHOD first.", "Never skip the WIDGET-GA
 SKILL = "---\nname: widget\n---\n# widget\n\n## Order\n\n1. **Look.** %s\n2. **Hold.** %s\n" % (METHOD, GATE)
 ROW = "| Order | %s | %s |  |  |"
 CHECK = "import sys\nsys.exit(0 if 'RIGHT' in open(sys.argv[1]).read() else 1)\n"
+GIT_ENV = dict(os.environ, GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
+GIT = ["git", "-c", "core.quotePath=true", "-c", "core.precomposeUnicode=true", "-c", "core.excludesFile="]
+
+
+def git(root, *args):
+    return subprocess.run(GIT + ["-C", str(root)] + list(args), env=GIT_ENV, check=True, capture_output=True)
 
 
 def fixture(root, tasks=("t1", "t2"), method=True, extra=()):
@@ -46,6 +53,8 @@ def fixture(root, tasks=("t1", "t2"), method=True, extra=()):
         (d / "prompt.md").write_text("Solve task %s and say RIGHT.\n" % t)
         (d / "check.py").write_text(CHECK)
         (d / "required.txt").write_text("data\\.txt\n")
+    git(root, "init", "-q")
+    git(root, "add", "-A")
     return root
 
 
@@ -398,6 +407,66 @@ class TaskSets(unittest.TestCase):
             self.assertEqual(sa.task_errors(root), ["task set widget/t1: reference.jsonl grades fail"])
             (task / "required.txt").unlink()
             self.assertEqual(sa.task_errors(root), ["task set widget/t1: no required.txt"])
+
+    def test_fixture_files_tracked_by_git(self):
+        """Requirement: Fixture files tracked by git: an ignored or untracked fixture file is named, quoted and
+        decomposed names are read as written, a root outside git gets its own line next to the other errors."""
+        line = "task set widget/t1: fixture file not tracked by git: %s"
+        with tempfile.TemporaryDirectory() as d:
+            root = fixture(d, tasks=("t1",))
+            task = root / "tests/stands/skill-ablation/widget/t1"
+            transcript(task / "reference.jsonl")
+            (root / ".gitignore").write_text("*.log\n")
+            (task / "fixture/logs").mkdir()
+            (task / "fixture/logs/transform.log").write_text("kept 0\n")
+            self.assertEqual(sa.task_errors(root), [line % "logs/transform.log"])
+            (task / "fixture/notes.txt").write_text("x\n")
+            self.assertEqual(sa.task_errors(root), [line % "logs/transform.log", line % "notes.txt"])
+            (task / "fixture/logs/transform.log").unlink()
+            (task / "fixture/notes.txt").unlink()
+            (task / "fixture/logs/a b.log").write_text("a\n")
+            (task / "fixture/notes").mkdir()
+            (task / "fixture/notes/ä.txt").write_text("decomposed\n")
+            git(root, "add", "-f", "-A")
+            (task / "fixture/notes/ö.txt").write_text("untracked\n")
+            self.assertEqual(sa.task_errors(root), [line % "notes/ö.txt"])
+            shutil.rmtree(root / ".git")
+            (task / "required.txt").unlink()
+            self.assertEqual(sa.task_errors(root), ["task sets: %s: not a git work tree" % root,
+                                                    "task set widget/t1: no required.txt"])
+
+    def test_secret_under_a_fixture_stays_ignored(self):
+        """Requirement: Fixture files tracked by git: the repository's `.gitignore` re-includes only `*.log`."""
+        with tempfile.TemporaryDirectory() as d:
+            git(d, "init", "-q")
+            shutil.copy(REPO / ".gitignore", pathlib.Path(d) / ".gitignore")
+            marks = {}
+            for p in ("tests/stands/x/fixture/.env", "tests/stands/x/fixture/logs/.env.prod.log",
+                      "tests/stands/x/fixture/.DS_Store", "tests/stands/x/fixture/logs/a.log"):
+                r = subprocess.run(GIT + ["-C", d, "check-ignore", "-q", "--no-index", p], env=GIT_ENV)
+                self.assertIn(r.returncode, (0, 1), p)
+                marks[p.rsplit("fixture/", 1)[1]] = r.returncode == 0
+            self.assertEqual(marks, {".env": True, "logs/.env.prod.log": True, ".DS_Store": True, "logs/a.log": False})
+
+    @settings(max_examples=20, deadline=None)
+    @given(st.lists(st.tuples(st.lists(st.sampled_from(["a", "b c", "ä", "ä", "d"]), min_size=1, max_size=3),
+                              st.booleans()), min_size=1, max_size=6, unique_by=lambda f: "/".join(f[0])))
+    def test_fixture_files_tracked_by_git_property(self, files):
+        """Requirement: Fixture files tracked by git: the reported set is every generated file not added to the index."""
+        files = {unicodedata.normalize("NFC", "/".join(parts)): (parts, added) for parts, added in files}
+        with tempfile.TemporaryDirectory() as d:
+            root = fixture(d, tasks=("t1",))
+            task = root / "tests/stands/skill-ablation/widget/t1"
+            transcript(task / "reference.jsonl")
+            for parts, added in files.values():
+                f = task.joinpath("fixture", *parts[:-1], parts[-1] + ".txt")
+                f.parent.mkdir(parents=True, exist_ok=True)
+                f.write_text("x\n")
+                if added:
+                    git(root, "add", "-f", str(f))
+            want = sorted("task set widget/t1: fixture file not tracked by git: %s.txt" % k
+                          for k, (_, added) in files.items() if not added)
+            self.assertEqual(sorted(sa.task_errors(root)), want)
 
 
 if __name__ == "__main__":
