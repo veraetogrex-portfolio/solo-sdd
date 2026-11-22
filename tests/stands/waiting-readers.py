@@ -38,7 +38,8 @@ WAITING = (("dispatch-ci", "red ci"), ("add-import", "csv"), ("release-040", "v0
 CLOSED = ("publish-docs", "v0.3.0")
 ITEM = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+")
 # an item labelled closed by its own form: "closed: ...", "already closed ..." or "<row>: closed ..."
-LABEL = re.compile(r"^blockers\b[^:]{0,60}:\s*")  # the map's label: the word, a short note, a colon
+# the map's label: the word, a note (a parenthesis may hold a colon), then a colon; or the word alone on its line
+LABEL = re.compile(r"^blockers\b(?:(?:\([^)]*\)|[^:(])*:\s*|\s*$)")
 CLOSED_LABEL = re.compile(r"^(?:already\s+)?closed\b|^[^:;,]*:\s*(?:already\s+)?closed\b")
 DESIGN = """# DESIGN
 
