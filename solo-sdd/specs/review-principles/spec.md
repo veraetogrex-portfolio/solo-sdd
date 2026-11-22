@@ -1,8 +1,9 @@
-## Purpose
+# review-principles Specification
 
+## Purpose
 The owner's review feedback is collected from the project's own sources into `REVIEW.md` rules with links, patterns the owner never stated stay apart until confirmed, and the reviewer's match with the owner is measured on past changes.
 
-## ADDED Requirements
+## Requirements
 
 ### Requirement: Review rules from the owner's feedback
 `review-principles` SHALL collect the owner's review remarks from PR review comments and reviews read through `gh` when the project has a GitHub remote, and from owner lines of archived `verification.md` files. It SHALL write `REVIEW.md` in the form of the laid-out `templates/REVIEW.md`: at most 25 rules, each with its one or two latest source links. Past 25, the existing file's rules stay, then the new rules with the most remarks, then the latest; the report names `rules not kept: <n>`.

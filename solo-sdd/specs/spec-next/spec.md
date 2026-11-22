@@ -43,7 +43,7 @@ Every finding of the independent acceptance (step 7a) SHALL carry the label `Imp
 - **THEN** one finding names the class and all three places
 
 ### Requirement: Review rounds
-The first acceptance round SHALL read the whole change diff; every later one only the diff since the last round and the open findings' places, with the list of given findings, which the reviewer does not repeat. At most `process.review-rounds` rounds (default 5) SHALL run, plus Extra round for fix findings. An `Important` left then means no archive: the findings and "reconsider the approach" go into `Not Verified`. The reviewer gets `REVIEW.md` if any; the report names the rounds.
+The first acceptance round SHALL read the whole change diff; every later one only the diff since the last round and the open findings' places, with the list of given findings, not repeated. At most `process.review-rounds` rounds (default 5) SHALL run, plus Extra round for fix findings. An `Important` left then means no archive: the findings and "reconsider the approach" go into `Not Verified`. The reviewer gets `REVIEW.md`, if any, minus `## Unconfirmed`; the report names the rounds.
 
 #### Scenario: The second round
 - **WHEN** after the first round the author fixed one `Important` finding
@@ -55,11 +55,15 @@ The first acceptance round SHALL read the whole change diff; every later one onl
 
 #### Scenario: The project's review rules
 - **WHEN** the project root has `REVIEW.md`
-- **THEN** the reviewer gets it together with the delta specs
+- **THEN** the reviewer gets it without its `## Unconfirmed` section, together with the delta specs
 
 #### Scenario: A project limit
 - **WHEN** the project's `solo-sdd/config` has `process.review-rounds: 2`, and after the second round an `Important` remains outside the last rework
 - **THEN** there is no third round and the change is not archived
+
+#### Scenario: Unconfirmed review rules
+- **WHEN** the project's `REVIEW.md` has three rules and a `## Unconfirmed` section with one line
+- **THEN** the reviewer gets the three rules and not the unconfirmed line
 
 ### Requirement: Reviewer failure
 If the reviewer ended with an error, returned an empty answer, an answer without the line `Important: <n>` or gave no verdict on every requirement, acceptance SHALL count as not passed. In each round the agent SHALL once rerun the reviewer with the same task; such a run does not count as a round. A second failure in the same round sends the requirements without a verdict, or the round's verdict, into `Not Verified`, the change is not archived, the report names the reviewer failure.
