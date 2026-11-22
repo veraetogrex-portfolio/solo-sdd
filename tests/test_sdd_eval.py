@@ -1534,7 +1534,12 @@ class ProcessSignals(unittest.TestCase):
                  "**I1. Important (test duplicates a stand scenario).** x", "- [Important] x", "1. Important: no test for B",
                  "**Important:** a gap", "| F1 | the row is missing | Important |", "| I1 | x | **Important** |",
                  "- I1 (Important): x", "- I1 \u2014 Important: x", "- **I1** Important: x",
-                 "- Important: none of the rows are counted", "| I1 | Important | none of the callers check it |")
+                 "- Important: none of the rows are counted", "| I1 | Important | none of the callers check it |",
+                 "**Important 1: a contradiction between rules.**", "- **Important A (blocks).** More forms pass",
+                 "**Important I1: requirement clauses without a test.**", "**A. Important.** `init.py:101`. x",
+                 "Important: 2 callers skip the exit-code check", "| I1 | Important | 2 callers skip it |",
+                 "Important: nothing checks the exit code", "Important: no new test covers the grouped form",
+                 "Important: zero-length results are counted as rounds")
         counts = ("no Important findings", "Important: none", "Important: 0, Nit: 2", "0 Important, 1 Nit",
                   "- Important findings: none", "Important findings were not found", "> Important: none remain",
                   "| Important | 0 |", "| Important | none |", "Important: None.", "Important: Zero",
@@ -1544,11 +1549,20 @@ class ProcessSignals(unittest.TestCase):
                   "Important: 0 (all closed)", "- Important: none (the open finding is closed)", "Important: No new findings",
                   "| Important | Nit | Pre-existing |", "| Nit | Important |", "| Change | Important | Nit |",
                   "- I2 (Important): closed. The reader now reads it", "| I2 | Important | fixed |",
+                  "**Important 1 (blockers import hint): closed.**", "Important A: **closed.**",
+                  "### Important 2: mostly closed; Important A is left", "- **Important 2: closed in substance, but a gap**",
+                  "1. **Important, judge `reason` in the worker log: closed.** `a.py:270`",
+                  "- **Important (round 2), 3xx accepted as data: closed.** x",
                   "*" * 50000)  # a long markup run: read in linear time, a backtracking regex took 30 s
         self.assertEqual([ev.important_count(x) for x in found + counts], [1] * len(found) + [0] * len(counts))
-        grouped = ("Findings:\n\n### Important\n\n- I1: the row is missing\n  - Places: a.py:3\n\n- I2: no test\n"
-                   "\n### Nit\n\n- N1: a name\n\n**Important**\n- none\n\nImportant:\n1. x\n2. y\nChecks run.\n- z")
-        self.assertEqual(ev.important_count(grouped), 4)
+        grouped = ("Findings:\n\n### Important\n\n- I1: the row is missing\n  - Places: a.py:3\n  - Fix: b\n\n"
+                   "- I2: no test\n\n### Nit\n\n- N1: a name\n\n**Important**\n- none\n\nImportant:\n1. x\n   - a\n"
+                   "2. y\n\n  a continuation\n3. w\nChecks run.\n- z\n\n### 2. Important findings\n1. p\n2. q\n\n### Round 1 Important findings\n- r")
+        self.assertEqual(ev.important_count(grouped), 7)
+        once = ("**Important A: a false refusal.** x\n**Important B: a bypass.** y\n- Important A: summary again\n"
+                "1. **Important A:** `a.py` detail\n| B | Important | the bypass |\n- N-1 (Important, R-26): closed.\n"
+                "Important 1: closed.")
+        self.assertEqual(ev.important_count(once), 2)
 
     def test_path_marks(self):
         for m, mark in (({"review_after_last_edit": False, "live_in_scenario": None}, "done, path incomplete"),

@@ -722,14 +722,18 @@ def transcript_events(f):
 
 
 SIGNALS = ("review_after_last_edit", "review_rounds", "important", "live_in_scenario", "analyze_findings")
-# the Important label opens a finding: after list markup and an optional id (1. I1 **F-2**), bracketed or followed
-# by a separator, then text that is not a count (none, 0, n/a, no findings); read by str.lstrip, not one regex,
-# so a long run of markup costs linear time
-FINDING_ID = re.compile(r"[\[(]?[A-Za-z]{0,3}-?\d+[.:)\]]?")
-# a count or a status after the label is not a finding: "none found", "0 (all closed)", "no findings", "closed"; but
-# "none of the rows ..." and "no test for ..." are findings
-COUNT = re.compile(r"(?i)(?:(?:none|nothing|zero|n/a|\d+)(?!\s+of\b)(?=\W|$)"
-                   r"|no(?:\s+(?:findings?|issues?|remarks?|new)\b|\s*(?:[.,;)]|$))|(?:closed|fixed|resolved|dropped)\b)")
+# the Important label opens a finding: after list markup and an optional id (1. I1 **F-2** A.), bracketed or
+# followed by an optional id, a parenthesis and a separator, then text that is not a count or a status; read by
+# str.lstrip, not one regex, so a long run of markup costs linear time
+FINDING_ID = re.compile(r"[\[(]?(?:[A-Za-z]{1,3}-?\d+|[A-Z](?![A-Za-z]))[.:,)\]]?|\d+[.)]")
+LABEL_ID = re.compile(r"(?:[A-Za-z]{0,3}-?\d+|[A-Z])(?!\w)")
+SEPARATORS = ":.,-\u2013\u2014("
+# a count or a status is not a finding: "none found", "0 (all closed)", "no new findings", "closed."; but "none of the
+# rows ...", "2 callers skip ...", "no test for ..." and "fixed width ..." are findings
+COUNT = re.compile(r"(?i)(?:(?:none|nothing|zero|n/a|no|\d+)(?:\s+(?:new|open|found|left|remain(?:ing)?|findings?|"
+                   r"issues?|remarks?|in\s+this\s+round))*\s*(?:[,.;:)(]|$)|(?:\w+\s+)?(?:closed|fixed|resolved|dropped)\b)")
+STATUS_AFTER = re.compile(r"(?i)[^.:]*:\s*[*`]*(?:\w+\s+)?(?:closed|fixed|resolved|dropped)\b")  # "x y: closed."
+HEADING = re.compile(r"(?:\d+[.)]\s*)?(?:(?:Open|New)\s+)?Important(?:\s+findings?)?(?:\s*\(\d+\))?")
 LABELS = ("Important", "Nit", "Pre-existing")
 LIST_ITEM = re.compile(r"([ \t]*)(?:[-*+]|\d+[.)])[ \t]+")
 ANALYZE = re.compile(r"(?m)^[^\w\n]*Analyze:\s*(\d+) findings")
@@ -758,54 +762,73 @@ def final_text(objs):
     return hb[-1] if hb else (ts[-1][1] if ts else "")
 
 
-def labelled(line):
-    """The line is a finding labelled Important: a table row with an Important cell, no other label cell (a header)
-    and no count after it, or a line that opens with the label and goes on with text that is not a count."""
+def finding_key(line):
+    """None unless the line is a finding labelled Important: a table row with an Important cell, no other label cell
+    (a header) and no count after it, or a line that opens with the label and goes on with text that is not a count
+    or a status. Else the finding's id ("A", "I1") when the line names one, "" when it does not."""
     if line.lstrip().startswith("|"):
         cells = [c.strip(" *`[]()") for c in line.strip().strip("|").split("|")]
         if "Important" not in cells or sum(c in LABELS for c in cells) > 1:
-            return False
+            return None
         i = cells.index("Important")
-        return not (i + 1 < len(cells) and COUNT.match(cells[i + 1]))
+        if i + 1 < len(cells) and COUNT.match(cells[i + 1]):
+            return None
+        return cells[i - 1] if i and FINDING_ID.fullmatch(cells[i - 1]) else ""
     s = line.lstrip(" \t>#*+-`")
     m = FINDING_ID.match(s)
+    key = m.group().strip("[](),.:") if m and re.search(r"[A-Za-z]", m.group()) else ""
     if m:
-        s = s[m.end():].lstrip(" \t*`.:)]-\u2013\u2014")
+        s = s[m.end():].lstrip(" \t*`.:,)]-\u2013\u2014")
     body = s.lstrip("[(*`")
     if not body.startswith("Important"):
-        return False
+        return None
     opened, rest = s[:len(s) - len(body)], body[len("Important"):]
     after = rest.lstrip("])*`")
     closed, rest = rest[:len(rest) - len(after)], after.lstrip()
+    if "(" in opened and ")" not in closed and ")" in rest:  # "N-1 (Important, R-26): closed."
+        rest, closed = rest[rest.index(")") + 1:], ")"
     if not ("[" in opened and "]" in closed or "(" in opened and ")" in closed):
-        if not rest or rest[0] not in ":.-\u2013\u2014(":
-            return False
+        m = LABEL_ID.match(rest)
+        if m:
+            key, rest = m.group(), rest[m.end():].lstrip(" *`")
+        if rest.startswith("(") and ")" in rest:
+            rest = rest[rest.index(")") + 1:].lstrip(" *`")
+        if not rest or rest[0] not in SEPARATORS:
+            return None
         rest = rest[1:]
     else:
-        rest = rest.lstrip(" :.-\u2013\u2014")
+        rest = rest.lstrip(" :.,-\u2013\u2014*`")
     rest = rest.strip(" *`")
-    return bool(rest) and not COUNT.match(rest)
+    return key if rest and not COUNT.match(rest) and not STATUS_AFTER.match(rest) else None
 
 
 def important_count(text):
-    """Findings labelled Important in a review result: labelled lines, and the list items at one indent under a line
-    that is only the label ("### Important", "**Important**", "Important:") up to the next other line."""
-    n, group = 0, None  # group: the indent of the items under an Important heading, "" before the first item
+    """Findings labelled Important in a review result: lines with a finding_key, and the list items at one indent under
+    a line that is only the label ("### Important", "**Important**", "2. Important findings") up to the next other
+    line; a finding named by one id in a summary and again in its detail counts once."""
+    n, ids, group = 0, set(), None  # group: the indent of the items under an Important heading, True before the first
     for line in text.splitlines():
         if group is not None:
             item = LIST_ITEM.match(line)
-            if item and group in ("", item.group(1)):
+            if item and (group is True or group == item.group(1)):
                 group, body = item.group(1), line[item.end():].strip(" *`")
-                n += bool(body) and not COUNT.match(body)
+                if body and not COUNT.match(body):
+                    m = FINDING_ID.match(body)
+                    key = m.group().strip("[](),.:") if m and re.search(r"[A-Za-z]", m.group()) else ""
+                    n, ids = (n + 1, ids) if not key else (n, ids | {key})
                 continue
-            if item or not line.strip():
+            if item or not line.strip() or line[:1] in " \t":  # a sub-item, a blank or an indented continuation
                 continue
             group = None
-        if line.strip().strip("#*_` ").rstrip(":").strip("*_` ") == "Important":
-            group = ""
-        else:
-            n += labelled(line)
-    return n
+        if HEADING.fullmatch(line.strip().strip("#*_` ").rstrip(":").strip("*_` ")):
+            group = True
+            continue
+        key = finding_key(line)
+        if key == "":
+            n += 1
+        elif key:
+            ids.add(key)
+    return n + len(ids)
 
 
 def code_edit(path, roots):

@@ -42,6 +42,10 @@ Signals SHALL read the journal of the last orchestrator (by its first line) whos
 - **WHEN** a review result says "no Important findings", and one `Review:` agent ended with an empty result before its rerun
 - **THEN** `important` does not count that sentence, and `review_rounds` does not count the empty run
 
+#### Scenario: One finding named twice
+- **WHEN** a review result names `Important A` in its summary and again in its detail, and says `Important 1: closed.` of a finding of an earlier round
+- **THEN** `important` counts that result as 1
+
 ### Requirement: What the status and analyze signals read
 A code edit SHALL be a file edit or a Bash edit of the orchestrator journal under the status `WORKTREE` or the copy, outside `solo-sdd/` and `docs/`, read as the archive gate reads the journal. `live_in_scenario` SHALL check the status `LIVE` command against the Live Scenario of `verification.md` in the copy's archive of the replayed change by `accept`'s reader, never running it. `analyze_findings` SHALL be `<n>` of the last orchestrator line `Analyze: <n> findings`.
 
