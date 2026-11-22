@@ -550,11 +550,14 @@ class SkillCommandsTest(unittest.TestCase):
         """Requirement: Review verdict line: the reviewer ends with `Important: <n>`, open findings after the round; the
         author gates on it; an answer without it is a reviewer failure."""
         nxt = self.flat(skill_text.read(REPO / "skills/spec-next/SKILL.md"))
-        task = nxt.split("- Task: ", 1)[1].split(" - ", 1)[0]
-        for w in ("The answer ends with the line `Important: <n>`", "open after this round, new ones and given ones not closed",
+        task = nxt.split("- Verdict line: ", 1)[1].split(" - ", 1)[0]
+        for w in ("the answer ends with the line `Important: <n>`", "open after this round, new ones and given ones not closed",
                   "`0` when none", "The author gates rework, rounds and the archive on that line"):
             self.assertIn(w, task)
-        self.assertIn("an answer without the line `Important: <n>`", nxt.split("- A reviewer failure (", 1)[1][:200])
+        failure = nxt.split("- A reviewer failure (", 1)[1].split(" - ", 1)[0]
+        for w in ("an answer without the line `Important: <n>`",
+                  "`Not Verified` (for an answer without the line: the round's verdict), no archive"):
+            self.assertIn(w, failure)
 
     def test_review_rounds_and_extra_round_for_fix_findings(self):
         """Requirement: Review rounds (default 5, the fallback 5) and Requirement: Extra round for fix findings (only

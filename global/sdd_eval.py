@@ -724,7 +724,7 @@ def transcript_events(f):
 
 SIGNALS = ("review_after_last_edit", "review_rounds", "important", "live_in_scenario", "analyze_findings")
 PATH_KEYS = SIGNALS + ("important_sources",)
-VERDICT = re.compile(r"Important: (\d+)")  # the reviewer's last line (spec-next, Review verdict line)
+VERDICT = re.compile(r"Important: ([0-9]+)")  # the reviewer's last line (spec-next, Review verdict line)
 # the Important label opens a finding: after list markup and an optional id (1. I1 **F-2** A.), bracketed or
 # followed by an optional id, a parenthesis and a separator, then text that is not a count or a status (a title in the
 # parenthesis alone is the finding's text); read by str.lstrip, not one regex, so a long run of markup costs linear time
@@ -920,6 +920,10 @@ def path_signals(sid, copy, cid, roles):
     orch = max(done, key=lambda s: s["start"])
     status = final_text(orch["objs"])
     by_launch = {s["meta"].get("toolUseId"): final_text(s["objs"]) for s in subs if s["role"] == "review"}
+    for o in orch["objs"]:  # a launch a hook refused has no journal: an empty (failed) review, not an unpaired one
+        for b in blocks(o):
+            if b.get("type") == "tool_result" and b.get("is_error") and b.get("tool_use_id") not in by_launch:
+                by_launch[b.get("tool_use_id")] = ""
     launches = review_launches(orch["objs"], roles)
     paired = all(i in by_launch for i in launches)
     roots = [os.path.realpath(r) for r in (sd.field(status, "WORKTREE"), copy) if r]
@@ -940,6 +944,7 @@ def path_signals(sid, copy, cid, roles):
                 n, src = review_count(res)
                 seq.append(n)
                 sources.append(src)
+    paired = paired and k == len(launches)  # the gate's reader and review_launches saw the same calls
     edits = [i for i, x in enumerate(seq) if x is None]
     revs = [i for i, x in enumerate(seq) if x is not None]
     if paired:

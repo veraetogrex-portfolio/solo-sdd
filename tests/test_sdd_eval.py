@@ -1591,21 +1591,24 @@ class ProcessSignals(unittest.TestCase):
             self.assertEqual(ev.important_count(text), 1, text)
 
     def test_review_verdict_count(self):
-        prose = "Requirement A is not met: the parser drops the row.\n- Nit: a name\n\nImportant: 1"
-        rows = ((prose, (1, "line")), ("- Important: requirement A is not met", (1, "text")),
+        rows = (("- Important: requirement A is not met", (1, "text")), ("Important: \u0661", (0, "text")),
                 ("- Important: x\n**Important: 0**\n\n", (0, "line")), ("- Important: x\nImportant: none", (1, "text")),
                 ("- Important: x\nImportant: 2\nA note.", (1, "text")), ("`Important: 3`", (3, "line")))
         for text, want in rows:
             self.assertEqual(ev.review_count(text), want, text)
         code = WT + "/a.py"
-        s = self.session([("edit", code), ("review", "Review: c"), ("edit", code)], [prose], sid="v1")
-        self.assertEqual((s["review_after_last_edit"], s["important"], s["important_sources"]), (False, 1, ["line"]))
         s = self.session([("edit", code), ("review", "Review: c"), ("review", "Review: c")],
                          ["- Important: x", "Important: 0"], sid="v2")
         self.assertEqual((s["review_after_last_edit"], s["important"], s["important_sources"]), (True, 1, ["text", "line"]))
         s = self.session([("edit", code), ("review", "Review: c"), ("review", "Review: c")], ["Important: 0"], sid="v3")
         self.assertEqual([s[k] for k in ("review_after_last_edit", "review_rounds", "important", "important_sources")],
                          [None] * 4)  # the second launch has no journal with its toolUseId
+        self.session([("edit", code), ("review", "Review: c"), ("review", "Review: c")], ["Important: 0"], sid="v4")
+        with open(self.proj / "v4/subagents/agent-o.jsonl", "a") as f:  # a hook refused the second launch
+            f.write(jl(40, [{"type": "tool_result", "tool_use_id": "toolu_r1", "is_error": True, "content": "denied"}],
+                       typ="user") + "\n")
+        s = ev.path_signals("v4", self.copy("c"), "c", self.roles)
+        self.assertEqual((s["review_after_last_edit"], s["review_rounds"], s["important_sources"]), (True, 1, ["line"]))
 
     @settings(max_examples=marks.examples(200, 30), deadline=None)
     @given(st.lists(st.sampled_from(["- Important: a gap", "Important: 7", "| F1 | Important | x |", "prose", "",

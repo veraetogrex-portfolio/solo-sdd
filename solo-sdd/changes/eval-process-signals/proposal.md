@@ -18,7 +18,7 @@
 ### New Capabilities
 
 ### Modified Capabilities
-- `spec-next`: ADDED requirement Review verdict line.
+- `spec-next`: ADDED requirement Review verdict line; MODIFIED requirement Reviewer failure.
 - `dispatch-eval`: ADDED requirements Process path signals, What the review signals read, Review verdict count, What the status and analyze signals read, Path marks in the comparison; MODIFIED requirements Metrics by one method, Oracle tests and comparison.
 
 ## Impact
