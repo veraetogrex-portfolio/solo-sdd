@@ -40,4 +40,4 @@ Pass 1 of `spec-analyze` SHALL first read only `tasks.md` and the delta specs an
 
 #### Scenario: Under the outside run
 - **WHEN** `process.analyze-attackers` is `3`, and the attacker of group one `1 2 3 3a` writes the retell
-- **THEN** it returns the `Retell:` block above its findings table, and the judge reads the block to mark the retell findings and gives the author the block above the judged table; when two attackers take group one, each block is named by its attacker
+- **THEN** it returns the `Retell:` block above its findings table, and the judge reads the block to mark the retell findings and gives the author the block above the judged table; when two or more attackers take group one, each block is named by its attacker

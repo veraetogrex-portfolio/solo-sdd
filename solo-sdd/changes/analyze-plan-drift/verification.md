@@ -2,7 +2,7 @@
 
 From the solo-sdd root:
 
-1. `python3 sync.py status` → the edited deployed files (`spec-analyze` with its new step file, `ALGORITHM.md`) show `outdated`, no `drift`; `sync.py push` is left to the delivery after merge.
+1. `python3 sync.py status` → the edited deployed files (`spec-analyze`, `ALGORITHM.md`) show `outdated` and the new step file `outside-run.md` `missing`, no `drift`; `sync.py push` is left to the delivery after merge.
 2. `python3 tests/stands/analyze-drift.py prepare new` → prints `project: <path>` and `prompt: <path>`; the prompt tells an `Analyze:` subagent to run the embedded laid-out `spec-analyze` text of the working folder on `add-retry` there without loading the skill, edit no file and hand back the report.
 3. The lead launches an `Agent` subagent of its own session with the description `Analyze: add-retry` and without `model` (never `claude -p`; the tag is allowed from an orchestrator subagent too), telling it to read and follow that prompt file, and saves its final message verbatim to `live-new.md` in this change folder.
 4. `python3 tests/stands/analyze-drift.py grade solo-sdd/changes/analyze-plan-drift/live-new.md` → `found 3 of 3, false positives 0, retell block: yes`, with the per-hole lines for pass 7 `3`/`5`, pass 7 `process.retry-limit`/`process.retry-max` and pass 1 `docs/retry.md`; after the archive the same record is graded by `python3 tests/stands/analyze-drift.py grade solo-sdd/changes/archive/2026-11-22-analyze-plan-drift/live-new.md`.

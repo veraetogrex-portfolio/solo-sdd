@@ -216,23 +216,19 @@ class SkillCommandsTest(unittest.TestCase):
 
     def test_analyze_plan_drift(self):
         """Requirements: Task values match the requirement, Retell against the proposal: the laid-out spec-analyze
-        names the value check in pass 7, the retell in pass 1, the `Retell:` block in the outside run and the report,
-        and rows 1 and 7 of the ALGORITHM pass table name both."""
+        names what the analyze-drift stand does not prove (the fix into the delta, the pass 5 line, the five-line limit,
+        MEDIUM for unpromised work, the block with no finding, the outside run, the reading order, the report form),
+        and rows 1 and 7 of the ALGORITHM pass table name both checks."""
         analyze = " ".join(skill_text.read(REPO / "skills/spec-analyze/SKILL.md").split())
         part = lambda start, end: analyze.split(start, 1)[1].split(end, 1)[0]
         checks = (
             (part("**1. Coverage.**", "**2. "), (
-                "read only `tasks.md` and the delta specs", "at most five lines of what the user gets",
-                "then read `proposal.md`", "An item no line covers is HIGH",
-                "task or delta requirement no item covers is MEDIUM", "`Retell:` block above the findings table",
+                "at most five lines of what the user gets", "task or delta requirement no item covers is MEDIUM",
                 "also when it gives no finding")),
             (part("**5. Ambiguities.**", "**6. "), ("a task value in backquotes that differs from its requirement goes "
                                                      "under pass 7, not here",)),
             (part("**7. Consistency.**", "**7a. "), (
-                "every value a task names in backquotes", "any requirement or scenario of the deltas",
-                "a key spelled otherwise names the same setting", "one HIGH finding naming both values",
-                "the delta with a `Decisions Without Owner` line naming both values",
-                "A value for a thing no requirement names (a task's own test file) gives no finding")),
+                "the delta with a `Decisions Without Owner` line naming both values",)),
             (part("## Outside run", "## What to read"), (
                 "The `Retell:` block of pass 1 comes from `Analyze:` or the group-one attacker",
                 "gives it to the author above the judged table, unchanged", "each block is named by its attacker")),

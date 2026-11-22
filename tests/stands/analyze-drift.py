@@ -9,8 +9,8 @@ requirements (a default, a setting key) and from its proposal (a promised file n
   grade <findings>    the planted holes a saved report names, the decoys it falls for and its `Retell:` block
 
 A row of a Markdown table under a header with Pass, Where and Finding (a row whose Mark starts with `drop` is
-skipped) matches a hole when its Level cell holds the hole's level as a whole word, its Pass cell starts with the
-hole's pass as a whole token (`7` is not `7a`) and every token of the hole stands whole in its Where or Finding cell:
+skipped) matches a hole when its Level cell holds the hole's level as a whole word, its Pass cell names the hole's
+pass among its pass numbers (`7` is not `7a`, `1, 7` names both) and every token of the hole stands whole in its Where or Finding cell:
 no letter, digit, `_`, `-` or `.` before it, and no letter, digit, `_`, `-` or a `.` before a letter or digit after
 it (`1.3` holds no `3`). A decoy matches by pass and tokens alone. The retell block is a line above the first findings
 table that starts with `Retell:` after leading `#`, `*`, `>`, `-` and spaces, with text after the colon or on the next
@@ -96,7 +96,7 @@ def table(lines, path):
 
 
 def matches(row, item):
-    if not re.match(r"\s*%s(?![0-9A-Za-z])" % re.escape(item["pass"]), row.get("pass", "")):
+    if item["pass"] not in re.findall(r"\b\d+[a-z]?\b", row.get("pass", "").casefold()):
         return False
     if "level" in item and not re.search(r"\b%s\b" % item["level"], row.get("level", "")):
         return False
