@@ -4,6 +4,7 @@ runner, Ablation grade, Grade outcomes, Runner input refused, Full skill out of 
 
   prepare <skill> --budget <calls> [--out <dir>]   one prompt per variant, task by task, in a new run folder
   grade <run> [--from <subagents dir>]             the table of a run whose prompts the lead ran as subagents
+  remove <run>                                     the run folder and its work folders, after the table is recorded
   audit                                            the docs/skills-audit.md check the tests run
 
 Model runs never start here: the lead session runs every prompt as an `Agent` subagent under the description the
@@ -436,12 +437,20 @@ def main(argv=None):
     g = sub.add_parser("grade")
     g.add_argument("run")
     g.add_argument("--from", dest="src")
+    r = sub.add_parser("remove")
+    r.add_argument("run")
     sub.add_parser("audit")
     a = ap.parse_args(argv)
     if a.cmd == "prepare":
         code, lines = prepare(a.skill, a.budget, a.out)
     elif a.cmd == "grade":
         code, lines = grade(a.run, a.src)
+    elif a.cmd == "remove":
+        if not (pathlib.Path(a.run) / "manifest.json").is_file():
+            print("refused: %s has no manifest.json" % a.run)
+            return 2
+        remove(a.run)
+        code, lines = 0, ["removed: %s and its work folders" % a.run]
     else:
         lines = audit_errors()
         code = 1 if lines else 0

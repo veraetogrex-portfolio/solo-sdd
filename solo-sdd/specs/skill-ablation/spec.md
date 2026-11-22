@@ -1,8 +1,9 @@
-## Purpose
+# skill-ablation Specification
 
+## Purpose
 What each skill gives the current main model is measured by running the same tasks with the full skill, without its method steps and without the skill, and the measurement is repeated when the main model changes.
 
-## ADDED Requirements
+## Requirements
 
 ### Requirement: Skills audit table
 `docs/skills-audit.md` SHALL hold a section per skill of `targets.json` with a row per step marked `gate (code)`, `gate (text)` or `method`; a step is a top-level `N.`, `Na.` or `**N.` item of `SKILL.md` outside fenced code, up to the next item or heading, with its step files, keyed by heading, number and title; a skill without items has one `whole text` row. A test SHALL read the step tables only and fail on a missing section, a step without a row, a row without a step, or another mark.

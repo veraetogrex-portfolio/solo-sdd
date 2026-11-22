@@ -66,6 +66,10 @@ def main():
         code, text = run("grade", tmp / "short")
         check("grade without transcripts: 4 rows not run, 2 calls not made",
               "not run: 4; leaked: 0; unreadable: 0; not made: 2" in text, text)
+        works = work_folders(tmp / "short")
+        code, text = run("remove", tmp / "short")
+        check("remove: the run folder and its 4 work folders are gone",
+              code == 0 and len(works) == 4 and not (tmp / "short").exists() and not any(p.exists() for p in works), text)
     finally:
         spec = importlib.util.spec_from_file_location("skill_ablation", RUNNER)
         runner = importlib.util.module_from_spec(spec)
@@ -75,7 +79,7 @@ def main():
             runner.remove(folder)
         shutil.rmtree(tmp, ignore_errors=True)
     check("temporary folders removed (the runs and their %d work folders)" % len(works),
-          not tmp.exists() and len(works) == 16 and not any(p.exists() for p in works))
+          not tmp.exists() and len(works) == 12 and not any(p.exists() for p in works))
     print("skill-ablation stand: %d of %d checks passed" % (sum(results), len(results)))
     return 0 if all(results) else 1
 

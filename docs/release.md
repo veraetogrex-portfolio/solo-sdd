@@ -64,6 +64,7 @@ When the `main` list of `global/model-policy.json` changes, the runner `tests/st
 2. A main session (not an orchestrator under the dispatcher, whose hook allows only role-tagged subagents) runs every prompt as an `Agent` subagent without `model`, under the description the prompt names; never `claude -p`.
 3. `python3 tests/stands/skill-ablation.py grade <run> --from ~/.claude/projects/<project>/<session>/subagents` prints the table, the models and the `compare:` line.
 4. The output goes into the skill's section of `docs/skills-audit.md` under `### Run <date> <model>`, the model from the `models:` line.
+5. `python3 tests/stands/skill-ablation.py remove <run>` removes the run folder and its work folders (one temporary folder per prompt).
 
 A skill whose last two runs with a compared task each have full passes no more than none passes gets the line `candidate to cut: the owner decides` in its section (`tests/test_skill_commands.py` fails without it); the skill stays, and only the owner removes that line or the skill.
 
