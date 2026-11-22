@@ -1,7 +1,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: Review rounds
-The first acceptance round SHALL read the whole change diff; every later one only the diff since the last round and the open findings' places, with the given findings, which the reviewer does not repeat. At most `process.review-rounds` rounds (default 5) SHALL run, plus Extra round for fix findings. An `Important` left then means no archive: the findings and "reconsider the approach" go into `Not Verified`. The reviewer gets `REVIEW.md` without `## Unconfirmed`; the report names the rounds.
+The first acceptance round SHALL read the whole change diff; every later one only the diff since the last round and the open findings' places, with the list of given findings, not repeated. At most `process.review-rounds` rounds (default 5) SHALL run, plus Extra round for fix findings. An `Important` left then means no archive: the findings and "reconsider the approach" go into `Not Verified`. The reviewer gets `REVIEW.md`, if any, minus `## Unconfirmed`; the report names the rounds.
 
 #### Scenario: The second round
 - **WHEN** after the first round the author fixed one `Important` finding

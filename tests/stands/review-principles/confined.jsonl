@@ -1,0 +1,2 @@
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "tool_use", "name": "Bash", "input": {"command": "cd /var/folders/x/T/review-principles.abc/project && PATH=/var/folders/x/T/review-principles.abc/bin:$PATH gh api --paginate --slurp repos/example/shop/pulls/comments"}}]}}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "tool_use", "name": "SubagentHandback", "input": {"message": "=== report\nnone of tests/stands/review-principles read"}}]}}

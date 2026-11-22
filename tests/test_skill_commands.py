@@ -352,6 +352,22 @@ class SkillCommandsTest(unittest.TestCase):
             self.assertIn(words, template)
         self.assertIn("5. **What waits**, from the first table of `docs/waiting.md` only", skill_text.skill("report"))
 
+    def test_review_principles(self):
+        """Requirements: Review rules from the owner's feedback, Sources read whole or named unread, Only the owner's
+        remarks, Review rounds: only what the stand `tests/stands/review-principles.py` does not reach (the
+        manual-only flag, past 25 rules and a full file, the 100-PR limit, a read empty source, no owner login) and
+        the `acceptance.md` line."""
+        flat = lambda t: " ".join(t.split())
+        text = flat(skill_text.skill("review-principles"))
+        for words in ("disable-model-invocation: true", "at most 25 rules", "the report names `rules not kept: <n>`",
+                      "Past 25, the existing rules stay, then the new ones with the most remarks, then the latest",
+                      "`PRs past the first 100` goes into `Unread:`",
+                      "A read source with nothing in it counts as read with 0 remarks",
+                      "(no owner login in the project rules)", "never take `gh api user` for the owner"):
+            self.assertIn(words, text)
+        self.assertIn("`REVIEW.md` from the project root, if there is one, without its `## Unconfirmed` section",
+                      flat(skill_text.skill("spec-next")))
+
     def test_project_rules_through_config(self):
         """Requirements: Project rules in config, Project lines as the old source, Lesson from a correction or a fix:
         the rules and skills read the four keys through `solo-sdd config get`, the file value wins over the
