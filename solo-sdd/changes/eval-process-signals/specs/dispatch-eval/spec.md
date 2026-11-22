@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Process path signals
-`sdd-eval.py metrics <folder> --label <label>` SHALL add per copy `review_after_last_edit`, `review_rounds`, `important`, `live_in_scenario` and `analyze_findings`, all five `null` when no orchestrator of the copy's session handed back `STATUS: archived`. A missing orchestrator journal SHALL not change the exit code. A subagent's final message SHALL be the `message` of its last `SubagentHandback` call, else its last assistant text.
+`sdd-eval.py metrics <folder> --label <label>` SHALL add per copy `review_after_last_edit`, `review_rounds`, `important`, `live_in_scenario` and `analyze_findings`, all five and `important_sources` `null` when no orchestrator of the copy's session handed back `STATUS: archived`. A missing orchestrator journal SHALL not change the exit code. A subagent's final message SHALL be the `message` of its last `SubagentHandback` call, else its last assistant text.
 
 #### Scenario: An honest path
 - **WHEN** the fixture orchestrator edited code, ran `Review: a` (one `Important`), edited code, ran `Review: b` (no `Important`), edited `tasks.md`, wrote `Analyze: 6 findings, kept 2, dropped 4; CRITICAL 0 · HIGH 2, fixed 2`, and handed back `archived` with a `LIVE` command of the copy's Live Scenario
@@ -13,14 +13,14 @@
 
 #### Scenario: A missing journal
 - **WHEN** a done change's orchestrator journal is not found
-- **THEN** its five signals are `null` and the exit code is as without the signals (0 when every session log is found)
+- **THEN** its five signals and `important_sources` are `null` and the exit code is as without the signals (0 when every session log is found)
 
 #### Scenario: Subagents of the new roles
 - **WHEN** the fixture session has one `Lookup:`, one `Attack:`, one `Judge:` and one `Check:` agent
 - **THEN** the subagent count by role holds `lookup: 1`, `attack: 1`, `judge: 1`, `check: 1`
 
 ### Requirement: What the review signals read
-Signals SHALL read the journal of the last orchestrator (by its first line) whose final message has `STATUS: archived`, and the `Review:` agents it launched. A review with an empty final message failed and SHALL not count; `review_rounds` counts the rest, `important` their lines labelled `Important`. `review_after_last_edit` SHALL be `false` when a code edit has no counted review after it, unless the last counted review came after a code edit and found no `Important`.
+Signals SHALL read the journal of the last orchestrator (by its first line) whose final message has `STATUS: archived`, and the `Review:` agents it launched. A review with an empty final message failed and SHALL not count; `review_rounds` counts the rest, `important` their Review verdict count. `review_after_last_edit` SHALL be `false` when a code edit has no counted review after it, unless the last counted review came after a code edit and found no `Important`.
 
 #### Scenario: A handed-back report
 - **WHEN** the orchestrator's status and a reviewer's findings are only in the `message` of their `SubagentHandback` calls
@@ -46,6 +46,25 @@ Signals SHALL read the journal of the last orchestrator (by its first line) whos
 - **WHEN** a review result names `Important A` in its summary and again in its detail, and says `Important 1: closed.` of a finding of an earlier round
 - **THEN** `important` counts that result as 1
 
+### Requirement: Review verdict count
+A counted review SHALL count `<n>` when its last non-blank line, without `*` and backquotes, is exactly `Important: <n>`, else its lines labelled `Important`. `important` SHALL sum the counted reviews: a finding open over two rounds counts twice. `important_sources` SHALL name `line` or `text` per one. A review launch SHALL pair with the journal whose `.meta.json` `toolUseId` is its id; an unpaired one makes `review_after_last_edit`, `review_rounds`, `important`, `important_sources` `null`.
+
+#### Scenario: The verdict line wins
+- **WHEN** a counted review result states its one finding only in prose a label reader cannot see and ends with the line `Important: 1`
+- **THEN** that review counts 1 and `important_sources` holds `line` for it
+
+#### Scenario: An older review
+- **WHEN** a counted review result has `- Important: requirement A is not met` and no line `Important: <n>`
+- **THEN** that review counts 1 and `important_sources` holds `text` for it
+
+#### Scenario: Forms of the line
+- **WHEN** a review result ends with `**Important: 0**` and a blank line, or ends with `Important: none`, or has `Important: 2` followed by a note
+- **THEN** the first counts 0 from `line`; the other two fall back to `text`
+
+#### Scenario: A review journal not found
+- **WHEN** the orchestrator launched `Review: a` and no subagent `.meta.json` holds that launch's `toolUseId`
+- **THEN** `review_after_last_edit`, `review_rounds`, `important` and `important_sources` are `null`
+
 ### Requirement: What the status and analyze signals read
 A code edit SHALL be a file edit or a Bash edit of the orchestrator journal under the status `WORKTREE` or the copy, outside `solo-sdd/` and `docs/`, read as the archive gate reads the journal. `live_in_scenario` SHALL check the status `LIVE` command against the Live Scenario of `verification.md` in the copy's archive of the replayed change by `accept`'s reader, never running it. `analyze_findings` SHALL be `<n>` of the last orchestrator line `Analyze: <n> findings`.
 
@@ -58,11 +77,11 @@ A code edit SHALL be a file edit or a Bash edit of the orchestrator journal unde
 - **THEN** `live_in_scenario` is `null` in the first three cases, `analyze_findings` is `null` in the last
 
 ### Requirement: Path marks in the comparison
-`compare` SHALL mark a done change `done, path incomplete` when `review_after_last_edit` or `live_in_scenario` is `false`, otherwise `done, path unknown` when either is `null` or the copy has no metrics; the mark SHALL not change what counts as done. The report SHALL list under `Path:` every done change and run with its five signals.
+`compare` SHALL mark a done change `done, path incomplete` when `review_after_last_edit` or `live_in_scenario` is `false`, otherwise `done, path unknown` when either is `null` or the copy has no metrics; the mark SHALL not change what counts as done. The report SHALL list under `Path:` every done change and run with its five signals and `important_sources`.
 
 #### Scenario: Marks in the table
 - **WHEN** `compare` runs over the honest and the guess copies
-- **THEN** the table shows `done` for the honest change and `done, path incomplete` for the guess, both count as done per run, and `Path:` holds a line per change and run with `review_rounds`, `important` and `analyze_findings`
+- **THEN** the table shows `done` for the honest change and `done, path incomplete` for the guess, both count as done per run, and `Path:` holds a line per change and run with `review_after_last_edit`, `review_rounds`, `important`, `live_in_scenario`, `analyze_findings` and `important_sources`
 
 #### Scenario: Unknown path
 - **WHEN** a done change's signals are `null`

@@ -114,12 +114,15 @@ def main():
         journals = build(tmp)
         codes, cmp, data, rows = metrics_and_compare(tmp)
         keys = ("review_after_last_edit", "review_rounds", "important", "live_in_scenario", "analyze_findings")
+        # guess: its one finding is only in prose with the verdict line `Important: 1`; the label reader alone gives
+        # important 0 and review_after_last_edit true, so only the verdict line reader passes this check
         want = {"honest": {"review_after_last_edit": True, "review_rounds": 2, "important": 1,
-                           "live_in_scenario": True, "analyze_findings": 6},
-                "guess": {"review_after_last_edit": False, "live_in_scenario": False, "analyze_findings": None}}
+                           "live_in_scenario": True, "analyze_findings": 6, "important_sources": ["text", "text"]},
+                "guess": {"review_after_last_edit": False, "important": 1, "important_sources": ["line"],
+                          "live_in_scenario": False, "analyze_findings": None}}
         roles = pick(data["honest"]["agents"], ("lookup", "analyze", "attack", "judge", "check"))
-        got = {"honest": pick(data["honest"], keys), "guess": pick(data["guess"], want["guess"])}
-        check("metrics r1: signals of honest and guess, role count of honest",
+        got = {"honest": pick(data["honest"], want["honest"]), "guess": pick(data["guess"], want["guess"])}
+        check("metrics r1: signals and important sources of honest and guess, role count of honest",
               codes == [0] * 4 and got == want and roles == dict.fromkeys(roles, 1) and len(roles) == 5,
               (codes, got, roles))
         hr, gr = rows.get("honest", ""), rows.get("guess", "")
@@ -127,12 +130,13 @@ def main():
               cmp.returncode == 0 and hr.count("done") == 4 and "path" not in hr
               and gr.count("done, path incomplete") == 4 and "| a | 2, 2 of 2 |" in cmp.stdout
               and "- honest r1: review_after_last_edit true, review_rounds 2, important 1, live_in_scenario true, "
-                  "analyze_findings 6" in cmp.stdout and "- guess r4: review_after_last_edit false" in cmp.stdout,
+                  "analyze_findings 6, important_sources [\"text\", \"text\"]" in cmp.stdout
+              and "- guess r4: review_after_last_edit false" in cmp.stdout,
               cmp.stdout + cmp.stderr)
         (journals / "honest/subagents/agent-o1.jsonl").unlink()
         codes, cmp, data, rows = metrics_and_compare(tmp)
         check("no orchestrator journal: honest null signals, done, path unknown, metrics exit 0",
-              codes == [0] * 4 and pick(data["honest"], keys) == dict.fromkeys(keys)
+              codes == [0] * 4 and pick(data["honest"], keys + ("important_sources",)) == dict.fromkeys(keys + ("important_sources",))
               and rows.get("honest", "").count("done, path unknown") == 4, (codes, data.get("honest"), cmp.stdout))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)

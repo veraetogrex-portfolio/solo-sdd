@@ -1426,8 +1426,8 @@ def jl(ts, content, typ="assistant", **extra):
     return json.dumps(o)
 
 
-def agent_use(desc):
-    return {"type": "tool_use", "id": "t", "name": "Agent", "input": {"description": desc}}
+def agent_use(desc, tid="t"):
+    return {"type": "tool_use", "id": tid, "name": "Agent", "input": {"description": desc}}
 
 
 def edit_use(path):
@@ -1471,12 +1471,13 @@ class ProcessSignals(unittest.TestCase):
         (self.proj / (sid + ".jsonl")).write_text(jl(0, [agent_use("Orchestrator c")]) + "\n")
         sub = self.proj / sid / "subagents"
         sub.mkdir(parents=True)
-        lines = [jl(1, [{"type": "text", "text": "start"}])]
+        lines, launched = [jl(1, [{"type": "text", "text": "start"}])], 0
         for i, (kind, arg) in enumerate(events, 2):
             if kind == "edit":
                 lines.append(jl(i, [edit_use(arg)]))
             elif kind == "review":
-                lines.append(jl(i, [agent_use(arg)]))
+                lines.append(jl(i, [agent_use(arg, "toolu_r%d" % launched)]))
+                launched += 1
             elif kind == "text":
                 lines.append(jl(i, [{"type": "text", "text": arg}]))
             elif kind == "bash":
@@ -1488,7 +1489,7 @@ class ProcessSignals(unittest.TestCase):
         for i, res in enumerate(reviews):
             (sub / ("agent-r%d.jsonl" % i)).write_text(jl(10 + i, [{"type": "text", "text": res}] if res else []) + "\n")
             (sub / ("agent-r%d.meta.json" % i)).write_text(json.dumps({"description": "Review: c",
-                                                                       "parentAgentId": "o"}))
+                                                                       "toolUseId": "toolu_r%d" % i}))
         return ev.path_signals(sid, self.copy("c", verification), "c", self.roles)
 
     def test_review_rows(self):
@@ -1520,7 +1521,7 @@ class ProcessSignals(unittest.TestCase):
 
     def test_no_archived_status_and_broken_input(self):
         s = self.session([("edit", WT + "/a.py")], status="STATUS: not_ready\n", sid="nr")
-        self.assertEqual(s, dict.fromkeys(ev.SIGNALS))
+        self.assertEqual(s, dict.fromkeys(ev.PATH_KEYS))
         self.session([("edit", WT + "/a.py")], ["| F | Important | x |"], sid="br")
         with open(self.proj / "br/subagents/agent-o.jsonl", "a") as f:
             f.write("{broken line\n[1, 2]\n")
@@ -1588,6 +1589,31 @@ class ProcessSignals(unittest.TestCase):
             self.assertEqual(ev.important_count(text), 0, text)
         for text in ("Important: done markers are not read", "Important: closed PRs are reopened by the bot"):
             self.assertEqual(ev.important_count(text), 1, text)
+
+    def test_review_verdict_count(self):
+        prose = "Requirement A is not met: the parser drops the row.\n- Nit: a name\n\nImportant: 1"
+        rows = ((prose, (1, "line")), ("- Important: requirement A is not met", (1, "text")),
+                ("- Important: x\n**Important: 0**\n\n", (0, "line")), ("- Important: x\nImportant: none", (1, "text")),
+                ("- Important: x\nImportant: 2\nA note.", (1, "text")), ("`Important: 3`", (3, "line")))
+        for text, want in rows:
+            self.assertEqual(ev.review_count(text), want, text)
+        code = WT + "/a.py"
+        s = self.session([("edit", code), ("review", "Review: c"), ("edit", code)], [prose], sid="v1")
+        self.assertEqual((s["review_after_last_edit"], s["important"], s["important_sources"]), (False, 1, ["line"]))
+        s = self.session([("edit", code), ("review", "Review: c"), ("review", "Review: c")],
+                         ["- Important: x", "Important: 0"], sid="v2")
+        self.assertEqual((s["review_after_last_edit"], s["important"], s["important_sources"]), (True, 1, ["text", "line"]))
+        s = self.session([("edit", code), ("review", "Review: c"), ("review", "Review: c")], ["Important: 0"], sid="v3")
+        self.assertEqual([s[k] for k in ("review_after_last_edit", "review_rounds", "important", "important_sources")],
+                         [None] * 4)  # the second launch has no journal with its toolUseId
+
+    @settings(max_examples=marks.examples(200, 30), deadline=None)
+    @given(st.lists(st.sampled_from(["- Important: a gap", "Important: 7", "| F1 | Important | x |", "prose", "",
+                                     "**Important: 4**", "- Nit: y", "### Important"]), max_size=12),
+           st.integers(0, 50))
+    def test_review_verdict_count_property(self, body, n):
+        """Requirement: Review verdict count: whatever precedes it, a final `Important: <n>` line gives n from `line`."""
+        self.assertEqual(ev.review_count("\n".join(body + ["Important: %d" % n, ""])), (n, "line"))
 
     def test_path_marks(self):
         for m, mark in (({"review_after_last_edit": False, "live_in_scenario": None}, "done, path incomplete"),

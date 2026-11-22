@@ -723,6 +723,8 @@ def transcript_events(f):
 
 
 SIGNALS = ("review_after_last_edit", "review_rounds", "important", "live_in_scenario", "analyze_findings")
+PATH_KEYS = SIGNALS + ("important_sources",)
+VERDICT = re.compile(r"Important: (\d+)")  # the reviewer's last line (spec-next, Review verdict line)
 # the Important label opens a finding: after list markup and an optional id (1. I1 **F-2** A.), bracketed or
 # followed by an optional id, a parenthesis and a separator, then text that is not a count or a status (a title in the
 # parenthesis alone is the finding's text); read by str.lstrip, not one regex, so a long run of markup costs linear time
@@ -866,6 +868,22 @@ def important_count(text):
     return n + len(ids)
 
 
+def review_count(text):
+    """(n, "line") when the last non-blank line, without * and backquotes, is exactly `Important: <n>`; else the
+    labelled lines of a review written before that rule, (important_count(text), "text")."""
+    last = next((ln for ln in reversed(text.splitlines()) if ln.strip()), "")
+    m = VERDICT.fullmatch(last.replace("*", "").replace("`", "").strip())
+    return (int(m.group(1)), "line") if m else (important_count(text), "text")
+
+
+def review_launches(objs, roles):
+    """The tool_use ids of the orchestrator's `Review:` Agent calls in journal order (transcript_events, the gate's
+    reader, yields the same calls in the same order without ids)."""
+    return [b.get("id") for o in objs if o.get("type") == "assistant" for b in blocks(o)
+            if b.get("type") == "tool_use" and b.get("name") in ("Agent", "Task") and isinstance(b.get("input"), dict)
+            and role_of(b["input"].get("description"), roles) == "review"]
+
+
 def code_edit(path, roots):
     """A code edit as the archive gate counts it: inside WORKTREE or the copy, outside solo-sdd/ and docs/."""
     if not isinstance(path, str) or "/scratchpad/" in path:
@@ -879,8 +897,9 @@ def code_edit(path, roots):
 
 
 def path_signals(sid, copy, cid, roles):
-    """The five signals of the copy's session; all None when no orchestrator handed back STATUS: archived."""
-    sig = dict.fromkeys(SIGNALS)
+    """The five signals and important_sources of the copy's session; all None when no orchestrator handed back
+    STATUS: archived; the review ones None when a review launch has no journal with its toolUseId."""
+    sig = dict.fromkeys(PATH_KEYS)
     path = find_session(sid)
     if not path:
         return sig
@@ -900,12 +919,11 @@ def path_signals(sid, copy, cid, roles):
         return sig
     orch = max(done, key=lambda s: s["start"])
     status = final_text(orch["objs"])
-    # ponytail: launches pair with review journals by start order; pair by meta toolUseId if parallel reviews appear
-    results = [final_text(s["objs"]) for s in sorted(
-        (s for s in subs if s["role"] == "review" and s["meta"].get("parentAgentId") == orch["id"]),
-        key=lambda s: s["start"])]
+    by_launch = {s["meta"].get("toolUseId"): final_text(s["objs"]) for s in subs if s["role"] == "review"}
+    launches = review_launches(orch["objs"], roles)
+    paired = all(i in by_launch for i in launches)
     roots = [os.path.realpath(r) for r in (sd.field(status, "WORKTREE"), copy) if r]
-    seq, k = [], 0
+    seq, sources, k = [], [], 0
     try:
         with open(orch["path"], "rb") as f:
             events = list(transcript_events(f))
@@ -916,15 +934,18 @@ def path_signals(sid, copy, cid, roles):
             if code_edit(ev[1], roots):
                 seq.append(None)
         elif ev[1] in ("Agent", "Task") and isinstance(ev[2], dict) and role_of(ev[2].get("description"), roles) == "review":
-            res = results[k] if k < len(results) else ""
+            res = by_launch.get(launches[k], "") if k < len(launches) else ""
             k += 1
             if res.strip():
-                seq.append(important_count(res))
+                n, src = review_count(res)
+                seq.append(n)
+                sources.append(src)
     edits = [i for i, x in enumerate(seq) if x is None]
     revs = [i for i, x in enumerate(seq) if x is not None]
-    sig["review_rounds"], sig["important"] = len(revs), sum(seq[i] for i in revs)
-    sig["review_after_last_edit"] = (not edits or bool(revs) and (revs[-1] > edits[-1] or
-                                                                  revs[-1] > edits[0] and not seq[revs[-1]]))
+    if paired:
+        sig["review_rounds"], sig["important"], sig["important_sources"] = len(revs), sum(seq[i] for i in revs), sources
+        sig["review_after_last_edit"] = (not edits or bool(revs) and (revs[-1] > edits[-1] or
+                                                                      revs[-1] > edits[0] and not seq[revs[-1]]))
     cmd = sd.field(status, "LIVE").partition(" -> ")[0].strip()
     arch = archived(copy, cid)
     vp = os.path.join(arch, "verification.md") if arch else None
@@ -963,7 +984,7 @@ def label_metrics(folder, label, prices):
         rec = run["copies"][cid]
         m = session_metrics(rec["session"], prices)
         if m is None:
-            out[cid], missing = dict(dict.fromkeys(SIGNALS), error="journal not found", status=rec["status"]), True
+            out[cid], missing = dict(dict.fromkeys(PATH_KEYS), error="journal not found", status=rec["status"]), True
             continue
         m["status"] = rec["status"]
         copy = os.path.join(folder, cid)
@@ -1235,7 +1256,7 @@ def cmd_compare(a):
     if asked:
         out += ["", "With a question:"] + ["- %s: %s" % (cid, "; ".join(v)) for cid, v in sorted(asked.items())]
     path = ["- %s %s: %s" % (cid, lb, ", ".join("%s %s" % (k, json.dumps(mets[lb].get("copies", {}).get(cid, {}).get(k)))
-                                               for k in SIGNALS))
+                                               for k in PATH_KEYS))
             for cid in ids for lb in uniq if res.get((lb, cid), {}).get("done")]
     if path:
         out += ["", "Path:"] + path
