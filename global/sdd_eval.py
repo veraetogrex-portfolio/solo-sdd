@@ -726,8 +726,12 @@ SIGNALS = ("review_after_last_edit", "review_rounds", "important", "live_in_scen
 # by a separator, then text that is not a count (none, 0, n/a, no findings); read by str.lstrip, not one regex,
 # so a long run of markup costs linear time
 FINDING_ID = re.compile(r"[\[(]?[A-Za-z]{0,3}-?\d+[.:)\]]?")
-COUNT = re.compile(r"(?i)(?:none|nothing|n/a|zero|no|\d+)(?:\s+(?:findings?|issues?|remarks?))?(?:\s+remain(?:ing)?)?"
-                   r"\s*(?:[.,;)]|$)")
+# a count or a status after the label is not a finding: "none found", "0 (all closed)", "no findings", "closed"; but
+# "none of the rows ..." and "no test for ..." are findings
+COUNT = re.compile(r"(?i)(?:(?:none|nothing|zero|n/a|\d+)(?!\s+of\b)(?=\W|$)"
+                   r"|no(?:\s+(?:findings?|issues?|remarks?|new)\b|\s*(?:[.,;)]|$))|(?:closed|fixed|resolved|dropped)\b)")
+LABELS = ("Important", "Nit", "Pre-existing")
+LIST_ITEM = re.compile(r"([ \t]*)(?:[-*+]|\d+[.)])[ \t]+")
 ANALYZE = re.compile(r"(?m)^[^\w\n]*Analyze:\s*(\d+) findings")
 
 
@@ -755,12 +759,14 @@ def final_text(objs):
 
 
 def labelled(line):
-    """The line is a finding labelled Important: a table row with an Important cell not followed by a count cell,
-    or a line that opens with the label and goes on with text that is not a count."""
+    """The line is a finding labelled Important: a table row with an Important cell, no other label cell (a header)
+    and no count after it, or a line that opens with the label and goes on with text that is not a count."""
     if line.lstrip().startswith("|"):
         cells = [c.strip(" *`[]()") for c in line.strip().strip("|").split("|")]
-        return any(c == "Important" and not (i + 1 < len(cells) and COUNT.match(cells[i + 1]))
-                   for i, c in enumerate(cells))
+        if "Important" not in cells or sum(c in LABELS for c in cells) > 1:
+            return False
+        i = cells.index("Important")
+        return not (i + 1 < len(cells) and COUNT.match(cells[i + 1]))
     s = line.lstrip(" \t>#*+-`")
     m = FINDING_ID.match(s)
     if m:
@@ -775,8 +781,31 @@ def labelled(line):
         if not rest or rest[0] not in ":.-\u2013\u2014(":
             return False
         rest = rest[1:]
+    else:
+        rest = rest.lstrip(" :.-\u2013\u2014")
     rest = rest.strip(" *`")
     return bool(rest) and not COUNT.match(rest)
+
+
+def important_count(text):
+    """Findings labelled Important in a review result: labelled lines, and the list items at one indent under a line
+    that is only the label ("### Important", "**Important**", "Important:") up to the next other line."""
+    n, group = 0, None  # group: the indent of the items under an Important heading, "" before the first item
+    for line in text.splitlines():
+        if group is not None:
+            item = LIST_ITEM.match(line)
+            if item and group in ("", item.group(1)):
+                group, body = item.group(1), line[item.end():].strip(" *`")
+                n += bool(body) and not COUNT.match(body)
+                continue
+            if item or not line.strip():
+                continue
+            group = None
+        if line.strip().strip("#*_` ").rstrip(":").strip("*_` ") == "Important":
+            group = ""
+        else:
+            n += labelled(line)
+    return n
 
 
 def code_edit(path, roots):
@@ -832,7 +861,7 @@ def path_signals(sid, copy, cid, roles):
             res = results[k] if k < len(results) else ""
             k += 1
             if res.strip():
-                seq.append(sum(labelled(ln) for ln in res.splitlines()))
+                seq.append(important_count(res))
     edits = [i for i, x in enumerate(seq) if x is None]
     revs = [i for i, x in enumerate(seq) if x is not None]
     sig["review_rounds"], sig["important"] = len(revs), sum(seq[i] for i in revs)
