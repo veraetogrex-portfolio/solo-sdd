@@ -1,8 +1,9 @@
-## Purpose
+# analyze-drift Specification
 
+## Purpose
 `spec-analyze` finds, before code, a change whose tasks name values other than its requirements do, and a change whose tasks and deltas build something other than what its proposal promises.
 
-## ADDED Requirements
+## Requirements
 
 ### Requirement: Task values match the requirement
 Pass 7 of `spec-analyze` SHALL compare every value a task names in backquotes (a number, a setting key, a path, a command, an output line) with the value any requirement or scenario of the deltas names for the same thing, known by what both texts say it is for: a key spelled otherwise names the same setting. A different value SHALL be one HIGH finding under pass 7 naming both, not also a pass 5 term drift. A value for a thing no requirement names gives no finding.
