@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import unicodedata
 import unittest
 
 from hypothesis import given, settings, strategies as st
@@ -443,6 +444,7 @@ class TaskSets(unittest.TestCase):
             for p in ("tests/stands/x/fixture/.env", "tests/stands/x/fixture/logs/.env.prod.log",
                       "tests/stands/x/fixture/.DS_Store", "tests/stands/x/fixture/logs/a.log"):
                 r = subprocess.run(GIT + ["-C", d, "check-ignore", "-q", "--no-index", p], env=GIT_ENV)
+                self.assertIn(r.returncode, (0, 1), p)
                 marks[p.rsplit("fixture/", 1)[1]] = r.returncode == 0
             self.assertEqual(marks, {".env": True, "logs/.env.prod.log": True, ".DS_Store": True, "logs/a.log": False})
 
@@ -451,9 +453,7 @@ class TaskSets(unittest.TestCase):
                               st.booleans()), min_size=1, max_size=6, unique_by=lambda f: "/".join(f[0])))
     def test_fixture_files_tracked_by_git_property(self, files):
         """Requirement: Fixture files tracked by git: the reported set is every generated file not added to the index."""
-        import unicodedata
-        nfc = lambda s: unicodedata.normalize("NFC", s)
-        files = {nfc("/".join(parts)): (parts, added) for parts, added in files}
+        files = {unicodedata.normalize("NFC", "/".join(parts)): (parts, added) for parts, added in files}
         with tempfile.TemporaryDirectory() as d:
             root = fixture(d, tasks=("t1",))
             task = root / "tests/stands/skill-ablation/widget/t1"

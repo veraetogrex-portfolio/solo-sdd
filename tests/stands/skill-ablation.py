@@ -372,8 +372,10 @@ def tracked(root):
     root = pathlib.Path(root).resolve()
     try:
         top = subprocess.run(["git", "-C", str(root), "rev-parse", "--show-toplevel"], capture_output=True, text=True)
-        if top.returncode or pathlib.Path(top.stdout.strip()).resolve() != root:
+        if top.returncode:
             return None, "not a git work tree"
+        if pathlib.Path(top.stdout.strip()).resolve() != root:
+            return None, "not the top of its git work tree"
         ls = subprocess.run(["git", "-C", str(root), "ls-files", "-z"], capture_output=True)
     except OSError as e:
         return None, "git not run: %s" % e
