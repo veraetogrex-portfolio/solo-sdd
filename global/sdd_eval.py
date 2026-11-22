@@ -737,9 +737,12 @@ CLOSED = (r"(?:(?:all|now|fully|mostly)\s+)?(?:closed|fixed|resolved|dropped|cor
           r"\u0437\u0430\u043a\u0440\u044b\u0442\w*|\u0438\u0441\u043f\u0440\u0430\u0432\u043b\u0435\u043d\w*)\b")
 # a count or a status is not a finding: "none found", "0 (all closed)", "no new findings", "closed."; but "none of the
 # rows ...", "2 callers skip ...", "no test for ..." are findings
-COUNT = re.compile(r"(?i)(?:(?:none|nothing|zero|n/a|no|\d+)(?:\s+(?:new|open|found|left|remain(?:ing)?|findings?|"
-                   r"issues?|remarks?|in\s+this\s+round))*\s*(?:[,.;:)(]|$)|" + CLOSED + ")")
-STATUS_AFTER = re.compile(r"(?i)[:\u2013\u2014]\s*[*`]*" + CLOSED + r"(?=[\s*`]*(?:[.,;:)]|$))")  # "x y: closed."
+END = r"(?=[\s*`]*(?:[.,;:)(]|$)|\s+(?:in|but|for|with|except|as)\b)"  # "closed in substance, but ..."
+# Russian "net" and "nichego" (none, nothing) escaped as above
+COUNT = re.compile(r"(?i)(?:(?:none|nothing|zero|n/a|no|\u043d\u0435\u0442|\u043d\u0438\u0447\u0435\u0433\u043e|\d+)"
+                   r"(?:\s+(?:new|open|found|left|remain(?:ing)?|findings?|issues?|remarks?|in\s+this\s+round))*"
+                   r"\s*(?:[,.;:)(]|$)|" + CLOSED + END + ")")
+STATUS_AFTER = re.compile(r"(?i)[:\u2013\u2014][\s*`]*" + CLOSED + END)  # "x y: closed.", "a title:** fixed"
 HEADING = re.compile(r"(?:\d+[.)]\s*)?(?:(?:Open|New)\s+)?Important(?:\s+findings?)?(?:\s*\([^)]*\))?")
 LABELS = ("Important", "Nit", "Pre-existing")
 LIST_ITEM = re.compile(r"([ \t]*)(?:[-*+]|\d+[.)])[ \t]+")
@@ -849,8 +852,10 @@ def important_count(text):
                 continue
             if item or not line.strip() or line[:1] in " \t":  # a sub-item, a blank or an indented continuation
                 continue
-            if group is True and not COUNT.match(line.strip(" *`-")):  # the heading over a plain paragraph
-                add("")
+            para = line.strip(" *_`-")
+            if group is True and para and not line.startswith("#") and not COUNT.match(para) \
+                    and not STATUS_AFTER.search(para) and para.split(" ")[0].strip("*_:") not in LABELS:
+                add("")  # the heading over a plain paragraph
             group = None
         if HEADING.fullmatch(line.strip().strip("#*_` ").rstrip(":").strip("*_` ")):
             group = True

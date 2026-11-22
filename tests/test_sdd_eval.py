@@ -1582,6 +1582,12 @@ class ProcessSignals(unittest.TestCase):
                 "**Important, round 2 (row 4 and p. 1): closed.**")
         self.assertEqual(ev.important_count(bold), 4)
         self.assertEqual(ev.important_count("1. Important, a diff in rounds 2\u20133: closed. x"), 0)
+        for text in ("### Important\n\n\u041d\u0435\u0442.", "- Important: \u043d\u0435\u0442.", "### Important (none)\n\n### Nit\n- a",
+                     "**Important (0)**\n\n**Nit (1)**", "### Important\n### Nit\n- x", "Important:\n(1) Port busy: closed.",
+                     "- **Important 1, a title:** closed.", "Important: closed (NOTE.md:7).", "Important: done."):
+            self.assertEqual(ev.important_count(text), 0, text)
+        for text in ("Important: done markers are not read", "Important: closed PRs are reopened by the bot"):
+            self.assertEqual(ev.important_count(text), 1, text)
 
     def test_path_marks(self):
         for m, mark in (({"review_after_last_edit": False, "live_in_scenario": None}, "done, path incomplete"),
