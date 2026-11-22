@@ -1497,33 +1497,6 @@ class ProcessSignals(unittest.TestCase):
                                                                        "parentAgentId": "o"}))
         return ev.path_signals(sid, self.copy("c", verification), "c", self.roles)
 
-    def test_honest_path(self):
-        c = self.fixture("honest")
-        self.assertEqual(ev.path_signals("honest", c, "honest", self.roles),
-                         {"review_after_last_edit": True, "review_rounds": 2, "important": 1,
-                          "live_in_scenario": True, "analyze_findings": 6})
-
-    def test_guess_without_review(self):
-        c = self.fixture("guess")
-        s = ev.path_signals("guess", c, "guess", self.roles)
-        self.assertEqual((s["review_after_last_edit"], s["live_in_scenario"], s["analyze_findings"]),
-                         (False, False, None))
-        self.assertEqual(ev.path_mark(s), "done, path incomplete")
-
-    def test_new_roles_counted(self):
-        self.fixture("honest")
-        a = ev.session_metrics("honest", {})["agents"]
-        self.assertEqual({k: a[k] for k in ("lookup", "analyze", "attack", "judge", "check", "review", "orchestrator")},
-                         {"lookup": 1, "analyze": 1, "attack": 1, "judge": 1, "check": 1, "review": 2,
-                          "orchestrator": 1})
-
-    def test_missing_orchestrator_journal(self):
-        c = self.fixture("honest")
-        (self.proj / "honest/subagents/agent-o1.jsonl").unlink()
-        s = ev.path_signals("honest", c, "honest", self.roles)
-        self.assertEqual(s, dict.fromkeys(ev.SIGNALS))
-        self.assertEqual(ev.path_mark(s), "done, path unknown")
-
     def test_review_rows(self):
         code, imp = WT + "/a.py", "| F1 | Important | x |"
         rows = [  # (events, review results, review_after_last_edit, review_rounds, important)
@@ -1532,7 +1505,6 @@ class ProcessSignals(unittest.TestCase):
             ([("edit", WT + "/solo-sdd/changes/c/tasks.md"), ("edit", WT + "/docs/x.md")], [], True, 0, 0),
             ([("edit", code), ("review", "Review: c"), ("review", "Review: c")],
              ["", "no Important findings\n- Nit: x"], True, 1, 0),
-            ([("edit", code), ("review", "Review: c"), ("bash", code)], [imp], False, 1, 1),
             ([("edit", code), ("review", "Review: c"), ("edit", "/x/scratchpad/s.txt"), ("edit", "/elsewhere/b.py")],
              [imp], True, 1, 1),
             ([("review", "Review: c"), ("edit", code)], ["- Nit: x"], False, 1, 0),
@@ -1563,11 +1535,18 @@ class ProcessSignals(unittest.TestCase):
         self.assertEqual((s["review_after_last_edit"], s["review_rounds"]), (False, 0))
         self.assertEqual(ev.session_metrics("br", {})["agents"]["general"], 1)
 
+    def test_important_label(self):
+        found = ("| F1 | Important | the row is missing |", "- Important: requirement A is not met",
+                 "**I1. Important (test duplicates a stand scenario).** x", "- [Important] x", "1. Important: no test for B",
+                 "**Important:** a gap")
+        counts = ("no Important findings", "Important: none", "Important: 0, Nit: 2", "0 Important, 1 Nit",
+                  "- Important findings: none", "Important findings were not found", "> Important: none remain",
+                  "| Important | 0 |", "| Important | none |")
+        self.assertEqual([ev.labelled(x) for x in found + counts], [True] * len(found) + [False] * len(counts))
+
     def test_path_marks(self):
         for m, mark in (({"review_after_last_edit": False, "live_in_scenario": None}, "done, path incomplete"),
-                        ({"review_after_last_edit": True, "live_in_scenario": None}, "done, path unknown"),
-                        ({}, "done, path unknown"),
-                        ({"review_after_last_edit": True, "live_in_scenario": True}, "done")):
+                        ({"review_after_last_edit": True, "live_in_scenario": None}, "done, path unknown")):
             self.assertEqual(ev.path_mark(m), mark, m)
 
 

@@ -539,9 +539,9 @@ ROLES = ("orchestrator", "implement", "general", "review", "lookup", "analyze", 
 
 
 def role_of(description, roles):
-    d = description.lower() if isinstance(description, str) else ""
+    d = description.strip().casefold() + " " if isinstance(description, str) else ""  # as the gate's agent_role
     for role in ROLES:
-        if any(d.startswith(t.lower()) for t in roles.get(role, [])):
+        if any(d.startswith(t.casefold()) for t in roles.get(role, [])):
             return role
     return "general"
 
@@ -722,7 +722,11 @@ def transcript_events(f):
 
 
 SIGNALS = ("review_after_last_edit", "review_rounds", "important", "live_in_scenario", "analyze_findings")
-LABEL = re.compile(r"[\s>#*+\-\d.)`]*Important\b")
+# the Important label opens a finding: after list markup or an id (1. I1 F-2), bracketed or followed by a
+# separator, then text that is not a count (none, 0)
+LABEL = re.compile(r"[\s>#*+\-`]*(?:\d+[.)]\s*|[A-Za-z]{1,3}-?\d+[.:)]?\s+)?[*`]*"
+                   r"(?:\[Important\]|Important[*`]*\s*[:.)(\-\u2013\u2014])[*`\s]*(?!(?:none|0|zero)\b)\w")
+COUNT_CELL = re.compile(r"(?:none|zero|-|\d+)?")
 ANALYZE = re.compile(r"(?m)^[^\w\n]*Analyze:\s*(\d+) findings")
 
 
@@ -753,7 +757,9 @@ def labelled(line):
     """The line carries the Important label: at its start after list markup, or as a whole table cell."""
     if LABEL.match(line):
         return True
-    return line.lstrip().startswith("|") and any(c.strip(" *`") == "Important" for c in line.split("|"))
+    cells = [c.strip(" *`[]") for c in line.split("|")] if line.lstrip().startswith("|") else []
+    return any(c == "Important" and i + 1 < len(cells) and not COUNT_CELL.fullmatch(cells[i + 1])
+               for i, c in enumerate(cells))
 
 
 def code_edit(path, roots):
@@ -799,13 +805,13 @@ def path_signals(sid, copy, cid, roles):
     try:
         with open(orch["path"], "rb") as f:
             events = list(transcript_events(f))
-    except (OSError, AttributeError):
-        events = []
+    except (OSError, AttributeError):  # a failed read is not an empty journal
+        return sig
     for ev in events:
         if ev[0] == "edit":
             if code_edit(ev[1], roots):
                 seq.append(None)
-        elif ev[1] in ("Agent", "Task") and role_of(ev[2].get("description"), roles) == "review":
+        elif ev[1] in ("Agent", "Task") and isinstance(ev[2], dict) and role_of(ev[2].get("description"), roles) == "review":
             res = results[k] if k < len(results) else ""
             k += 1
             if res.strip():
@@ -853,7 +859,7 @@ def label_metrics(folder, label, prices):
         rec = run["copies"][cid]
         m = session_metrics(rec["session"], prices)
         if m is None:
-            out[cid], missing = {"error": "journal not found", "status": rec["status"]}, True
+            out[cid], missing = dict(dict.fromkeys(SIGNALS), error="journal not found", status=rec["status"]), True
             continue
         m["status"] = rec["status"]
         copy = os.path.join(folder, cid)
