@@ -1,0 +1,29 @@
+diff --git a/src/shop/payments.py b/src/shop/payments.py
+new file mode 100644
+--- /dev/null
++++ b/src/shop/payments.py
+@@ -0,0 +1,24 @@
++"""Payments."""
++import json
++
++
++def charge(order, card, gateway):
++    """Charge the order's total to the card and record the payment."""
++    amount = sum(i["price"] * i["qty"] for i in order["items"])
++    if amount <= 0:
++        return order
++    request = {"card": card["number"], "amount": amount}
++    request["currency"] = "EUR"
++    request["order"] = order["user"]
++    try:
++        answer = gateway.post("/charge", json.dumps(request))
++    except:
++        return order
++    status = answer.get("status")
++    if status != "ok":
++        return order
++    order["paid"] = amount
++    order["payment"] = answer.get("id")
++    order["state"] = "paid"
++    order["history"] = order.get("history", []) + ["paid"]
++    return order

@@ -2,18 +2,18 @@
 
 How `solo-sdd install` and `sync.py push` lay the repository out in the agent folders. The commands are in [cli.md](cli.md).
 
-The deployment map is `targets.json`. There are 21 skills: 15 of the algorithm and 6 manual commands (`relay`, `blockers`, `report`, `health`, `changes`, `next-up`).
+The deployment map is `targets.json`. There are 22 skills: 15 of the algorithm and 7 manual commands (`relay`, `blockers`, `report`, `health`, `changes`, `next-up`, `review-principles`).
 
 | What | Where |
 |---|---|
-| `skills/<name>/SKILL.md`: `spec-plan`, `spec-analyze`, `spec-next`, `spec-audit`, `project-init`, `context-resume`, `work-status`, `ship`, `ui-check`, `copy-check`, `debug-profile`, `evidence-research`, `agent-quality`, `relay`, `blockers`, `report`, `health`, `changes`, `next-up` | `~/.agents/skills`, `~/.codex/skills`, `~/.claude/skills` |
+| `skills/<name>/SKILL.md`: `spec-plan`, `spec-analyze`, `spec-next`, `spec-audit`, `project-init`, `context-resume`, `work-status`, `ship`, `ui-check`, `copy-check`, `debug-profile`, `evidence-research`, `agent-quality`, `relay`, `blockers`, `report`, `health`, `changes`, `next-up`, `review-principles` | `~/.agents/skills`, `~/.codex/skills`, `~/.claude/skills` |
 | `integrations/antislop/` (the bundled integration `antislop`, a pinned copy of the anti-slop rules: the core `core.md`, `ui.md`, `human.md`, `layoutmobile.md`, `contrast-check.py`, `references/`, `copywriting.md`; the copy's licenses, README, VERSION and `integration` description are not deployed; updated only by replacing the copy) | `<root>/ui-check/antislop/` (everything except `copywriting.md`) and `<root>/copy-check/antislop/` (`core.md`, `copywriting.md`) in `~/.agents/skills`, `~/.codex/skills`, `~/.claude/skills` |
 | `integrations/security-audit/` (the bundled integration `security-audit`, a pinned copy of `cloudflare/security-audit-skill`: `METHOD.md` from its `SKILL.md`, the attack class references, `report-schema.json`, the validators; its license, README, VERSION and `integration` description are not deployed; updated only by replacing the copy) | `<root>/spec-audit/security/` in `~/.agents/skills`, `~/.codex/skills`, `~/.claude/skills` |
 | `skills/codex-orchestration/SKILL.md` | `~/.agents/skills`, `~/.claude/skills` |
 | `skills/spec-dispatch/SKILL.md` (hands changes to Opus orchestrators, Claude Code only) | `~/.claude/skills` |
 | `global/AGENTS.md` (the solo-sdd rules, as a block) | the project `AGENTS.md` by `solo-sdd init`; with `install --global-rules`, `~/AGENTS.md`, `~/.codex/AGENTS.md`, `~/.claude/CLAUDE.md` |
 | `ALGORITHM.md` | `~/.local/share/solo-sdd/ALGORITHM.md` |
-| `templates/` (`solo-sdd/project.md`, `solo-sdd/analyze.md` for `solo-sdd init`, `docs/waiting.md`, `DESIGN.md`, `solo-sdd/change/` for `solo-sdd new`) | `~/.local/share/solo-sdd/templates/` |
+| `templates/` (`solo-sdd/project.md`, `solo-sdd/analyze.md` for `solo-sdd init`, `docs/waiting.md`, `DESIGN.md`, `REVIEW.md` for `review-principles`, `solo-sdd/change/` for `solo-sdd new`) | `~/.local/share/solo-sdd/templates/` |
 | `pyproject.toml`, `solo_sdd/` (the `solo-sdd` command; deployment logic in `solo_sdd/layout.py`, `sync.py` is a wrapper) | not deployed, installed as a package |
 | `global/process-guard.py` (hook that forbids stopping processes directly) | `~/.claude/hooks/process-guard.py` |
 | `global/work_hooks.py`, `global/model-policy.json` (workflow hooks and the model policy) | `~/.claude/hooks/` |

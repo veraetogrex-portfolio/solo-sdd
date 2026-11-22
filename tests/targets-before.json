@@ -20,6 +20,7 @@
     "health": ["other", "cursor", "codex", "claude"],
     "changes": ["other", "cursor", "codex", "claude"],
     "next-up": ["other", "cursor", "codex", "claude"],
+    "review-principles": ["other", "cursor", "codex", "claude"],
     "codex-orchestration": ["other", "cursor", "claude"],
     "spec-dispatch": ["claude"]
   },

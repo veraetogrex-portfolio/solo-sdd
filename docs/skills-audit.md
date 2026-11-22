@@ -154,6 +154,18 @@ A skill with a task set under `tests/stands/skill-ablation/` is measured by `tes
 | Form (in the user's language, as plain text) | 5. What waits | method |  |  |
 | Form (in the user's language, as plain text) | 6. What next | method |  |  |
 
+## review-principles
+
+| Heading | Step | Mark | Hook | Why |
+|---|---|---|---|---|
+| Order | 1. Owner login | gate (text) | hook: no | whose remark counts is read from the answers of `gh`, not from a tool event a hook sees |
+| Order | 2. Sources | gate (text) | hook: no | an unread source named in the `Unread:` line is read from the report |
+| Order | 3. Remarks | method |  |  |
+| Order | 4. Rules and patterns | method |  |  |
+| Order | 5. REVIEW.md | gate (text) | hook: yes | a write hook could refuse a `REVIEW.md` edit that drops a rule line of the file before it |
+| Order | 6. Parallel mode | gate (text) | hook: no | whether the held-out file holds a measured change's remark is a judgement on text |
+| Order | 7. Stop | method |  |  |
+
 ## ship
 
 | Heading | Step | Mark | Hook | Why |
@@ -302,6 +314,7 @@ The `hook: yes` rows above, for the owner to plan as changes.
 | `evidence-research` | Order | 9. Outside check | the `stop` hook could return a final answer with a source table when no `Check:` subagent ran |
 | `next-up` | Order | 3. Closing | a write hook could refuse an edit of `docs/waiting.md` that drops a first-table row not found under `## Closed` |
 | `project-init` | Order | 6. CLAUDE.md | a `stop` check for a project with AGENTS.md whose CLAUDE.md has no `@AGENTS.md` line |
+| `review-principles` | Order | 5. REVIEW.md | a write hook could refuse a `REVIEW.md` edit that drops a rule line of the file before it |
 | `ship` | Order | 6. Push | a Bash guard refusing `git push --force` and `-f` |
 | `spec-analyze` | What to read | 0. Legacy tree | a write guard refusing change edits in a project with `openspec/` and no `solo-sdd/` |
 | `spec-analyze` | Passes | 2. The change frame | `solo-sdd validate` could check Out of Scope, archived Depends On and Impact paths as it checks the task count |

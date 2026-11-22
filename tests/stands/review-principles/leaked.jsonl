@@ -1,0 +1,2 @@
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "tool_use", "name": "Bash", "input": {"command": "cd /var/folders/x/T/review-principles.abc/project && gh auth status"}}]}}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "tool_use", "name": "Read", "input": {"file_path": "/var/folders/x/T/repo/tests/stands/review-principles/expected-answer.md"}}]}}
