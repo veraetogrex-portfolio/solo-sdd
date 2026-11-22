@@ -30,7 +30,6 @@ HERE = pathlib.Path(__file__).resolve().parent
 spec = importlib.util.spec_from_file_location("next_up_stand", HERE / "next-up.py")
 nu = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(nu)
-nu.fail = lambda msg: sys.exit("waiting-readers: " + msg)  # the refusals of the reused readers
 nu.NEAR = re.compile(r"tests/stands/(?:waiting-readers|next-up)(?![A-Za-z0-9_-])")  # the graders and references
 PREFIX = "waiting-readers."
 DESIGN_ROW = "| — | — | DESIGN.md: fill in the fields Fonts, Dial | owner | 2026-11-05 |"
@@ -38,6 +37,8 @@ DESIGN_ROW = "| — | — | DESIGN.md: fill in the fields Fonts, Dial | owner | 
 WAITING = (("dispatch-ci", "red ci"), ("add-import", "csv"), ("release-040", "v0.4.0"), ("design.md",))
 CLOSED = ("publish-docs", "v0.3.0")
 ITEM = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+")
+# an item labelled closed by its own form: "closed: ...", "already closed ..." or "<row>: closed ..."
+CLOSED_LABEL = re.compile(r"^(?:already\s+)?closed\b|^[^:;,]*:\s*(?:already\s+)?closed\b")
 DESIGN = """# DESIGN
 
 Filled in by the user, the agent only carries over the answers. An empty field means not decided.
@@ -77,6 +78,9 @@ The user's message: {message}
 
 def fail(msg):
     sys.exit("waiting-readers: " + msg)
+
+
+nu.fail = fail  # the refusals of the reused readers
 
 
 def prepare():
@@ -123,33 +127,46 @@ def split(text):
 
 
 def blocker_items(answer):
-    """The items of the map's Blockers line: its own text split at `;`, then every list item under it (`-`, `*`, `+`
-    or numbered), an indented line continuing the item above; a blank line is skipped, any other line ends it."""
-    items, on = [], False
+    """[(text, labelled closed)] of the map's Blockers line: its own text after the label split at `;`, then every list
+    item under it (`-`, `*`, `+` or numbered), an indented plain line continuing the item above; a blank line is
+    skipped, any other line ends it. An item is labelled closed by its own form or by a less indented parent item
+    labelled closed."""
+    items, stack, on = [], [], False
     for line in answer.splitlines():
-        f = nu.flat(line).lstrip("# ")
+        f = nu.flat(line).lstrip("#-+ ")
         if not on:
             if f.startswith("blockers"):
                 on = True
-                items += [i for i in f.split(";")]
+                for part in re.sub(r"^blockers[^:]*:\s*", "", f).split(";"):
+                    items.append([part.strip(), bool(CLOSED_LABEL.match(part.strip()))])
         elif not f:
             continue
         elif ITEM.match(line):
-            items.append(nu.flat(ITEM.sub("", line, count=1)))
+            indent = len(line) - len(line.lstrip())
+            while stack and stack[-1][0] >= indent:
+                stack.pop()
+            text = nu.flat(ITEM.sub("", line, count=1))
+            closed = bool(CLOSED_LABEL.match(text)) or any(c for _, c in stack)
+            stack.append((indent, closed))
+            items.append([text, closed])
         elif line[:1].isspace() and items:
-            items[-1] += " " + f
+            items[-1][0] += " " + f
         else:
             break
-    return [i for i in items if i.strip()]
+    return [(text, closed) for text, closed in items if text]
+
+
+def names(text, words):
+    return any(re.search(r"(?<![\w-])%s(?![\w-])" % re.escape(w), text) for w in words)
 
 
 def grade(cr, bl, pi):
     first0, closed0 = split(prepared_waiting())[:2]
     items = blocker_items(cr)
-    got = " ".join(items)
-    # one closed row, two names; an item that calls it closed does not report it as waiting
-    closed_named = int(any(any(w in i for w in CLOSED) and not re.search(r"\bclosed\b", i) for i in items))
-    named = sum(1 for words in WAITING if any(w in got for w in words))
+    got = " ".join(text for text, _ in items)
+    # one closed row, two names; an item labelled closed does not report it as waiting
+    closed_named = int(any(names(text, CLOSED) and not closed for text, closed in items))
+    named = sum(1 for words in WAITING if names(got, words))
     lines = ["context-resume closed rows as blockers: %d" % closed_named,
              "context-resume waiting rows named: %d of %d" % (named, len(WAITING))]
     ok = [bool(got) and closed_named == 0, named == len(WAITING)]
