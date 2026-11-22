@@ -61,6 +61,7 @@
     "integrations/security-audit/skills/security-audit/report-schema.json": ["~/.agents/skills/spec-audit/security/report-schema.json", "~/.codex/skills/spec-audit/security/report-schema.json", "~/.claude/skills/spec-audit/security/report-schema.json"],
     "integrations/security-audit/skills/security-audit/validate-coverage-ledger.cjs": ["~/.agents/skills/spec-audit/security/validate-coverage-ledger.cjs", "~/.codex/skills/spec-audit/security/validate-coverage-ledger.cjs", "~/.claude/skills/spec-audit/security/validate-coverage-ledger.cjs"],
     "integrations/security-audit/skills/security-audit/validate-findings.cjs": ["~/.agents/skills/spec-audit/security/validate-findings.cjs", "~/.codex/skills/spec-audit/security/validate-findings.cjs", "~/.claude/skills/spec-audit/security/validate-findings.cjs"],
+    "skills/spec-analyze/outside-run.md": ["~/.agents/skills/spec-analyze/outside-run.md", "~/.codex/skills/spec-analyze/outside-run.md", "~/.claude/skills/spec-analyze/outside-run.md"],
     "skills/spec-dispatch/merge.md": ["~/.claude/skills/spec-dispatch/merge.md"],
     "skills/spec-dispatch/orchestrator-prompt.md": ["~/.claude/skills/spec-dispatch/orchestrator-prompt.md"],
     "skills/spec-dispatch/preparation.md": ["~/.claude/skills/spec-dispatch/preparation.md"],

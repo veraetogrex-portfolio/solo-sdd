@@ -61,6 +61,7 @@
     "integrations/security-audit/skills/security-audit/report-schema.json": {"skills": {"spec-audit": "security/report-schema.json"}},
     "integrations/security-audit/skills/security-audit/validate-coverage-ledger.cjs": {"skills": {"spec-audit": "security/validate-coverage-ledger.cjs"}},
     "integrations/security-audit/skills/security-audit/validate-findings.cjs": {"skills": {"spec-audit": "security/validate-findings.cjs"}},
+    "skills/spec-analyze/outside-run.md": {"skills": {"spec-analyze": "outside-run.md"}},
     "skills/spec-dispatch/merge.md": {"skills": {"spec-dispatch": "merge.md"}},
     "skills/spec-dispatch/orchestrator-prompt.md": {"skills": {"spec-dispatch": "orchestrator-prompt.md"}},
     "skills/spec-dispatch/preparation.md": {"skills": {"spec-dispatch": "preparation.md"}},

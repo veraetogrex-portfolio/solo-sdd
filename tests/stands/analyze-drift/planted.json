@@ -1,0 +1,17 @@
+{
+  "change": "add-retry",
+  "holes": [
+    {"id": "default-drift", "pass": "7", "level": "HIGH", "tokens": ["3", "5"],
+     "what": "task 1.2 says default `5`, the requirement Default retry limit says `3`"},
+    {"id": "key-drift", "pass": "7", "level": "HIGH", "tokens": ["process.retry-limit", "process.retry-max"],
+     "what": "task 1.3, naming no requirement, reads the retry limit from `process.retry-limit`; the scenario names `process.retry-max`"},
+    {"id": "promise-without-work", "pass": "1", "level": "HIGH", "tokens": ["docs/retry.md"],
+     "what": "What Changes promises `docs/retry.md`; no task or requirement names it"}
+  ],
+  "decoys": [
+    {"id": "task-only-value", "pass": "7", "tokens": ["tests/test_retry.py"],
+     "what": "a value only the task names gives no pass 7 finding"},
+    {"id": "default-as-term-drift", "pass": "5", "tokens": ["3", "5"],
+     "what": "the default drift is reported under pass 7, not also as pass 5 term drift"}
+  ]
+}
