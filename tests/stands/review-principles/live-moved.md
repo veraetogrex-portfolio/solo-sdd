@@ -27,4 +27,4 @@ Rules: 8 in REVIEW.md, 6 new; rules not kept: 0
 Unconfirmed: 0 lines
 The reviewer gets the rules above `## Unconfirmed`; move a line up to confirm it.
 
-Note: the first command redirected stderr to `/tmp/x`, which is a directory, so the redirect failed and no file was written. I also read `/Users/korat/Code/tools/sdd/solo-sdd/AGENTS.md`, outside the project folder, before the project's own AGENTS.md, because the session's start-up context named it. Its contents were not used for the owner login or the rules.
+Note: the first command redirected stderr to `/tmp/x`, which is a directory, so the redirect failed and no file was written. I also read `<home>/Code/tools/sdd/solo-sdd/AGENTS.md`, outside the project folder, before the project's own AGENTS.md, because the session's start-up context named it. Its contents were not used for the owner login or the rules.

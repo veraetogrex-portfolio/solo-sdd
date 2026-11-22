@@ -27,9 +27,39 @@ Not needed: the fixture and the fake `gh` are local, every subagent runs in the 
 
 <!-- Filled during apply: date, what was run, what was observed. -->
 
+2026-11-22, worktree of branch `change/review-principles`, the orchestrator (a dispatched subagent on Opus) as the lead. Every skill run is a `Lookup: review-principles <mode>` Explore subagent of this session on `haiku`, every review run a `Review:` subagent on the main model; no `claude -p`, no paid API call.
+
+- Step 1: `python3 sync.py status` shows `missing` for `review-principles` in `~/.agents`, `~/.codex` and `~/.claude` skills and for `~/.local/share/solo-sdd/templates/REVIEW.md`, `outdated` for the three global rules copies and the three `spec-next/acceptance.md` copies, no `drift`.
+- Step 2: `--grade tests/stands/review-principles/live-answer.md` prints every line of step 2 (`rules 3 of 3 with links` … `skipped remarks: 4`); `--grade-confined` on its transcript `grading out of reach: yes`.
+- Step 3: the laid-out line of `acceptance.md`: "Also gets `REVIEW.md` from the project root, if there is one, without its `## Unconfirmed` section: those are patterns the owner has not confirmed (`/review-principles` writes the file)." `--grade-review` on `live-findings.md` prints `broken rule found: yes`, `unconfirmed pattern applied: no`; on `live-control-findings.md` (the line moved up into the rules) `unconfirmed pattern applied: yes` (its finding: "`charge` runs 20 lines (5-24), longer than 15; split it"). A first control with the whole file gave `no` (Decisions Without Owner).
+- Step 4: `--grade-unread` on `live-gh-fail.md`, `live-gh-broken.md` and `live-no-remote.md` prints `PR sources unread with the reason: yes`, `owner lines 4 of 4`, `rules from PR comments: 0` each (reasons: `gh exit 1: error connecting to api.github.com`, `answer is not JSON: cut`, `no GitHub remote`); `grading out of reach: yes` for all three.
+- Step 5: `--grade-moved live-moved.md` prints `moved rule kept: yes`, `unconfirmed 0 for the moved rule`, `rules 3 of 3 with links`; `grading out of reach: yes`.
+- Step 6: `--grade-held-out live-held-out.md` prints `held out: yes`, `project REVIEW.md unchanged: yes`; `--grade-table live-table.md` prints `rows 2`, `matched + missed = 5 for each row: yes`, `extra counted: yes`, `matched remarks on their files: yes`, `held out: yes`. The fixture table: without `REVIEW.md` matched 2, missed 3, extra 7; with it matched 1, missed 4, extra 3 (the `with` reviewer of `add-refunds` returned no finding).
+- Step 7, this repository, K = 3: the `Lookup:` run took `eval-process-signals`, `goal-first` and `vendor-to-integrations`, skipping `source-over-paste` (its one owner line only grants a round) and the newer archives without owner lines; `vendor-to-integrations` has no commit on `main` (its commits are only on another ref, found by `git log --all` against the skill's `git log` of the branch), so by the skill the set is 2 of 3. PR sources unread: no `Owner GitHub login:` line. The held-out `REVIEW.md` has no rule and no pattern: none of the 6 owner remarks outside the set words a rule for every change. Four `Review:` runs on `git show <hash> -- . ':(exclude)solo-sdd'` of `f213359` and `32cc5c6`, matched by the lead:
+
+  | Variant | Matched | Missed | Extra |
+  |---|---|---|---|
+  | without REVIEW.md | 2 | 0 | 21 |
+  | with REVIEW.md | 2 | 0 | 23 |
+
+  | Change | Remark | File | Without | With |
+  |---|---|---|---|---|
+  | eval-process-signals | every `Review:` agent ends with `Important: <n>`, the free-text heuristic stays the fallback for older journals (verification.md:47) | none | matched: `global/sdd_eval.py` the text fallback counts an answer without the `Important:` line as a round | matched: `global/sdd_eval.py:455` the fallback is not limited to reviews written before the rule |
+  | goal-first | make the rule hold, not a partial result; the `Proposals:` form line must not read as alternatives (verification.md:73) | none | matched: `skills/spec-plan/SKILL.md:84` the report form gains `Proposals:` but not the `Goal:`/`Check:` lines | matched: `skills/spec-plan/SKILL.md:87` the same |
+
+  With an empty held-out file the two variants differ only by an empty rules block, so this table measures nothing about `REVIEW.md` on this repository yet.
+- Step 8: `python3 tests/stands/review-principles.py --references` prints `references: 14 of 14 as expected`.
+- Analyze: 3 attackers on `haiku` and a judge: 23 findings after the merge, kept 17 (CRITICAL 1, HIGH 10, MEDIUM 5, LOW 1), dropped 6; every CRITICAL and HIGH fixed in the artifacts. The repeat `Analyze: review-principles 1 2 7 7a` gave CRITICAL 1 and HIGH 5, all fixed (Decisions Without Owner).
+- Checks: `/usr/bin/python3 tests/run.py --jobs 5 --tier slow` -> `files: 42, failed: 0` after the last code edit; lint silent; `solo-sdd validate --all` 0 errors.
+
 ## Not Verified
 
 <!-- Filled during apply: what stayed unproven and why. Write: nothing - if all proven. -->
+
+- Step 7 found 2 of the 3 changes the owner's K asks for: on `main` only `eval-process-signals` and `goal-first` have both owner remarks and a commit naming them (the history starts at 2026-11-13), and their held-out `REVIEW.md` is empty, so the match table of this repository says nothing about `REVIEW.md` yet. A line in `docs/waiting.md`.
+- The laid-out `~/.claude/skills/review-principles/SKILL.md`, `acceptance.md` and `templates/REVIEW.md` in the agent folders: the runs used the branch text through the prompt; `sync.py push` is the delivery's step after merge (a line in `docs/waiting.md`).
+- No stand case: past 25 rules and a full 25-rule file, the 100-PR limit, a read empty source, no `Owner GitHub login:` line; only the skill text holds them (`test_review_principles`).
+- The skill picks a change's diff by the latest commit on the current branch whose subject names its id: right for squash merges, but for a change merged as several commits it is the last of them only.
 
 ## Decisions Without Owner
 

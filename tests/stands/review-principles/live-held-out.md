@@ -36,4 +36,4 @@ Golden answers (Review runs and match not run; those are yours):
 | add-coupons | Money is integer cents in this project, never a float (PR #3 comment, discussion_r107) | src/shop/coupons.py | not run | not run |
 
 Held-out file: the block above, not written to disk (this session is read-only); the project REVIEW.md is unchanged.
-Note: at the start I read /Users/korat/Code/tools/sdd/solo-sdd/AGENTS.md, outside the project folder, because a session hook pointed to it; it has no owner line and no rule came from it. I also read the project's REVIEW.md before building the held-out file; the held-out rules come only from non-measured remarks.
+Note: at the start I read <home>/Code/tools/sdd/solo-sdd/AGENTS.md, outside the project folder, because a session hook pointed to it; it has no owner line and no rule came from it. I also read the project's REVIEW.md before building the held-out file; the held-out rules come only from non-measured remarks.
