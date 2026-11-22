@@ -128,6 +128,8 @@ Manual commands, only when the user calls them: `/relay`: another agent's report
 
 Choose a skill by the goal and the expected result, not by a matching word: "analyse" can be about code, logs or a text. If a tool a skill refers to is not in the current environment, take a fallback source (local history, project files, a notes vault) and do not pass off missing data as a fact.
 
+Work in a field where no project spec, `## Lessons` line or laid-out skill names any of the field's checks (one that names a check is followed as written): before the work, write a `Practitioner checks:` list of at least three tools, techniques or checks a practitioner of that field uses, each `<check> — <source>`, where every item's source is a link or a named standard (`ISO 4217`, `https://…`) and a check taken from the project's own files is not listed; the work uses them, and the report holds the list and a `Practitioner checks run: <items>` line (`; not run: <item> — <why>`). A prompt to a subagent sets no level of skill: it names the field's checks instead.
+
 The whole algorithm, with all stages and gates: `~/.local/share/solo-sdd/ALGORITHM.md`. The skills of this algorithm are edited in the source from `solo-sdd status`, in `skills/`, not in the agent folders: `solo-sdd install` deploys them and does not overwrite an edit made in place, but shows it.
 
 ## 15. Lessons

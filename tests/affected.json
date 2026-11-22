@@ -190,6 +190,7 @@
    "tests/test_cli.py",
    "tests/test_init.py",
    "tests/test_providers.py",
+   "tests/test_skill_commands.py",
    "tests/test_sync.py"
   ],
   "tests/affected.json": [
