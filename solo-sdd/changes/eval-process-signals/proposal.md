@@ -6,7 +6,8 @@
 
 ## What Changes
 
-- `sdd-eval.py metrics` adds, for every copy, the signals of the path: whether a `Review:` agent came after the last code edit of the orchestrator, the number of review rounds and of `Important` findings in their results, whether the `LIVE` command of the accepted status is a code span of the copy's Live Scenario (by the same reader `sdd-dispatch.py accept` uses), and the `spec-analyze` count from the orchestrator's `Analyze:` report line, `null` when the line is missing.
+- `sdd-eval.py metrics` adds, for every copy, the signals of the path read from the journal of the orchestrator that handed back `archived`: whether a `Review:` agent came after the last code edit (Nit fixes after a review without an `Important` allowed, as spec-next allows them), the number of counted review rounds and of `Important` findings in their results, whether the `LIVE` command of the status is a code span of the Live Scenario of the copy's archived `verification.md` (by the reader `sdd-dispatch.py accept` uses, never run), and `<n>` of the orchestrator's last `Analyze: <n> findings` line, `null` when the line is missing.
+- The journal events are read by the archive gate's own reader: `transcript_events` of `global/work_hooks.py` becomes a block that `scripts/sync_blocks.py` copies into `global/sdd_eval.py`.
 - The subagent count by role adds `lookup`, `analyze`, `attack`, `judge` and `check`.
 - `sdd-eval.py compare` shows the signals per change and run next to `done`, and marks `done, path incomplete` a change that is done but has no review after the last edit or a `LIVE` outside the Live Scenario, and `done, path unknown` one whose signals could not be read.
 - `tests/eval/README.md` describes the signals and how each is read.
@@ -16,11 +17,13 @@
 ### New Capabilities
 
 ### Modified Capabilities
-- `dispatch-eval`: ADDED requirements Process path signals, What the signals read; MODIFIED requirement Metrics by one method.
+- `dispatch-eval`: ADDED requirements Process path signals, What the review signals read, What the status and analyze signals read, Path marks in the comparison; MODIFIED requirements Metrics by one method, Oracle tests and comparison.
 
 ## Impact
 
 - `global/sdd_eval.py`
+- `global/work_hooks.py`
+- `scripts/sync_blocks.py`
 - `tests/test_sdd_eval.py`
 - `tests/eval/fixtures/`
 - `tests/affected.json`

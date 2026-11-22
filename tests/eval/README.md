@@ -33,10 +33,22 @@ The set field `oracle_prepare` (optional, a string) runs in this worktree after 
 - One API call is one `message.id`; the log has several lines for it, the maximum of each counter is taken.
 - Model output is taken from `cost-state`: the log understates it (run 4: Opus 191 485 in the log versus 1 005 077 in `cost-state`). Output by role is only from the log, a lower bound.
 - `input_total` includes the cache (input, cache write and cache read).
-- Roles (orchestrator, executor, reviewer, other) and `dispatcher` are counted separately.
+- Roles by the description tag (`orchestrator`, `implement`, `review`, `lookup`, `analyze`, `attack`, `judge`, `check`, the rest `general`) and `dispatcher` are counted separately.
 - Prices come from `prices.json`; for a message with input above the `long` threshold the `long` rate applies. The `cost-state` output remainder above the log is counted at the model's top rate.
 - Time: from the first orchestrator launch to the last merge (in `metrics <folder>`, to the time of the last commit of the copy's main branch).
 - `returns` are dispatcher messages (`SendMessage`), `refused` are statuses the hook did not accept. `merged` is the number of merges in the dispatcher log (PR, `land-local`, `git merge`).
+
+## Path signals
+
+`metrics <folder> --label <label>` adds five signals per copy next to "merged + oracle green"; they read the session journals, no model is called. Their source is the journal of the last orchestrator (by its first line) whose final message (the `message` of its last `SubagentHandback` call, else its last assistant text) has `STATUS: archived`, and the `Review:` agents it launched (the subagents whose `.meta.json` names it as `parentAgentId`). Without such an orchestrator, or without its journal, all five are `null` and the exit code does not change.
+
+- `review_after_last_edit`: `false` when a code edit has no counted review after it, unless the last counted review came after a code edit and found no `Important` (spec-next allows Nit fixes without a new round). A code edit is an `Edit`, `Write`, `MultiEdit`, `NotebookEdit` or a Bash edit (`bashEditDiff`) read by the archive gate's own reader (`transcript_events`, a block copied from `global/work_hooks.py`), under the status `WORKTREE` or the copy and outside `solo-sdd/` and `docs/`; a scratchpad file is not code. No code edit: `true`.
+- `review_rounds`: the `Review:` agents with a non-empty final message; an empty one is a reviewer failure and its rerun is the round.
+- `important`: the lines of those results labelled `Important`, at the start of a line after list markup or as a whole table cell; "no Important findings" does not count.
+- `live_in_scenario`: the status `LIVE` command (before ` -> `) checked by `live_in_scenario` of `sdd-dispatch.py accept` against the Live Scenario of `verification.md` in the copy's archive of the replayed change; it is never run. No `LIVE` field, no file or no section: `null`.
+- `analyze_findings`: `<n>` of the last orchestrator line `Analyze: <n> findings`; `Analyze: off` or no line: `null`. Under the dispatcher the report is not printed, so the line is often missing; the role count (`analyze`, `attack`, `judge`) still shows whether the outside run happened.
+
+`compare` marks a done change `done, path incomplete` when `review_after_last_edit` or `live_in_scenario` is `false`, `done, path unknown` when either is `null` or the copy has no metrics, and lists the five signals of every done change and run under `Path:`. The mark does not change what counts as done.
 
 ## Check against the run 4 analysis
 

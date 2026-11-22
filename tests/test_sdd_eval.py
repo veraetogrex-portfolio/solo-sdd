@@ -839,7 +839,8 @@ class MetricsSession(unittest.TestCase):
         self.assertEqual(m["models"][OP]["output_source"], "cost-state")
         self.assertEqual(m["models"][SN]["output"], 7)
         self.assertEqual(m["models"][SN]["output_source"], "journal")
-        self.assertEqual(m["agents"], {"orchestrator": 0, "implement": 1, "general": 1, "review": 0})
+        self.assertEqual(m["agents"], {"orchestrator": 0, "implement": 1, "general": 1, "review": 0, "lookup": 0,
+                                       "analyze": 0, "attack": 0, "judge": 0, "check": 0})
         self.assertEqual((m["returns"], m["rejected"], m["merged"]), (2, 1, 3))
         self.assertEqual(m["first_orchestrator"], DAY + "10:00:00.000Z")
         self.assertEqual(m["last_merge"], DAY + "13:00:00.000Z")
@@ -886,7 +887,7 @@ class MetricsSession(unittest.TestCase):
         self.assertEqual(r.stdout.splitlines(), [
             "merged: 3", "time: 3.00 h",
             "dispatcher/%s: 2.00M per change" % OP, "implement/%s: 1.00M per change" % SN,
-            "agents: orchestrator 0, implement 1, general 1, review 0",
+            "agents: orchestrator 0, implement 1, general 1, review 0, lookup 0, analyze 0, attack 0, judge 0, check 0",
             "returns: 2, rejected statuses: 1", "cost: $1.52 (cost-state $2.50)"])
 
     def test_fixture(self):
@@ -1143,7 +1144,7 @@ class CompareTests(unittest.TestCase):
         r = e.compare(e.E, ["p1", "p2"], ["q1", "q2"])
         self.assertEqual(r.returncode, 0, r.stderr)
         row = [ln for ln in r.stdout.splitlines() if ln.startswith("| c1 ")][0]
-        self.assertEqual(row.count("done 1.25 h $2.50"), 4, row)
+        self.assertEqual(row.count("done, path unknown 1.25 h $2.50"), 4, row)
         self.assertIn("| a | 2, 2 of 2 | 5.00 | $10.00 |", r.stdout)
         self.assertIn("| b | 2, 2 of 2 | 5.00 | $10.00 |", r.stdout)
 
@@ -1413,6 +1414,161 @@ class ParseFailed(unittest.TestCase):
         self.assertEqual(ev.test_command(str(d)), "a | b")
         (d / "AGENTS.md").write_text("## Commands\n\n| What | C |\n|---|---|\n| Build | `make` |\n")
         self.assertIsNone(ev.test_command(str(d)))
+
+
+SIG = FIX / "signals"
+WT = "/tmp/wt-row"
+LIVE_DOC = "## Live Scenario\n\n1. Run `sh demo.sh` -> `ok`.\n"
+
+
+def jl(ts, content, typ="assistant", **extra):
+    o = {"type": typ, "timestamp": "2026-11-20T10:%02d:00.000Z" % ts, "message": {"role": typ, "content": content}}
+    o.update(extra)
+    return json.dumps(o)
+
+
+def agent_use(desc):
+    return {"type": "tool_use", "id": "t", "name": "Agent", "input": {"description": desc}}
+
+
+def edit_use(path):
+    return {"type": "tool_use", "id": "e", "name": "Edit", "input": {"file_path": path}}
+
+
+def handback(msg):
+    return {"type": "tool_use", "id": "h", "name": "SubagentHandback", "input": {"message": msg}}
+
+
+def row_status(live="sh demo.sh -> ok"):
+    return "STATUS: archived\nWORKTREE: %s\n" % WT + ("LIVE: %s\n" % live if live is not None else "")
+
+
+@marks.release
+class ProcessSignals(unittest.TestCase):
+    """The path signals of metrics over the fixtures of tests/eval/fixtures/signals and journals built per row."""
+
+    def setUp(self):
+        self.root = pathlib.Path(tempfile.mkdtemp()).resolve()
+        self.addCleanup(shutil.rmtree, self.root, True)
+        self.proj = self.root / "home/.claude/projects/x"
+        self.proj.mkdir(parents=True)
+        old = os.environ.get("HOME")
+        os.environ["HOME"] = str(self.root / "home")
+        self.addCleanup(os.environ.__setitem__, "HOME", old)
+        self.roles = ev.load_roles()
+
+    def copy(self, cid, verification=LIVE_DOC):
+        c = self.root / "copies" / cid
+        d = c / ("solo-sdd/changes/archive/2026-11-20-%s" % cid)
+        d.mkdir(parents=True, exist_ok=True)
+        if verification is None:
+            (d / "verification.md").unlink(missing_ok=True)
+        else:
+            (d / "verification.md").write_text(verification)
+        return str(c)
+
+    def fixture(self, name):
+        shutil.copy(SIG / (name + ".jsonl"), self.proj / (name + ".jsonl"))
+        shutil.copytree(SIG / name / "subagents", self.proj / name / "subagents")
+        return self.copy(name, (SIG / name / "verification.md").read_text())
+
+    def session(self, events, reviews=(), status=None, sid="row", verification=LIVE_DOC):
+        """events: ("edit", path) | ("review", desc) | ("text", t) | ("bash", path); reviews: results in order."""
+        (self.proj / (sid + ".jsonl")).write_text(jl(0, [agent_use("Orchestrator c")]) + "\n")
+        sub = self.proj / sid / "subagents"
+        sub.mkdir(parents=True)
+        lines = [jl(1, [{"type": "text", "text": "start"}])]
+        for i, (kind, arg) in enumerate(events, 2):
+            if kind == "edit":
+                lines.append(jl(i, [edit_use(arg)]))
+            elif kind == "review":
+                lines.append(jl(i, [agent_use(arg)]))
+            elif kind == "text":
+                lines.append(jl(i, [{"type": "text", "text": arg}]))
+            elif kind == "bash":
+                lines.append(jl(i, [{"type": "tool_use", "id": "b", "name": "Bash", "input": {"command": "sed"}}]))
+                lines.append(jl(i, [], typ="user", toolUseResult={"bashEditDiff": {"changedFiles": [arg]}}))
+        lines.append(jl(59, [handback(status if status is not None else row_status())]))
+        (sub / "agent-o.jsonl").write_text("\n".join(lines) + "\n")
+        (sub / "agent-o.meta.json").write_text(json.dumps({"description": "Orchestrator c"}))
+        for i, res in enumerate(reviews):
+            (sub / ("agent-r%d.jsonl" % i)).write_text(jl(10 + i, [{"type": "text", "text": res}] if res else []) + "\n")
+            (sub / ("agent-r%d.meta.json" % i)).write_text(json.dumps({"description": "Review: c",
+                                                                       "parentAgentId": "o"}))
+        return ev.path_signals(sid, self.copy("c", verification), "c", self.roles)
+
+    def test_honest_path(self):
+        c = self.fixture("honest")
+        self.assertEqual(ev.path_signals("honest", c, "honest", self.roles),
+                         {"review_after_last_edit": True, "review_rounds": 2, "important": 1,
+                          "live_in_scenario": True, "analyze_findings": 6})
+
+    def test_guess_without_review(self):
+        c = self.fixture("guess")
+        s = ev.path_signals("guess", c, "guess", self.roles)
+        self.assertEqual((s["review_after_last_edit"], s["live_in_scenario"], s["analyze_findings"]),
+                         (False, False, None))
+        self.assertEqual(ev.path_mark(s), "done, path incomplete")
+
+    def test_new_roles_counted(self):
+        self.fixture("honest")
+        a = ev.session_metrics("honest", {})["agents"]
+        self.assertEqual({k: a[k] for k in ("lookup", "analyze", "attack", "judge", "check", "review", "orchestrator")},
+                         {"lookup": 1, "analyze": 1, "attack": 1, "judge": 1, "check": 1, "review": 2,
+                          "orchestrator": 1})
+
+    def test_missing_orchestrator_journal(self):
+        c = self.fixture("honest")
+        (self.proj / "honest/subagents/agent-o1.jsonl").unlink()
+        s = ev.path_signals("honest", c, "honest", self.roles)
+        self.assertEqual(s, dict.fromkeys(ev.SIGNALS))
+        self.assertEqual(ev.path_mark(s), "done, path unknown")
+
+    def test_review_rows(self):
+        code, imp = WT + "/a.py", "| F1 | Important | x |"
+        rows = [  # (events, review results, review_after_last_edit, review_rounds, important)
+            ([("edit", code), ("review", "Review: c"), ("edit", code)], ["- Nit: a name"], True, 1, 0),
+            ([("edit", code)], [], False, 0, 0),
+            ([("edit", WT + "/solo-sdd/changes/c/tasks.md"), ("edit", WT + "/docs/x.md")], [], True, 0, 0),
+            ([("edit", code), ("review", "Review: c"), ("review", "Review: c")],
+             ["", "no Important findings\n- Nit: x"], True, 1, 0),
+            ([("edit", code), ("review", "Review: c"), ("bash", code)], [imp], False, 1, 1),
+            ([("edit", code), ("review", "Review: c"), ("edit", "/x/scratchpad/s.txt"), ("edit", "/elsewhere/b.py")],
+             [imp], True, 1, 1),
+            ([("review", "Review: c"), ("edit", code)], ["- Nit: x"], False, 1, 0),
+        ]
+        for i, (events, reviews, after, rounds, important) in enumerate(rows):
+            s = self.session(events, reviews, sid="row%d" % i)
+            self.assertEqual((s["review_after_last_edit"], s["review_rounds"], s["important"]),
+                             (after, rounds, important), i)
+
+    def test_live_and_analyze_sources(self):
+        s = self.session([("text", "Analyze: off (solo-sdd/config)")], status=row_status(None), sid="n1")
+        self.assertEqual((s["live_in_scenario"], s["analyze_findings"]), (None, None))
+        self.assertIs(self.session([("text", "- Analyze: 3 findings, kept 1\nAnalyze: 4 findings")],
+                                   sid="n2")["analyze_findings"], 4)
+        s = self.session([], status=row_status("sh other.sh -> ok"), sid="n3")
+        self.assertIs(s["live_in_scenario"], False)
+        for i, doc in enumerate((None, "## Result\n\n`sh demo.sh`\n")):
+            self.assertIsNone(self.session([], sid="m%d" % i, verification=doc)["live_in_scenario"], i)
+
+    def test_no_archived_status_and_broken_input(self):
+        s = self.session([("edit", WT + "/a.py")], status="STATUS: not_ready\n", sid="nr")
+        self.assertEqual(s, dict.fromkeys(ev.SIGNALS))
+        self.session([("edit", WT + "/a.py")], ["| F | Important | x |"], sid="br")
+        with open(self.proj / "br/subagents/agent-o.jsonl", "a") as f:
+            f.write("{broken line\n[1, 2]\n")
+        (self.proj / "br/subagents/agent-r0.meta.json").write_text("[]")
+        s = ev.path_signals("br", self.copy("c2"), "c2", self.roles)
+        self.assertEqual((s["review_after_last_edit"], s["review_rounds"]), (False, 0))
+        self.assertEqual(ev.session_metrics("br", {})["agents"]["general"], 1)
+
+    def test_path_marks(self):
+        for m, mark in (({"review_after_last_edit": False, "live_in_scenario": None}, "done, path incomplete"),
+                        ({"review_after_last_edit": True, "live_in_scenario": None}, "done, path unknown"),
+                        ({}, "done, path unknown"),
+                        ({"review_after_last_edit": True, "live_in_scenario": True}, "done")):
+            self.assertEqual(ev.path_mark(m), mark, m)
 
 
 if __name__ == "__main__":

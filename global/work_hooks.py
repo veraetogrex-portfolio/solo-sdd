@@ -2514,6 +2514,8 @@ def cmd_guard(inp):
 
 # ---------- stop: Stop ----------
 
+# The source of the transcript reader; its copy in sdd_eval.py is written by scripts/sync_blocks.py.
+# transcript-events:begin
 def transcript_events(f):
     """Edits and tool calls of a transcript in order: ("edit", path) for a tool or Bash edit, ("tool", name, input)."""
     for raw in f:
@@ -2539,6 +2541,7 @@ def transcript_events(f):
                     yield "edit", fp
             else:
                 yield "tool", name, ti
+# transcript-events:end
 
 
 def browser_signs():

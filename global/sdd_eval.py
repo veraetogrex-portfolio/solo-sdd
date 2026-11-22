@@ -109,16 +109,20 @@ def sections(src, title):
     return out
 
 
-def plan_module():
-    """sdd_dispatch_plan.py next to the script (after layout the name has a dash)."""
-    for n in ("sdd_dispatch_plan.py", "sdd-dispatch-plan.py"):
+def sibling(name):
+    """<name>.py next to the script (after layout the name has dashes)."""
+    for n in (name + ".py", name.replace("_", "-") + ".py"):
         p = os.path.join(HERE, n)
         if os.path.isfile(p):
-            sp = importlib.util.spec_from_file_location("sdd_dispatch_plan", p)
+            sp = importlib.util.spec_from_file_location(name, p)
             m = importlib.util.module_from_spec(sp)
             sp.loader.exec_module(m)
             return m
-    raise RuntimeError("no sdd_dispatch_plan.py next to sdd_eval.py")
+    raise RuntimeError("no %s.py next to sdd_eval.py" % name)
+
+
+def plan_module():
+    return sibling("sdd_dispatch_plan")
 
 
 def plan_deps():
@@ -531,12 +535,24 @@ def load_roles():
     return {}
 
 
+ROLES = ("orchestrator", "implement", "general", "review", "lookup", "analyze", "attack", "judge", "check")
+
+
 def role_of(description, roles):
-    d = (description or "").lower()
-    for role in ("review", "orchestrator", "implement"):
+    d = description.lower() if isinstance(description, str) else ""
+    for role in ROLES:
         if any(d.startswith(t.lower()) for t in roles.get(role, [])):
             return role
     return "general"
+
+
+def meta_of(journal):
+    """The .meta.json of a subagent journal as a dict; {} when missing, broken or not an object."""
+    try:
+        m = read_json(journal[:-len(".jsonl")] + ".meta.json")
+    except (OSError, ValueError):
+        return {}
+    return m if isinstance(m, dict) else {}
 
 
 def jlines(path):
@@ -605,13 +621,9 @@ def session_metrics(sid, prices):
     roles = load_roles()
     subs = sorted(glob.glob(os.path.join(path[:-len(".jsonl")], "subagents", "agent-*.jsonl")))
     files = [(path, "dispatcher")]
-    agents = {"orchestrator": 0, "implement": 0, "general": 0, "review": 0}
+    agents = dict.fromkeys(ROLES, 0)
     for p in subs:
-        try:
-            desc = read_json(p[:-len(".jsonl")] + ".meta.json").get("description")
-        except (OSError, ValueError):
-            desc = None
-        r = role_of(desc, roles)
+        r = role_of(meta_of(p).get("description"), roles)
         agents[r] += 1
         files.append((p, r))
     seen, owner, rejected = {}, {}, 0
@@ -676,6 +688,152 @@ def session_metrics(sid, prices):
             "hours": (t1 - t0) / 3600 if t0 is not None and t1 is not None else None}
 
 
+# ---- path signals ----
+
+# A copy of a block of global/work_hooks.py (this script is deployed alone): edit it there, then run
+# python3 scripts/sync_blocks.py.
+# transcript-events:begin
+def transcript_events(f):
+    """Edits and tool calls of a transcript in order: ("edit", path) for a tool or Bash edit, ("tool", name, input)."""
+    for raw in f:
+        if b'"tool_use"' not in raw and b"bashEditDiff" not in raw:
+            continue
+        try:
+            d = json.loads(raw)
+        except Exception:
+            continue
+        r = d.get("toolUseResult")
+        if isinstance(r, dict) and isinstance(r.get("bashEditDiff"), dict):
+            for fp in r["bashEditDiff"].get("changedFiles") or []:
+                yield "edit", fp
+        if d.get("type") != "assistant":
+            continue
+        for p in (d.get("message") or {}).get("content") or []:
+            if not isinstance(p, dict) or p.get("type") != "tool_use":
+                continue
+            name, ti = p.get("name", ""), p.get("input") or {}
+            if name in ("Write", "Edit", "MultiEdit", "NotebookEdit"):
+                fp = ti.get("file_path") or ti.get("notebook_path")
+                if fp:
+                    yield "edit", fp
+            else:
+                yield "tool", name, ti
+# transcript-events:end
+
+
+SIGNALS = ("review_after_last_edit", "review_rounds", "important", "live_in_scenario", "analyze_findings")
+LABEL = re.compile(r"[\s>#*+\-\d.)`]*Important\b")
+ANALYZE = re.compile(r"(?m)^[^\w\n]*Analyze:\s*(\d+) findings")
+
+
+def texts(objs):
+    """Assistant texts and SubagentHandback messages of a journal in order: [(kind, text)]."""
+    out = []
+    for o in objs:
+        if o.get("type") != "assistant":
+            continue
+        for b in blocks(o):
+            if b.get("type") == "text" and isinstance(b.get("text"), str) and b["text"].strip():
+                out.append(("text", b["text"]))
+            elif b.get("type") == "tool_use" and b.get("name") == "SubagentHandback":
+                m = (b.get("input") or {}).get("message") if isinstance(b.get("input"), dict) else None
+                if isinstance(m, str):
+                    out.append(("handback", m))
+    return out
+
+
+def final_text(objs):
+    """The message of the last SubagentHandback call, else the last assistant text; "" when neither."""
+    ts = texts(objs)
+    hb = [t for k, t in ts if k == "handback"]
+    return hb[-1] if hb else (ts[-1][1] if ts else "")
+
+
+def labelled(line):
+    """The line carries the Important label: at its start after list markup, or as a whole table cell."""
+    if LABEL.match(line):
+        return True
+    return line.lstrip().startswith("|") and any(c.strip(" *`") == "Important" for c in line.split("|"))
+
+
+def code_edit(path, roots):
+    """A code edit as the archive gate counts it: inside WORKTREE or the copy, outside solo-sdd/ and docs/."""
+    if not isinstance(path, str) or "/scratchpad/" in path:
+        return False
+    p = os.path.realpath(os.path.expanduser(path))
+    for r in roots:
+        rel = os.path.relpath(p, r)
+        if rel != "." and rel != ".." and not rel.startswith("../"):
+            return not rel.startswith(("solo-sdd/", "docs/"))
+    return False
+
+
+def path_signals(sid, copy, cid, roles):
+    """The five signals of the copy's session; all None when no orchestrator handed back STATUS: archived."""
+    sig = dict.fromkeys(SIGNALS)
+    path = find_session(sid)
+    if not path:
+        return sig
+    sd = sibling("sdd_dispatch")
+    subs = []
+    for p in sorted(glob.glob(os.path.join(path[:-len(".jsonl")], "subagents", "agent-*.jsonl"))):
+        try:
+            objs = parsed(jlines(p))
+        except OSError:
+            continue
+        meta = meta_of(p)
+        subs.append({"id": os.path.basename(p)[len("agent-"):-len(".jsonl")], "path": p, "meta": meta, "objs": objs,
+                     "role": role_of(meta.get("description"), roles),
+                     "start": next((o["timestamp"] for o in objs if isinstance(o.get("timestamp"), str)), "")})
+    done = [s for s in subs if s["role"] == "orchestrator" and sd.field(final_text(s["objs"]), "STATUS") == "archived"]
+    if not done:
+        return sig
+    orch = max(done, key=lambda s: s["start"])
+    status = final_text(orch["objs"])
+    # ponytail: launches pair with review journals by start order; pair by meta toolUseId if parallel reviews appear
+    results = [final_text(s["objs"]) for s in sorted(
+        (s for s in subs if s["role"] == "review" and s["meta"].get("parentAgentId") == orch["id"]),
+        key=lambda s: s["start"])]
+    roots = [os.path.realpath(r) for r in (sd.field(status, "WORKTREE"), copy) if r]
+    seq, k = [], 0
+    try:
+        with open(orch["path"], "rb") as f:
+            events = list(transcript_events(f))
+    except (OSError, AttributeError):
+        events = []
+    for ev in events:
+        if ev[0] == "edit":
+            if code_edit(ev[1], roots):
+                seq.append(None)
+        elif ev[1] in ("Agent", "Task") and role_of(ev[2].get("description"), roles) == "review":
+            res = results[k] if k < len(results) else ""
+            k += 1
+            if res.strip():
+                seq.append(sum(labelled(ln) for ln in res.splitlines()))
+    edits = [i for i, x in enumerate(seq) if x is None]
+    revs = [i for i, x in enumerate(seq) if x is not None]
+    sig["review_rounds"], sig["important"] = len(revs), sum(seq[i] for i in revs)
+    sig["review_after_last_edit"] = (not edits or bool(revs) and (revs[-1] > edits[-1] or
+                                                                  revs[-1] > edits[0] and not seq[revs[-1]]))
+    cmd = sd.field(status, "LIVE").partition(" -> ")[0].strip()
+    arch = archived(copy, cid)
+    vp = os.path.join(arch, "verification.md") if arch else None
+    if cmd and vp and os.path.isfile(vp):
+        miss = sd.live_in_scenario(vp, cmd)
+        sig["live_in_scenario"] = None if miss and miss.startswith("LIVE: no Live Scenario") else miss is None
+    hits = [m.group(1) for _, t in texts(orch["objs"]) for m in ANALYZE.finditer(t)]
+    sig["analyze_findings"] = int(hits[-1]) if hits else None
+    return sig
+
+
+def path_mark(m):
+    """The compare text of a done change by its signals (m: the copy's metrics, {} when none)."""
+    pair = (m.get("review_after_last_edit"), m.get("live_in_scenario"))
+    if any(v is False for v in pair):
+        return "done, path incomplete"
+    return "done, path unknown" if None in pair else "done"
+
+
 def money(x):
     return "n/a" if x is None else "$%.2f" % x
 
@@ -690,7 +848,7 @@ def label_metrics(folder, label, prices):
     Returns (dict, missing): missing means the session log of at least one copy is absent."""
     folder = os.path.abspath(folder)
     run = read_json(os.path.join(folder, "runs", label + ".json"))
-    out, missing = {}, False
+    out, missing, roles = {}, False, load_roles()
     for cid in sorted(run["copies"]):
         rec = run["copies"][cid]
         m = session_metrics(rec["session"], prices)
@@ -705,6 +863,7 @@ def label_metrics(folder, label, prices):
             if r.returncode == 0 and r.stdout.strip():
                 hours = (int(r.stdout) - t0) / 3600
         m["hours"] = hours
+        m.update(path_signals(rec["session"], copy, cid, roles))
         out[cid] = m
     ok = [m for m in out.values() if "error" not in m]
     total = {"cost_usd": None if not ok or any(m["cost_usd"] is None for m in ok) else sum(m["cost_usd"] for m in ok),
@@ -913,8 +1072,9 @@ def cmd_compare(a):
             except (RuntimeError, KeyError, subprocess.CalledProcessError) as e:
                 print("oracle failed: %s: %s" % (cid, e), file=sys.stderr)
                 return 3
+            m = mets[lb].get("copies", {}).get(cid, {})
             res[lb, cid] = {"done": o["green"], "failed": o["failed"],
-                            "text": "done" if o["green"] else "merged, oracle red: " + ", ".join(o["failed"])}
+                            "text": path_mark(m) if o["green"] else "merged, oracle red: " + ", ".join(o["failed"])}
 
     def met(lb, cid):
         m = mets[lb].get("copies", {}).get(cid, {})
@@ -964,6 +1124,11 @@ def cmd_compare(a):
     out += [""] + (["Flipped:"] + flips if flips else ["Flipped: none"])
     if asked:
         out += ["", "With a question:"] + ["- %s: %s" % (cid, "; ".join(v)) for cid, v in sorted(asked.items())]
+    path = ["- %s %s: %s" % (cid, lb, ", ".join("%s %s" % (k, json.dumps(mets[lb].get("copies", {}).get(cid, {}).get(k)))
+                                               for k in SIGNALS))
+            for cid in ids for lb in uniq if res.get((lb, cid), {}).get("done")]
+    if path:
+        out += ["", "Path:"] + path
     if notes:
         out += ["", "Spec after the change:"] + ["- " + n for n in sorted(notes)]
     print("\n".join(out))
