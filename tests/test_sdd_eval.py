@@ -1525,6 +1525,10 @@ class ProcessSignals(unittest.TestCase):
         with open(self.proj / "br/subagents/agent-o.jsonl", "a") as f:
             f.write("{broken line\n[1, 2]\n")
         (self.proj / "br/subagents/agent-r0.meta.json").write_text("[]")
+        self.session([("edit", WT + "/a.py"), ("review", "Review: c")], ["x"], sid="ls")
+        raw = {"type": "assistant", "message": {"content": [{"type": "text", "text": "- Important: a\u2028split \x85line"}]}}
+        (self.proj / "ls/subagents/agent-r0.jsonl").write_text(json.dumps(raw, ensure_ascii=False) + "\n", encoding="utf-8")
+        self.assertEqual(ev.path_signals("ls", self.copy("c3"), "c3", self.roles)["important"], 1)  # raw U+2028 in JSONL
         s = ev.path_signals("br", self.copy("c2"), "c2", self.roles)
         self.assertEqual((s["review_after_last_edit"], s["review_rounds"]), (False, 0))
         self.assertEqual(ev.session_metrics("br", {})["agents"]["general"], 1)
@@ -1539,7 +1543,11 @@ class ProcessSignals(unittest.TestCase):
                  "**Important I1: requirement clauses without a test.**", "**A. Important.** `init.py:101`. x",
                  "Important: 2 callers skip the exit-code check", "| I1 | Important | 2 callers skip it |",
                  "Important: nothing checks the exit code", "Important: no new test covers the grouped form",
-                 "Important: zero-length results are counted as rounds")
+                 "Important: zero-length results are counted as rounds",
+                 "- **Important (test evidence; class: a stand plant tests a different trigger).**",
+                 "**N-1 Important (antislop R-26: a control that does nothing)**", "- **N1 (Important): partly closed, still open.**",
+                 "Important 1: not fixed. x", "Important 2: partially fixed; y", "Important: the closed changes are listed as open",
+                 "Important: a fixed timeout of 5 s kills slow runs")
         counts = ("no Important findings", "Important: none", "Important: 0, Nit: 2", "0 Important, 1 Nit",
                   "- Important findings: none", "Important findings were not found", "> Important: none remain",
                   "| Important | 0 |", "| Important | none |", "Important: None.", "Important: Zero",
@@ -1553,6 +1561,8 @@ class ProcessSignals(unittest.TestCase):
                   "### Important 2: mostly closed; Important A is left", "- **Important 2: closed in substance, but a gap**",
                   "1. **Important, judge `reason` in the worker log: closed.** `a.py:270`",
                   "- **Important (round 2), 3xx accepted as data: closed.** x",
+                  "- **Important 1: \u0437\u0430\u043a\u0440\u044b\u0442\u043e.**", "1. **Important, three merge-rule scenarios: correct.**",
+                  "- **Important B (R-39): PASS.**", "- **Important 1 \u2014 \u0437\u0430\u043a\u0440\u044b\u0442.**",
                   "*" * 50000)  # a long markup run: read in linear time, a backtracking regex took 30 s
         self.assertEqual([ev.important_count(x) for x in found + counts], [1] * len(found) + [0] * len(counts))
         grouped = ("Findings:\n\n### Important\n\n- I1: the row is missing\n  - Places: a.py:3\n  - Fix: b\n\n"
@@ -1563,6 +1573,15 @@ class ProcessSignals(unittest.TestCase):
                 "1. **Important A:** `a.py` detail\n| B | Important | the bypass |\n- N-1 (Important, R-26): closed.\n"
                 "Important 1: closed.")
         self.assertEqual(ev.important_count(once), 2)
+        self.assertEqual(ev.important_count("### Important (blocks the archive)\n1. A race in the reader\n2. A missing test\n"
+                                            "\n**Important (blocks)**\n- I think x"), 3)
+        bold = ("### Important (blocks the archive)\n\n**I-1. Quadratic regexes.**\n- Places: `a.mjs:25`\n- Measured: 7 s\n\n"
+                "**I-2. A missing row limit.**\ntext\n\n### Nit\n\n**N-1. A name.**\n\n### Important\n\nNone.\n\n"
+                "**Important**\n\nThe stand plants the wrong trigger.\n- **A (Important): partly closed, the cause has moved.**\n"
+                "1. Important, a crash on a wrong form \u2014 **\u0437\u0430\u043a\u0440\u044b\u0442\u0430**.\n"
+                "**Important, round 2 (row 4 and p. 1): closed.**")
+        self.assertEqual(ev.important_count(bold), 4)
+        self.assertEqual(ev.important_count("1. Important, a diff in rounds 2\u20133: closed. x"), 0)
 
     def test_path_marks(self):
         for m, mark in (({"review_after_last_edit": False, "live_in_scenario": None}, "done, path incomplete"),
