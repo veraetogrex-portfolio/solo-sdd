@@ -11,4 +11,4 @@
 ## 2. Acceptance
 
 - [x] 2.1 Run the Live Scenario (or its Fallback) from verification.md and record the Result, Not Verified and Decisions Without Owner sections
-- [ ] 2.2 Run `solo-sdd validate review-principles` and archive the change with `solo-sdd archive review-principles --yes`
+- [x] 2.2 Run `solo-sdd validate review-principles` and archive the change with `solo-sdd archive review-principles --yes`

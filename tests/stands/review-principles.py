@@ -51,7 +51,7 @@ URL = "https://github.com/example/shop/pull/"
 RULES = {"named exception": (("except",), (URL + "1#discussion_r101", URL + "2#discussion_r104")),
          "files with `with`": ((r"\bwith\b", "file"), (URL + "1", URL + "4#discussion_r108")),
          "docstrings": (("docstring",), (URL + "2#discussion_r105", URL + "4#discussion_r109"))}
-OWNER_RULES = {"cents": (r"cents|float",), "expired": (r"expired",), "logged": (r"\blog(?:ged|s)?\b",),
+OWNER_RULES = {"cents": (r"cents|float",), "expired": (r"expired",), "logged": (r"\blog(?:ged|ging|s)?\b",),
                "exceed": (r"exceed",)}
 PATTERN = ("2#discussion_r103", "1#discussion_r102", "4#discussion_r110", "4#discussion_r111")
 SIZE15 = r"(?<![:\d])15[- ]lines?|(?:over|more than|longer than|above|exceeds?|past) (?:the )?15\b"
@@ -331,11 +331,12 @@ def grade_unread(mode, answer):
     unread = labelled(blocks(answer)["report"], "unread")
     named = re.search(r"\bprs?\b|pull request|review|comment", unread) and re.search(REASON[mode], unread)
     read_ = labelled(blocks(answer)["report"], "read")
-    zero = re.search(r"(?:\bprs?\b|pull request|review|comment)[^,;]*?:\s*0\b", read_)
+    zero = re.search(r"(?:\bprs?\b|pull request|review|comment)[^,;]*?:\s*(?:0\b|none\b)"
+                     r"|\b(?:0|no|zero) (?:prs?|pull requests?|review|comment)", read_)
     return ["PR sources unread with the reason: %s" % ("yes" if named else "no"),
             "not counted as 0 remarks: %s" % ("no" if zero else "yes"),
             "owner lines %d of 4" % owner_rules(rules),
-            "rules from PR comments: %d" % pr_rules(rules)]
+            "rules from PR comments: %d" % (pr_rules(rules) + sum(1 for r in rules if re.search(r"linter|approve", flat(r))))]
 
 
 def rule_text(line):

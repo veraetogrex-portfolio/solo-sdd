@@ -51,7 +51,10 @@ Not needed: the fixture and the fake `gh` are local, every subagent runs in the 
 - Step 8: `python3 tests/stands/review-principles.py --references` prints `references: 19 of 19 as expected`.
 - The `Lookup:` runs slipped twice against their prompt, both recorded in their answers: the `gh-broken` run redirected stderr to `/tmp/x` (a folder, so nothing was written) and wrote and removed a scratch `c.json` in its temporary folder; the `moved` and `held-out` runs read the solo-sdd `AGENTS.md` a session start hook named (not a graded path, so `grading out of reach` stays `yes`). The home path in those two notes is replaced by `<home>` in the kept answers (`test_public_tree`).
 - Analyze: 3 attackers on `haiku` and a judge: 23 findings after the merge, kept 17 (CRITICAL 1, HIGH 10, MEDIUM 5, LOW 1), dropped 6; every CRITICAL and HIGH fixed in the artifacts. The repeat `Analyze: review-principles 1 2 7 7a` gave CRITICAL 1 and HIGH 5, all fixed (Decisions Without Owner).
-- Checks: `/usr/bin/python3 tests/run.py --jobs 5 --tier slow` -> `files: 42, failed: 0` after the last code edit; lint silent; `solo-sdd validate --all` 0 errors.
+- Checks: `/usr/bin/python3 tests/run.py --jobs 5 --tier slow` -> `files: 42, failed: 0, seconds: 510.6` after the last code edit (the round-2 Nit fixes of the stand); lint silent; `solo-sdd validate --all` 0 errors.
+- Review: round 1 Important 3 (three scenarios proven by text only; `grade_unread` passing wrong answers; the template's promise that deleting a line rejects it), Nit 5; round 2 Important 0, Nit 5, Pre-existing 2. No extra round.
+
+Suite: 234 (skill-ablation) -> 511
 
 ## Not Verified
 
@@ -83,4 +86,6 @@ Not needed: the fixture and the fake `gh` are local, every subagent runs in the 
 - review round 1, Important 2 (`grade_unread` passed an answer without the exit code and one that counted the PR sources as 0 remarks) → the reason of `gh-fail` needs `exit 1` or `code 1`, and a `not counted as 0 remarks` line reads the `Read:` line; `zero-unread.md` is the wrong answer.
 - review round 1, Important 3 (the template promised that deleting a line rejects it, and a rerun brings it back) → the template now says a rerun brings a deleted line back while its remarks stand, and a rule is reworded rather than deleted; a record of rejected lines is a later change.
 - review round 1, Nits: the per-remark row of the report form, `expected-moved.md`'s report lines, the `log` regex and the held-out grade name fixed; the not-review-remarks count kept (it names the grants the owner lines hold, which step 3 skips).
+- review round 2, Nits 1, 2, 4 (the zero-count form `none` or `0 PR comments`; `rules from PR comments` ignoring a rule of the agent's account in `no-login`; the `log` regex missing `logging`) → fixed in the stand, every kept answer and reference still grades as before; Nit 3 ("reword it rather than delete it" undefined in the skill) → kept: the skill keeps every existing rule as it stands, so a reworded rule stays and its source rule may join beside it, which the owner sees and may reword again; a record of rejected lines is a later change; Nit 5 (26 rules from scratch) → kept text-only as decided in round 1.
+- review round 2, Pre-existing 2 (the order of existing rules is not graded by `--grade-moved` or `--grade-full`, and `expected-moved.md` lists the moved rule first) → recorded, not fixed: the requirement keeps every rule; the order is the skill text's own promise.
 - analyze: step 1 runs `sync.py status` only; the push is the delivery's step after merge (the `Delivery` section: Deploy: no), as the earlier dispatched changes did.
