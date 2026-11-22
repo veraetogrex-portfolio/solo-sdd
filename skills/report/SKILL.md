@@ -26,7 +26,7 @@ The report only reads. Files do not change unless the user asked to save the rep
    one line each from `LP="$(solo-sdd config get commit.light-prefix 2>/dev/null)" || LP=light:; git log --format='%s%x09%h' --since=<period start> | LP="$LP" awk 'index($0, ENVIRON["LP"]) == 1'`
    (the older form for the default prefix: `git log --oneline --grep='^light:' --since=<period start>`).
 4. **What is broken or at risk.**
-5. **What waits**, from `docs/waiting.md`: what, from whom, since when.
+5. **What waits**, from the first table of `docs/waiting.md` only (the rows under `## Closed` are closed): what, from whom, since when.
 6. **What next**: 1-3 items.
 
 What is not in the sources, do not make up: write "no data" and where to get it.

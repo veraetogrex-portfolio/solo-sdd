@@ -2,11 +2,11 @@
 
 How `solo-sdd install` and `sync.py push` lay the repository out in the agent folders. The commands are in [cli.md](cli.md).
 
-The deployment map is `targets.json`. There are 20 skills: 15 of the algorithm and 5 manual commands (`relay`, `blockers`, `report`, `health`, `changes`).
+The deployment map is `targets.json`. There are 21 skills: 15 of the algorithm and 6 manual commands (`relay`, `blockers`, `report`, `health`, `changes`, `next-up`).
 
 | What | Where |
 |---|---|
-| `skills/<name>/SKILL.md`: `spec-plan`, `spec-analyze`, `spec-next`, `spec-audit`, `project-init`, `context-resume`, `work-status`, `ship`, `ui-check`, `copy-check`, `debug-profile`, `evidence-research`, `agent-quality`, `relay`, `blockers`, `report`, `health`, `changes` | `~/.agents/skills`, `~/.codex/skills`, `~/.claude/skills` |
+| `skills/<name>/SKILL.md`: `spec-plan`, `spec-analyze`, `spec-next`, `spec-audit`, `project-init`, `context-resume`, `work-status`, `ship`, `ui-check`, `copy-check`, `debug-profile`, `evidence-research`, `agent-quality`, `relay`, `blockers`, `report`, `health`, `changes`, `next-up` | `~/.agents/skills`, `~/.codex/skills`, `~/.claude/skills` |
 | `integrations/antislop/` (the bundled integration `antislop`, a pinned copy of the anti-slop rules: the core `core.md`, `ui.md`, `human.md`, `layoutmobile.md`, `contrast-check.py`, `references/`, `copywriting.md`; the copy's licenses, README, VERSION and `integration` description are not deployed; updated only by replacing the copy) | `<root>/ui-check/antislop/` (everything except `copywriting.md`) and `<root>/copy-check/antislop/` (`core.md`, `copywriting.md`) in `~/.agents/skills`, `~/.codex/skills`, `~/.claude/skills` |
 | `integrations/security-audit/` (the bundled integration `security-audit`, a pinned copy of `cloudflare/security-audit-skill`: `METHOD.md` from its `SKILL.md`, the attack class references, `report-schema.json`, the validators; its license, README, VERSION and `integration` description are not deployed; updated only by replacing the copy) | `<root>/spec-audit/security/` in `~/.agents/skills`, `~/.codex/skills`, `~/.claude/skills` |
 | `skills/codex-orchestration/SKILL.md` | `~/.agents/skills`, `~/.claude/skills` |
