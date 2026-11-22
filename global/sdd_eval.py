@@ -723,9 +723,9 @@ def transcript_events(f):
 
 SIGNALS = ("review_after_last_edit", "review_rounds", "important", "live_in_scenario", "analyze_findings")
 # the Important label opens a finding: after list markup and an optional id (1. I1 **F-2**), bracketed or followed
-# by a separator, then text that is not a count (none, 0, n/a, no findings)
-HEAD = re.compile(r"[\s>#*+\-`]*(?:[\[(*`]*[A-Za-z]{0,3}-?\d+[.:)\]*`]*\s*[\-\u2013\u2014]?\s*)?"
-                  r"([\[(*`]*)Important([\])*`]*)\s*(.*)$")
+# by a separator, then text that is not a count (none, 0, n/a, no findings); read by str.lstrip, not one regex,
+# so a long run of markup costs linear time
+FINDING_ID = re.compile(r"[\[(]?[A-Za-z]{0,3}-?\d+[.:)\]]?")
 COUNT = re.compile(r"(?i)(?:none|nothing|n/a|zero|no|\d+)(?:\s+(?:findings?|issues?|remarks?))?(?:\s+remain(?:ing)?)?"
                    r"\s*(?:[.,;)]|$)")
 ANALYZE = re.compile(r"(?m)^[^\w\n]*Analyze:\s*(\d+) findings")
@@ -756,15 +756,21 @@ def final_text(objs):
 
 def labelled(line):
     """The line is a finding labelled Important: a table row with an Important cell not followed by a count cell,
-    or a line that opens with the label (see HEAD) and goes on with text that is not a count."""
+    or a line that opens with the label and goes on with text that is not a count."""
     if line.lstrip().startswith("|"):
         cells = [c.strip(" *`[]()") for c in line.strip().strip("|").split("|")]
         return any(c == "Important" and not (i + 1 < len(cells) and COUNT.match(cells[i + 1]))
                    for i, c in enumerate(cells))
-    m = HEAD.match(line)
-    if not m:
+    s = line.lstrip(" \t>#*+-`")
+    m = FINDING_ID.match(s)
+    if m:
+        s = s[m.end():].lstrip(" \t*`.:)]-\u2013\u2014")
+    body = s.lstrip("[(*`")
+    if not body.startswith("Important"):
         return False
-    opened, closed, rest = m.groups()
+    opened, rest = s[:len(s) - len(body)], body[len("Important"):]
+    after = rest.lstrip("])*`")
+    closed, rest = rest[:len(rest) - len(after)], after.lstrip()
     if not ("[" in opened and "]" in closed or "(" in opened and ")" in closed):
         if not rest or rest[0] not in ":.-\u2013\u2014(":
             return False

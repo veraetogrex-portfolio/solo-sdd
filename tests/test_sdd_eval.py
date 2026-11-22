@@ -1538,7 +1538,8 @@ class ProcessSignals(unittest.TestCase):
                   "- Important findings: none", "Important findings were not found", "> Important: none remain",
                   "| Important | 0 |", "| Important | none |", "Important: None.", "Important: Zero",
                   "- Important: no findings", "Important: nothing", "Important: n/a", "Important: 1",
-                  "Important: 2, Nit: 0", "| Important | None |", "| Important | n/a |", "This is Important: x")
+                  "Important: 2, Nit: 0", "| Important | None |", "| Important | n/a |", "This is Important: x",
+                  "*" * 50000)  # a long markup run: read in linear time, a backtracking regex took 30 s
         self.assertEqual([ev.labelled(x) for x in found + counts], [True] * len(found) + [False] * len(counts))
 
     def test_path_marks(self):
