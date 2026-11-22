@@ -340,7 +340,9 @@ class SkillCommandsTest(unittest.TestCase):
         waiting lines, Design file rerun: only what the stands `tests/stands/next-up.py` and
         `tests/stands/waiting-readers.py` do not reach (the manual-only flag, the read
         limit, a red CI, no remote, a `doctor` line missing, a line break in a cell, the estimate bounds), the template,
-        `report` step 5 and the first-table wording of every other reader and writer of `docs/waiting.md`."""
+        `report` step 5, and of the other readers and writers of `docs/waiting.md` what the stand does not run (`spec-next`,
+        `spec-plan`, `ALGORITHM.md`, the global rules, a first `project-init` run, a field emptied after the closing, a
+        file without `## Closed`)."""
         flat = lambda t: " ".join(t.split())
         text = flat(skill_text.skill("next-up"))
         for words in ("disable-model-invocation: true", "--limit 20", "a red last CI run, then hook errors",
@@ -353,16 +355,13 @@ class SkillCommandsTest(unittest.TestCase):
             self.assertIn(words, template)
         self.assertIn("5. **What waits**, from the first table of `docs/waiting.md` only", skill_text.skill("report"))
         self.assertIn("`project-init` for its own `DESIGN.md` row", template)
-        self.assertIn("from `docs/waiting.md` only its first table, the rows under `## Closed` are closed",
-                      flat(skill_text.skill("context-resume")))
-        for name in ("spec-next", "spec-plan", "blockers", "project-init"):
+        for name in ("spec-next", "spec-plan", "project-init"):
             self.assertIn("in the first table of `docs/waiting.md`", flat(skill_text.skill(name)), name)
         self.assertIn("the first table of `docs/waiting.md`, the rest", flat((REPO / "ALGORITHM.md").read_text(encoding="utf-8")))
         self.assertIn("`verification.md` and the first table of `docs/waiting.md`",
                       flat((REPO / "global/AGENTS.md").read_text(encoding="utf-8")))
         init = flat(skill_text.skill("project-init"))
-        for words in ("move the row to `## Closed`", "the evidence `DESIGN.md: no empty fields` and the date",
-                      "the row is never deleted", "a later empty field gets a new row in the first table",
+        for words in ("a later empty field gets a new row in the first table",
                       "no `## Closed`: create it there with the first table's columns plus `Evidence` and `Closed`"):
             self.assertIn(words, init)
 

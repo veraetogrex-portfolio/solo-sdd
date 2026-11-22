@@ -30,10 +30,14 @@ HERE = pathlib.Path(__file__).resolve().parent
 spec = importlib.util.spec_from_file_location("next_up_stand", HERE / "next-up.py")
 nu = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(nu)
+nu.fail = lambda msg: sys.exit("waiting-readers: " + msg)  # the refusals of the reused readers
 nu.NEAR = re.compile(r"tests/stands/(?:waiting-readers|next-up)(?![A-Za-z0-9_-])")  # the graders and references
 PREFIX = "waiting-readers."
 DESIGN_ROW = "| — | — | DESIGN.md: fill in the fields Fonts, Dial | owner | 2026-11-05 |"
-WAITING = ("dispatch-ci", "add-import", "release-040", "design.md")
+# every waiting row by its change id or its condition, and the closed row the same way
+WAITING = (("dispatch-ci", "red ci"), ("add-import", "csv"), ("release-040", "v0.4.0"), ("design.md",))
+CLOSED = ("publish-docs", "v0.3.0")
+ITEM = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+")
 DESIGN = """# DESIGN
 
 Filled in by the user, the agent only carries over the answers. An empty field means not decided.
@@ -79,10 +83,7 @@ def prepare():
     root = pathlib.Path(tempfile.mkdtemp(prefix=PREFIX))
     copy = root / "project"
     shutil.copytree(HERE / "next-up/project", copy)
-    lines = nu.fixture_waiting(True).splitlines()
-    last = max(i for i, l in enumerate(lines) if l.startswith("| release-040 |"))
-    (copy / "docs/waiting.md").write_text("\n".join(lines[:last + 1] + [DESIGN_ROW] + lines[last + 1:]) + "\n",
-                                          encoding="utf-8")
+    (copy / "docs/waiting.md").write_text(prepared_waiting(), encoding="utf-8")
     (copy / "DESIGN.md").write_text(DESIGN, encoding="utf-8")
     (copy / "web").mkdir()
     (copy / "web/index.html").write_text("<!doctype html>\n<title>Shop</title>\n", encoding="utf-8")
@@ -105,11 +106,11 @@ def clean(folder):
     print("removed: %s" % p)
 
 
-def fixture():
-    """(first table rows, Closed table rows) of the prepared `docs/waiting.md`, each row flattened."""
+def prepared_waiting():
+    """The next-up fixture with `publish-docs` under `## Closed` and the `DESIGN.md` row last in the first table."""
     lines = nu.fixture_waiting(True).splitlines()
     last = max(i for i, l in enumerate(lines) if l.startswith("| release-040 |"))
-    return split("\n".join(lines[:last + 1] + [DESIGN_ROW] + lines[last + 1:]))[:2]
+    return "\n".join(lines[:last + 1] + [DESIGN_ROW] + lines[last + 1:]) + "\n"
 
 
 def split(text):
@@ -121,25 +122,34 @@ def split(text):
         sum(1 for l in text.splitlines() if nu.flat(l) == "## closed")
 
 
-def blockers_text(answer):
-    """The map's Blockers line with the list items under it; any other line ends it."""
-    out, on = [], False
+def blocker_items(answer):
+    """The items of the map's Blockers line: its own text split at `;`, then every list item under it (`-`, `*`, `+`
+    or numbered), an indented line continuing the item above; a blank line is skipped, any other line ends it."""
+    items, on = [], False
     for line in answer.splitlines():
         f = nu.flat(line).lstrip("# ")
-        if f.startswith("blockers"):
-            on = True
-        elif on and f and not f.startswith("-"):
+        if not on:
+            if f.startswith("blockers"):
+                on = True
+                items += [i for i in f.split(";")]
+        elif not f:
+            continue
+        elif ITEM.match(line):
+            items.append(nu.flat(ITEM.sub("", line, count=1)))
+        elif line[:1].isspace() and items:
+            items[-1] += " " + f
+        else:
             break
-        if on:
-            out.append(f)
-    return " ".join(out)
+    return [i for i in items if i.strip()]
 
 
 def grade(cr, bl, pi):
-    first0, closed0 = fixture()
-    got = blockers_text(cr)
-    closed_named = int(any(w in got for w in ("publish-docs", "v0.3.0")))  # one closed row, two names
-    named = sum(1 for w in WAITING if w in got)
+    first0, closed0 = split(prepared_waiting())[:2]
+    items = blocker_items(cr)
+    got = " ".join(items)
+    # one closed row, two names; an item that calls it closed does not report it as waiting
+    closed_named = int(any(any(w in i for w in CLOSED) and not re.search(r"\bclosed\b", i) for i in items))
+    named = sum(1 for words in WAITING if any(w in got for w in words))
     lines = ["context-resume closed rows as blockers: %d" % closed_named,
              "context-resume waiting rows named: %d of %d" % (named, len(WAITING))]
     ok = [bool(got) and closed_named == 0, named == len(WAITING)]

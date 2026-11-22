@@ -94,7 +94,7 @@ Analyze: <n> findings, kept <k>, dropped <d>; CRITICAL <c> · HIGH <h>, fixed <f
 Moved to a new change: <id> | none
 Lesson: <line written or refined in ## Lessons> -> <path of that AGENTS.md>, one line each | none
 <extra lines, only when there are such lessons: Lesson for solo-sdd: <sentence> · Lesson (no AGENTS.md): <sentence> · Lesson (not written): <sentence>>
-Not checked live: <what and why, recorded in verification.md and docs/waiting.md> | everything checked
+Not checked live: <what and why, recorded in verification.md and the first table of docs/waiting.md> | everything checked
 Delivery: <commit, PR, whether merged> | waits for deploy consent: <what and where> | forbidden by the project rules
 Needs from you: <action> | nothing
 ```
