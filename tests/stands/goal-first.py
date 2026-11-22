@@ -26,7 +26,7 @@ import tempfile
 REPO = pathlib.Path(__file__).resolve().parents[2]
 PREFIX = "goal-first."
 RENAMED = ("test_tip_and_total_of_a_usual_bill", "test_refuses_a_bill_or_percent_that_is_not_a_number")
-TIME = re.compile(r"\d\s*(?:ms|s|h)\b|\b(?:milli)?(?:secs?|seconds?)\b|\b(?:mins?|minutes?|hours?)\b")
+TIME = re.compile(r"\d\s*(?:ms|s|h)\b|\b(?:seconds?|minutes?|hours?)\b")
 GIT = ["git", "-c", "user.name=stand", "-c", "user.email=stand@example.com", "-c", "init.defaultBranch=main",
        "-c", "commit.gpgsign=false", "-c", "core.autocrlf=false"]
 sys.path.insert(0, str(REPO / "tests"))
@@ -115,11 +115,11 @@ def blocks(text):
 
 
 def named(found, suffix):
-    """{folder: lines} of the blocks whose path ends in `suffix` (`report` matches only itself)."""
+    """{folder: lines} of the blocks whose path ends in `suffix`; `report` matches only the block named `report`."""
     out = {}
     for name, lines in found.items():
         low = name.casefold()
-        if low == suffix or low.endswith("/" + suffix):
+        if low == suffix or (suffix != "report" and low.endswith("/" + suffix)):
             out[low[:-len(suffix)]] = lines
     if not out:
         fail("the answer has no `=== <path ending in %s>` block" % suffix)
@@ -157,7 +157,7 @@ def proposal_items(lines):
 def grade(text):
     found = blocks(text)
     proposals, checks = named(found, "proposal.md"), named(found, "verification.md")
-    tasks = [l for lines in named(found, "tasks.md").values() for l in lines if re.match(r"\s*- \[ \]", l)]
+    tasks = [norm(l) for lines in named(found, "tasks.md").values() for l in lines if re.match(r"\s*- \[ \]", l)]
     report = named(found, "report")[""]
     pairs = {f: (section(lines, "Why")[-2:] + ["", ""])[:2] for f, lines in proposals.items()}
     has_goal = all(g.startswith("goal:") and c.startswith("check:") for g, c in pairs.values())
@@ -178,7 +178,9 @@ def grade(text):
 
 def grade_report(text):
     found = blocks(text)
-    lines = [norm(l) for l in (found["report"] if "report" in found else text.splitlines()) if l.strip()]
+    report = [lines for name, lines in found.items() if name.casefold() == "report"]
+    lines = [norm(l) for l in (report[0] if report else text.splitlines())
+             if l.strip() and not re.fullmatch(r"\s*<!--.*-->\s*", l)]
     first = (lines + ["", ""])[:2]
     ok = first[0].startswith("goal:") and first[1].startswith("check:") and all(l.endswith("(inferred)") for l in first)
     print("goal first: %s" % ("yes" if ok else "no"))

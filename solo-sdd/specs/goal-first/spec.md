@@ -1,8 +1,9 @@
-## Purpose
+# goal-first Specification
 
+## Purpose
 A request made of steps without a goal is planned against the goal those steps serve and a check that shows it is reached; every named step is still done as asked, and anything beyond them is only proposed.
 
-## ADDED Requirements
+## Requirements
 
 ### Requirement: Goal and check for a step-only request
 For a request that lists steps without a goal, `spec-plan` SHALL end the Why of each change it creates with a `Goal:` line (what the steps serve) and a `Check:` line with a number that shows it is reached; outside `spec-plan` the two lines SHALL open the report, before the plain lines of section 1. A line not in the owner's words SHALL end with `(inferred)`, in `spec-plan` with a `goal inferred:` line in `Decisions Without Owner`. Section 6 of the global rules SHALL hold this.
