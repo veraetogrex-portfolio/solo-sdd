@@ -12,6 +12,8 @@ The input is the text after the command: a report or message of another agent. T
 ## Order
 
 1. **Context.** The project rules (`AGENTS.md`, `CLAUDE.md`), `git status`, `CLAIM` in open changes. Determine which project, change and scenario the report is about. If another agent is working in this project now (its `CLAIM`, fresh uncommitted changes), do not touch its files.
+
+   Then find the source of the report, searching only within the reach of the global rules (section 1), and read it before step 2: the change folder it names (`solo-sdd/changes/<id>/` or its copy in `solo-sdd/changes/archive/`), its PR by `gh pr view`, the other agent's session log where `/context-resume` reads it. A source out of reach or absent gets the `Based on an excerpt:` line of the global rules (section 1) word for word, in English in any reply language, in the report, and a path outside reach is not opened, listed or searched.
 2. **Parsing.** Split the report into items: "done", "not checked", "did not help or failed", "needs from the user", "found outside the change".
 3. **Done.** Check every claim yourself with a command, a test, a file or a log. Mark: confirmed, refuted (with proof) or cannot be checked (why).
 4. **Not checked, did not help, failed.** Finish it yourself: run the check, find the cause (`/debug-profile`: a running service or a bug in code), fix it. The same edit did not help twice: stop and look for the cause.
@@ -25,6 +27,7 @@ The input is the text after the command: a report or message of another agent. T
 Report from: <agent> — <about what>
 Confirmed: <items> | none
 Refuted: <item — proof> | none
+Based on an excerpt: <the line of the global rules, section 1> | none
 Finished: <item — check — result>
 Moved out: <change or file> | none
 Needs from you: <steps> | nothing
