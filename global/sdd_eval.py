@@ -748,7 +748,7 @@ STATUS_AFTER = re.compile(r"(?i)[:\u2013\u2014][\s*`]*" + CLOSED + END)  # "x y:
 HEADING = re.compile(r"(?:\d+[.)]\s*)?(?:(?:Open|New)\s+)?Important(?:\s+findings?)?(?:\s*\([^)]*\))?")
 LABELS = ("Important", "Nit", "Pre-existing")
 LIST_ITEM = re.compile(r"([ \t]*)(?:[-*+]|\d+[.)])[ \t]+")
-ANALYZE = re.compile(r"(?m)^[^\w\n]*Analyze:\s*(\d+) findings")
+ANALYZE = re.compile(r"(?m)^[^\w\n]*Analyze:\s*([0-9]+) findings")
 
 
 def texts(objs):
@@ -898,7 +898,7 @@ def code_edit(path, roots):
 
 def path_signals(sid, copy, cid, roles):
     """The five signals and important_sources of the copy's session; all None when no orchestrator handed back
-    STATUS: archived; the review ones None when a review launch has no journal with its toolUseId."""
+    STATUS: archived; the review ones None when a review launch has no journal with its toolUseId and was not refused."""
     sig = dict.fromkeys(PATH_KEYS)
     path = find_session(sid)
     if not path:

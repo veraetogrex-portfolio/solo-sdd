@@ -47,7 +47,7 @@ Signals SHALL read the journal of the last orchestrator (by its first line) whos
 - **THEN** `important` counts that result as 1
 
 ### Requirement: Review verdict count
-A counted review SHALL count `<n>` when its last non-blank line, without `*` and backquotes, is exactly `Important: <n>`, else its lines labelled `Important`. `important` SHALL sum the counted reviews: a finding open over two rounds counts twice. `important_sources` SHALL name `line` or `text` per one. A review launch SHALL pair with the journal whose `.meta.json` `toolUseId` is its id; an unpaired one makes `review_after_last_edit`, `review_rounds`, `important`, `important_sources` `null`.
+A counted review SHALL count `<n>` when its last non-blank line, without `*` and backquotes, is exactly `Important: <n>`, else its lines labelled `Important`. `important` SHALL sum the counted reviews: a finding open over two rounds counts twice. `important_sources` SHALL name `line` or `text` per one. A review launch SHALL pair with the journal whose `.meta.json` `toolUseId` is its id; one refused (an error result) is an empty review, any other unpaired one makes the review signals `null`.
 
 #### Scenario: The verdict line wins
 - **WHEN** a counted review result states its one finding only in prose a label reader cannot see and ends with the line `Important: 1`
@@ -60,6 +60,10 @@ A counted review SHALL count `<n>` when its last non-blank line, without `*` and
 #### Scenario: Forms of the line
 - **WHEN** a review result ends with `**Important: 0**` and a blank line, or ends with `Important: none`, or has `Important: 2` followed by a note
 - **THEN** the first counts 0 from `line`; the other two fall back to `text`
+
+#### Scenario: A refused review launch
+- **WHEN** the orchestrator's second `Review:` launch has no journal and its tool result is an error, and the first review ends with `Important: 0`
+- **THEN** the second is an empty, failed review: `review_rounds: 1`, `important: 0`, `important_sources: ["line"]`
 
 #### Scenario: A review journal not found
 - **WHEN** the orchestrator launched `Review: a` and no subagent `.meta.json` holds that launch's `toolUseId`

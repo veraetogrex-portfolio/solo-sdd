@@ -1608,7 +1608,8 @@ class ProcessSignals(unittest.TestCase):
             f.write(jl(40, [{"type": "tool_result", "tool_use_id": "toolu_r1", "is_error": True, "content": "denied"}],
                        typ="user") + "\n")
         s = ev.path_signals("v4", self.copy("c"), "c", self.roles)
-        self.assertEqual((s["review_after_last_edit"], s["review_rounds"], s["important_sources"]), (True, 1, ["line"]))
+        self.assertEqual([s[k] for k in ("review_after_last_edit", "review_rounds", "important", "important_sources")],
+                         [True, 1, 0, ["line"]])
 
     @settings(max_examples=marks.examples(200, 30), deadline=None)
     @given(st.lists(st.sampled_from(["- Important: a gap", "Important: 7", "| F1 | Important | x |", "prose", "",
