@@ -38,8 +38,15 @@
   "docs/agents.md": [
    "tests/test_providers.py"
   ],
+  "docs/release.md": [
+   "tests/test_skill_commands.py"
+  ],
   "docs/settings.md": [
    "tests/test_settings.py"
+  ],
+  "docs/skills-audit.md": [
+   "tests/test_skill_ablation.py",
+   "tests/test_skill_commands.py"
   ],
   "docs/stop-conditions.md": [
    "tests/test_skill_commands.py"
@@ -131,6 +138,7 @@
    "tests/test_providers.py",
    "tests/test_sdd_dispatch.py",
    "tests/test_sdd_dispatch_plan.py",
+   "tests/test_skill_ablation.py",
    "tests/test_skill_commands.py",
    "tests/test_sync.py",
    "tests/test_vendor_antislop.py",
@@ -183,6 +191,8 @@
   "targets.json": [
    "tests/test_cli.py",
    "tests/test_providers.py",
+   "tests/test_skill_ablation.py",
+   "tests/test_skill_commands.py",
    "tests/test_sync.py",
    "tests/test_vendor_antislop.py",
    "tests/test_vendor_security_audit.py"
@@ -244,6 +254,7 @@
    "tests/test_integrations.py",
    "tests/test_sdd_dispatch.py",
    "tests/test_sdd_dispatch_plan.py",
+   "tests/test_skill_ablation.py",
    "tests/test_skill_commands.py"
   ],
   "tests/stands/": [],
@@ -252,6 +263,14 @@
   ],
   "tests/stands/provider-probe.py": [
    "tests/test_providers.py"
+  ],
+  "tests/stands/skill-ablation.py": [
+   "tests/test_skill_ablation.py",
+   "tests/test_skill_commands.py"
+  ],
+  "tests/stands/skill-ablation/": [
+   "tests/test_skill_ablation.py",
+   "tests/test_skill_commands.py"
   ],
   "tests/stands/slow-tests-cost.py": [
    "tests/test_shared_repo.py"
@@ -356,6 +375,9 @@
   ],
   "tests/test_shared_repo.py": [
    "tests/test_shared_repo.py"
+  ],
+  "tests/test_skill_ablation.py": [
+   "tests/test_skill_ablation.py"
   ],
   "tests/test_skill_commands.py": [
    "tests/test_skill_commands.py"

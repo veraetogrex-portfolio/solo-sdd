@@ -1,0 +1,2 @@
+logs/transform\.log
+config\.yaml

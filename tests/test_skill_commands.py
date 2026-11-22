@@ -785,5 +785,104 @@ class NoPersonaPrompts(unittest.TestCase):
             self.assertIn(w, plan)
 
 
+def ablation():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("skill_ablation", REPO / "tests/stands/skill-ablation.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+AUDIT_HEAD = ["| Heading | Step | Mark | Hook | Why |", "|---|---|---|---|---|"]
+AUDIT_GATES = ["## Gates a hook could hold", "", "| Skill | Heading | Step | What |", "|---|---|---|---|"]
+
+
+class SkillsAudit(unittest.TestCase):
+    """Requirements: Skills audit table, Gates a hook could hold, Measurement on a main model change."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.sa = ablation()
+
+    def tree(self, root, skills, doc):
+        root = pathlib.Path(root)
+        root.mkdir(parents=True)
+        (root / "targets.json").write_text('{"skills": {%s}}' % ", ".join('"%s": ["claude"]' % n for n in skills))
+        for name, text in skills.items():
+            (root / "skills" / name).mkdir(parents=True)
+            (root / "skills" / name / "SKILL.md").write_text(text, encoding="utf-8")
+        (root / "docs").mkdir(exist_ok=True)
+        (root / "docs/skills-audit.md").write_text("\n".join(doc) + "\n", encoding="utf-8")
+        return self.sa.audit_errors(root)
+
+    def test_the_tree(self):
+        self.assertEqual(self.sa.audit_errors(), [])
+        text = " ".join((REPO / "docs/release.md").read_text(encoding="utf-8").split("## Skill measurement", 1)[1]
+                        .split("\n## ", 1)[0].split())
+        for w in ("When the `main` list of `global/model-policy.json` changes", "`tests/stands/skill-ablation.py`",
+                  "every skill with a task set under `tests/stands/skill-ablation/`", "never `claude -p`",
+                  "under `### Run <date> <model>`", "`candidate to cut: the owner decides`",
+                  "only the owner removes that line or the skill"):
+            self.assertIn(w, text)
+
+    def test_step_reader(self):
+        text = ("---\nname: x\n---\n# x\n\nIntro.\n\n## Order\n\n1. **Look.** Text.\n   - nested\n   3. nested item\n"
+                "**2. Hold on.** More.\n2a. Plain title: more words.\n```\n# not a heading\n4. not an item\n```\n"
+                "\n## Other (part)\n\n1. `cmd --flag` and a long plain title with many words.\nTail.\n")
+        with tempfile.TemporaryDirectory() as d:
+            (pathlib.Path(d) / "skills/x").mkdir(parents=True)
+            (pathlib.Path(d) / "skills/x/SKILL.md").write_text(text, encoding="utf-8")
+            self.assertEqual(self.sa.steps("x", d), [("Order", "1. Look", 9, 12), ("Order", "2. Hold on", 12, 13),
+                                                     ("Order", "2a. Plain title", 13, 19),
+                                                     ("Other (part)", "1. cmd --flag and a long plain", 21, 23)])
+            (pathlib.Path(d) / "skills/x/SKILL.md").write_text("# x\n\nNo steps.\n", encoding="utf-8")
+            self.assertEqual(self.sa.steps("x", d), [("", "whole text", 0, 3)])
+
+    def test_audit_rows(self):
+        skill = "# a\n\n## Order\n\n1. **Look.** x\n2. **Hold.** y\n"
+        good = (["## a", ""] + AUDIT_HEAD + ["| Order | 1. Look | method |  |  |",
+                                              "| Order | 2. Hold | gate (text) | hook: yes | a guard |", "", "## b", ""]
+                + AUDIT_HEAD + ["|  | whole text | method |  |  |", ""] + AUDIT_GATES + ["| `a` | Order | 2. Hold | a guard |"])
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(self.tree(pathlib.Path(d) / "ok", {"a": skill, "b": "# b\n"}, good), [])
+            with_c = self.tree(pathlib.Path(d) / "c", {"a": skill, "b": "# b\n", "c": "# c\n"}, good)
+            self.assertEqual(with_c, ["skills-audit: no section for c"])
+            new_step = self.tree(pathlib.Path(d) / "n", {"a": skill + "9. **New.** z\n", "b": "# b\n"}, good)
+            self.assertEqual(new_step, ["skills-audit: a: no row for Order / 9. New"])
+            gone = self.tree(pathlib.Path(d) / "g", {"a": "# a\n\n## Order\n\n1. **Look.** x\n", "b": "# b\n"}, good)
+            self.assertEqual(gone, ["skills-audit: a: Order / 2. Hold: row without a step"])
+            for old, new, err in (
+                    ("| Order | 1. Look | method |", "| Order | 1. Look | habit |", "a: Order / 1. Look: mark habit"),
+                    ("| gate (text) | hook: yes |", "| gate (text) |  |",
+                     "a: Order / 2. Hold: gate (text) without hook: yes or hook: no"),
+                    ("| `a` | Order | 2. Hold | a guard |", "",
+                     "a: Order / 2. Hold: hook: yes not in Gates a hook could hold")):
+                doc = [l.replace(old, new) for l in good]
+                self.assertEqual(self.tree(pathlib.Path(d) / str(abs(hash(err))), {"a": skill, "b": "# b\n"}, doc),
+                                 ["skills-audit: " + err], err)
+            last = good[good.index("## Gates a hook could hold"):] + good[:good.index("## Gates a hook could hold")]
+            self.assertEqual(self.tree(pathlib.Path(d) / "last", {"a": skill, "b": "# b\n"}, last),
+                             ["skills-audit: the last section is not Gates a hook could hold"])
+
+    def test_runs_and_candidate_line(self):
+        skill = "# a\n\n## Order\n\n1. **Look.** x\n"
+        run = lambda date, full, n, none: ["### Run %s claude-opus-5-5" % date, "", "```text",
+                                           "| t1 | full | pass | 1 of 1 | 100 |  |",
+                                           "compare: full %d of %d, cut 0 of %d, none %d of %d" % (full, n, n, none, n),
+                                           "```", ""]
+        lost, won, empty = run("2026-11-01", 1, 2, 1), run("2026-11-02", 2, 2, 0), run("2026-11-03", 0, 0, 0)
+        cases = (("two lost", lost + lost, True), ("lost, empty, lost", lost + empty + lost, True),
+                 ("won then lost", won + lost, False), ("lost then won", lost + won, False),
+                 ("lost, lost, won", lost + lost + won, False), ("one lost", lost, False))
+        with tempfile.TemporaryDirectory() as d:
+            for i, (name, runs, needs) in enumerate(cases):
+                for line in ([], ["candidate to cut: the owner decides", ""]):
+                    doc = ["## a", ""] + AUDIT_HEAD + ["| Order | 1. Look | method |  |  |", ""] + runs + line + AUDIT_GATES
+                    got = self.tree(pathlib.Path(d) / ("%d-%d" % (i, len(line))), {"a": skill}, doc)
+                    want = ["skills-audit: a: two lost runs without `candidate to cut: the owner decides`"] \
+                        if needs and not line else []
+                    self.assertEqual(got, want, (name, bool(line)))
+
+
 if __name__ == "__main__":
     sys.exit(0 if unittest.main(exit=False).result.wasSuccessful() else 1)

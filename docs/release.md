@@ -56,6 +56,17 @@ Then check: `git ls-remote origin` names only `refs/heads/main`, a clone of it h
 
 An agent merges a PR only when `sdd-pr.py wait <url>` gives `CI: green`, through `sdd-pr.py merge`, which refuses a PR whose checks are not green. On `CI: red`, `CI: infra` or `CI: codeql` the agent fixes, reruns and waits again as `/ship` (under the dispatcher, `spec-dispatch`) says; a PR that is still not green waits for the owner: an agent never merges around a red or missing check.
 
+## Skill measurement
+
+When the `main` list of `global/model-policy.json` changes, the runner `tests/stands/skill-ablation.py` runs on every skill with a task set under `tests/stands/skill-ablation/` before the next release tag:
+
+1. `python3 tests/stands/skill-ablation.py prepare <skill> --budget <calls>` prints the run folder and one prompt per variant and task.
+2. A main session (not an orchestrator under the dispatcher, whose hook allows only role-tagged subagents) runs every prompt as an `Agent` subagent without `model`, under the description the prompt names; never `claude -p`.
+3. `python3 tests/stands/skill-ablation.py grade <run> --from ~/.claude/projects/<project>/<session>/subagents` prints the table, the models and the `compare:` line.
+4. The output goes into the skill's section of `docs/skills-audit.md` under `### Run <date> <model>`, the model from the `models:` line.
+
+A skill whose last two runs with a compared task each have full passes no more than none passes gets the line `candidate to cut: the owner decides` in its section (`tests/test_skill_commands.py` fails without it); the skill stays, and only the owner removes that line or the skill.
+
 ## When a run fails
 
 - `fail version` or `fail tag`: the tag and the version fields differ. Delete the tag (`git push origin :refs/tags/v<v>`, `git tag -d v<v>`), fix the version by a change, tag again.

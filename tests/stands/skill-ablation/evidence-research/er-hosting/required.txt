@@ -1,0 +1,2 @@
+sources/gamma-pricing-2026-09\.md
+sources/beta-pricing-2026-11\.md
