@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-"""Live stand of change plan-reads-map: step 2a of `skills/spec-plan/SKILL.md` on real repositories.
+"""Live stand of change plan-reads-map: step 2a of `skills/spec-plan/SKILL.md` (its step file `codebase-map.md`) on real repositories.
 
 Takes from the skill text the type table, the map existence test and the stale-map loop, and runs them:
 the table rows for a bugfix, an interface, an interface+API and an unknown unit; the existence test in a
@@ -28,7 +28,10 @@ def git(cwd, *args):
                           cwd=cwd, check=True, capture_output=True, text=True, stdin=subprocess.DEVNULL).stdout.strip()
 
 
-skill = open(os.path.join(ROOT, "skills", "spec-plan", "SKILL.md"), encoding="utf-8").read()
+sys.path.insert(0, os.path.join(ROOT, "tests"))
+import skill_text  # noqa: E402
+
+skill = skill_text.skill("spec-plan", ROOT)  # step 2a lies in its step file codebase-map.md
 step = re.search(r"^2a\. .*?(?=^3\. )", skill, re.S | re.M).group(0)
 table = {}
 for typ, files in re.findall(r"^\s*\| ([^|]+?) \| ([A-Z, ]+) \|$", step, re.M):

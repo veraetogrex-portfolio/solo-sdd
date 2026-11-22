@@ -68,6 +68,7 @@
     "skills/spec-dispatch/report.md": ["~/.claude/skills/spec-dispatch/report.md"],
     "skills/spec-next/acceptance.md": ["~/.agents/skills/spec-next/acceptance.md", "~/.codex/skills/spec-next/acceptance.md", "~/.claude/skills/spec-next/acceptance.md"],
     "skills/spec-next/closing.md": ["~/.agents/skills/spec-next/closing.md", "~/.codex/skills/spec-next/closing.md", "~/.claude/skills/spec-next/closing.md"],
+    "skills/spec-plan/codebase-map.md": ["~/.agents/skills/spec-plan/codebase-map.md", "~/.codex/skills/spec-plan/codebase-map.md", "~/.claude/skills/spec-plan/codebase-map.md"],
     "skills/spec-plan/creation.md": ["~/.agents/skills/spec-plan/creation.md", "~/.codex/skills/spec-plan/creation.md", "~/.claude/skills/spec-plan/creation.md"],
     "skills/spec-plan/plan-commit.md": ["~/.agents/skills/spec-plan/plan-commit.md", "~/.codex/skills/spec-plan/plan-commit.md", "~/.claude/skills/spec-plan/plan-commit.md"],
     "templates/**": ["~/.local/share/solo-sdd/templates/"]

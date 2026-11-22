@@ -285,6 +285,30 @@ class SkillCommandsTest(unittest.TestCase):
                       "in English in any reply language", "a path outside reach is not opened, listed or searched"):
             self.assertIn(words, step)
 
+    def test_goal_first(self):
+        """Requirements: Goal and check for a step-only request, Named steps kept, extras proposed: what the stand
+        `tests/stands/goal-first.py` does not walk. The spec-plan creation step and section 6 of the global rules name
+        the goal and check lines, the inferred mark, the named steps kept and the `Proposals:` line; section 1 puts the
+        goal lines first; the spec-plan report form has the `Proposals:` line."""
+        flat = lambda t: " ".join(t.split())
+        rules = (REPO / "global/AGENTS.md").read_text(encoding="utf-8")
+        boundaries = flat(rules.split("## 6. ", 1)[1].split("\n## 7. ", 1)[0])
+        talk = flat(rules.split("## 1. ", 1)[1].split("\n## 2. ", 1)[0])
+        plan = flat(skill_text.skill("spec-plan"))
+        creation = plan.split("5. **Creation.**", 1)[1].split("6. **External conditions.**", 1)[0]
+        for name, text in (("global rules 6", boundaries), ("spec-plan step 5", creation)):
+            for words in ("steps without the goal they serve", "`Goal: <what the steps serve, not the steps restated> (inferred)`",
+                          "`Check: <what shows", "with a number", "`(inferred)` goes only from a line", "`Proposals:` line", "a cheaper way to reach the goal"):
+                self.assertIn(words, text, name)
+        self.assertIn("the first two lines of the report are `Goal:", boundaries)
+        self.assertIn("Every named step is done as asked", boundaries)
+        for words in ("the last two lines of Why are `Goal:", "`- goal inferred: <goal>; check: <check>",
+                      "Every named step gets a task as asked", "never into a task"):
+            self.assertIn(words, creation)
+        self.assertIn("2-4 plain lines (after the `Goal:` and `Check:` lines of section 6", talk)
+        report = plan.split("## Report", 1)[1].split("## Mistakes", 1)[0]
+        self.assertIn("Proposals: <named step — does not move the check> | <a cheaper way to the goal> | none", report)
+
     def test_project_rules_through_config(self):
         """Requirements: Project rules in config, Project lines as the old source, Lesson from a correction or a fix:
         the rules and skills read the four keys through `solo-sdd config get`, the file value wins over the

@@ -6,11 +6,12 @@ An owner often hands over steps ("remove tests X and Y") rather than the goal th
 
 ## What Changes
 
-- `spec-plan` (the creation rules): a request that lists steps without a goal gets, in Why, the goal they serve and a check that shows it is reached, from the owner's words or marked as inferred in `Decisions Without Owner`.
+- `spec-plan` (the creation rules): a request that lists steps without a goal gets, at the end of Why, a `Goal:` line with the goal they serve and a `Check:` line with a number that shows it is reached, from the owner's words or marked `(inferred)` with a `goal inferred:` line in `Decisions Without Owner`.
 - Every named step is still done as asked. A note that a named step does not move the check, and a cheaper way to reach the goal, go into the plan report as a `Proposals:` line; the plan does not widen by itself.
-- Outside `spec-plan` the goal and its check open the report.
-- The global rules, section 6, get the same two lines for work outside `spec-plan`.
-- A stand runs the laid-out `spec-plan` on a step-only request against a copy of the demo project.
+- Outside `spec-plan` the `Goal:` and `Check:` lines open the report, before the plain lines section 1 of the global rules asks for, and the `Proposals:` line goes into it.
+- Section 6 of the global rules gets both rules (the goal and check lines, the `Proposals:` line) for work outside `spec-plan`; section 1 names that the goal lines come first.
+- `spec-plan` step 2a moves into a step file to keep `SKILL.md` within the size budget.
+- A stand grades the `spec-plan` text run on a step-only request against a copy of the demo project, and the section 6 text run outside `spec-plan`.
 
 ## Capabilities
 
@@ -24,14 +25,19 @@ An owner often hands over steps ("remove tests X and Y") rather than the goal th
 - `skills/spec-plan/creation.md`
 - `skills/spec-plan/SKILL.md`
 - `global/AGENTS.md`
-- `skills/spec-plan/report.md`
+- `skills/spec-plan/codebase-map.md`
+- `tests/stands/plan-map-stand.py`
 - `targets.json`
-- `tests/affected.json`
+- `tests/targets-before.json`
+- `templates/solo-sdd/change/proposal.md`
+- `tests/stands/goal-first/`
 - `tests/test_skill_commands.py`
 - `tests/stands/goal-first.py`
 
 ## Out of Scope
 
+- A check at acceptance that the `Check:` line is reached: the line steers the plan and its proposals; acceptance stays the Live Scenario of each change.
+- A step-only request on the light path (`spec-plan` step 1a): it makes no change and gets no Why; the stand turns the light path off.
 - A question to the owner about the goal: the rules keep "no clarifying questions"; an inferred goal is marked instead.
 - Neighbouring changes of this plan: `subagent-check-roles`, `analyze-outside`, `outside-check-text`, `source-over-paste`, `practitioner-techniques`, `eval-process-signals`, `skill-ablation`, `work-pull`, `review-principles`.
 
