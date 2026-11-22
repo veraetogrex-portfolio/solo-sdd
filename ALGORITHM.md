@@ -11,7 +11,7 @@ How the repository is organised and how to deploy it is in [README.md](README.md
 3. **A property, not a method.** The spec says what must be true ("git history does not change"), not how to check it ("look for the substring push"). The implementer chooses the method.
 4. **Proof, not a report.** Readiness is confirmed by observations: a test that fails on the previous code, and a live scenario in what a person sees. Green tests, a report by the author or a subagent, "the function was called" do not count as proof.
 5. **No questions along the way.** The agent resolves an ambiguity itself and records the decision. Asking is allowed only before three things: a paid call, deleting or overwriting data, an action on prod. The question names what will happen, how many calls and what amount.
-6. **A blocker does not stop the work.** First look for a workaround: mocks, old data, `.env`, a neighbouring service. No workaround: what is unchecked goes into `verification.md` and `docs/waiting.md`, the rest gets closed.
+6. **A blocker does not stop the work.** First look for a workaround: mocks, old data, `.env`, a neighbouring service. No workaround: what is unchecked goes into `verification.md` and the first table of `docs/waiting.md`, the rest gets closed.
 7. **Code is written by whoever holds the plan.** Every handoff between agents loses precision, so the lead agent writes the code itself. Subagents are for independent acceptance, the outside `spec-analyze` run and heavy reading. Review is done by an agent that did not write this code.
 8. **Nothing is invented.** Values the source knows (CLI, API, database) are asked from the source. An honest "could not determine" is better than a plausible value.
 9. **Cheap where a mistake is easy to notice.** Search, reading logs and test output run on cheap models; code, review and acceptance on the main one. First the effort changes (medium by default, low for mechanics, higher if stuck), the model only when effort did not help. Paid calls to the product model in tests and runs go to the cheapest models and with consent. Heavy reading goes to a search subagent (Explore), so the lead's context does not get compacted.
@@ -135,7 +135,7 @@ Paid calls to the product model in tests and live acceptance go to the cheapest 
 - `verification.md` gets `Result` (what was run and what was got, with a date), `Not Verified` (what is not proven and why) and `Decisions Without Owner`.
 - `solo-sdd validate <id>`, then `solo-sdd archive <id> --yes`: the archive applies the deltas to the main specs itself. Then `solo-sdd validate --all`.
 - If the mandatory live scenario did not pass and there is no allowed Fallback, there is no archive, the status is "not done".
-- An external remainder after the archive is allowed only if the project rules or the user explicitly allow it. The ground goes into `verification.md` and `docs/waiting.md`, the report tells "archived" from "external acceptance not ready".
+- An external remainder after the archive is allowed only if the project rules or the user explicitly allow it. The ground goes into `verification.md` and the first table of `docs/waiting.md`, the report tells "archived" from "external acceptance not ready".
 - The `CLAIM` file is deleted.
 
 **Gate G5:** `verification.md` is filled; `solo-sdd validate` passes; the change is archived.
@@ -163,8 +163,8 @@ Project markers and files:
 | File | Meaning |
 |---|---|
 | `solo-sdd/changes/<id>/CLAIM` | An agent runs the change; another does not take it |
-| `solo-sdd/changes/<id>/WAITING` | The change waits for an external condition; a line in `docs/waiting.md` |
-| `docs/waiting.md` | The waiting table: what, from whom, since when (template: `templates/docs/waiting.md`) |
+| `solo-sdd/changes/<id>/WAITING` | The change waits for an external condition; a row in the first table of `docs/waiting.md` |
+| `docs/waiting.md` | The waiting table: what, from whom, since when; only the first table waits, a met row moves to `## Closed` (template: `templates/docs/waiting.md`) |
 | `handoff.md` | Handoff between sessions and agents: the five `work-status` lines and decisions |
 | `docs/debug-profile.md` | What runs where, logs, config, what must not be touched without consent |
 | `solo-sdd/analyze.md` | `spec-analyze` checks derived from the defects of this project |

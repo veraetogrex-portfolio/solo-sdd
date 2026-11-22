@@ -46,9 +46,9 @@ Done when you can say `/spec-next` in the folder to both agents right away and t
 
    A field that got at least one answer from the user counts as filled, even if the answer is incomplete. Dials are not derived from words: the `Dial` line stays with `n` until the user names numbers; a `Dial` line with `n` counts as an empty field.
 
-   If there are empty fields, one line in the `docs/waiting.md` table (no file: create it by `~/.local/share/solo-sdd/templates/docs/waiting.md`): Change `—`, Items `—`, Waiting for "DESIGN.md: fill in the fields <list of empty fields>", From whom: the user, Since: the date. There is no `WAITING` file. No empty fields, no line.
+   If there are empty fields, one row in the first table of `docs/waiting.md` (no file: create it by `~/.local/share/solo-sdd/templates/docs/waiting.md`): Change `—`, Items `—`, Waiting for "DESIGN.md: fill in the fields <list of empty fields>", From whom: the user, Since: the date. There is no `WAITING` file. No empty fields, no line.
 
-   A repeated run: keep the existing `DESIGN.md`, do not change filled fields, add missing ones empty, fill empty ones only with the user's answers from this request; update the line in `docs/waiting.md` instead of duplicating it, delete it if no empty fields are left.
+   A repeated run: keep the existing `DESIGN.md`, do not change filled fields, add missing ones empty, fill empty ones only with the user's answers from this request; update its row in the first table of `docs/waiting.md` instead of duplicating it. No empty fields left: move the row to `## Closed` (right after the first table; no `## Closed`: create it there with the first table's columns plus `Evidence` and `Closed`) with the evidence `DESIGN.md: no empty fields` and the date; the row is never deleted, and a later empty field gets a new row in the first table.
 6. **`CLAUDE.md`**: if there is no file, create it with one line `@AGENTS.md`, so Claude reads the same rules itself. If the file exists, add `@AGENTS.md` when the link is not there yet; keep the previous instructions.
 7. **Check.** `solo-sdd validate --all`, the commands from the AGENTS.md table actually run.
 7a. **Artifact commit.** `git check-ignore -v -- solo-sdd/ AGENTS.md CLAUDE.md`, then by case:

@@ -95,6 +95,8 @@ A check of a command's printed output finds a line by its prefix, not by its pos
 
 A stand that grades a judgement call expects one answer only for an input where every correct reading gives it; otherwise it grades what all correct answers share.
 
+A grader of a free-form model answer (a map line, a list) reads it by the form the skill prescribes: the label with its note and colon, the items under it bounded by the label's own indent, a status decided by an item's own label or its parent's, never by a bare word anywhere in it. A form outside that grammar gives no items and fails the answer; it never passes one (`waiting-readers`, 2026-11-22: five review rounds widened and narrowed a Blockers reader that had started from a bare `startswith`).
+
 ### deployment-gates
 
 A deployment gate is worded for the whole repository, not for one change: a push after any later merge deploys the whole tree, and a deployment the process starts for itself never takes a source that holds merged work not yet cleared for deployment; a publication step that hands a name others resolve to a new target (a repository renamed and its old name taken by a new one) first guards and repoints every clone that uses the name, and checks a push it forbids with a dry run, never with the push itself. A command that deploys or writes into the agents' folders is never run to learn its options (`sync.py push --help` ignored the flag and deployed): its usage is read from its source, and a probe of it runs in a temporary home.

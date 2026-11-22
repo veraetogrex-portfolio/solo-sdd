@@ -55,7 +55,7 @@ Shared by Claude Code and Codex. The three copies above are deployed from the so
 ## 4. Blockers
 
 - No key, access or data: first look for a workaround: mocks, old project data, `.env`, neighbouring services, documentation.
-- No workaround: record what stayed unchecked and what is needed for it (in a change, `verification.md` and `docs/waiting.md`), and close everything else.
+- No workaround: record what stayed unchecked and what is needed for it (in a change, `verification.md` and the first table of `docs/waiting.md`), and close everything else.
 
 ## 5. Status and waiting
 

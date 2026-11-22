@@ -16,10 +16,10 @@ Argument (optional): what exactly to move out. Without an argument collect every
    - A blocker: the work exists but waits for an external condition.
    - A finding: work beyond the current specification.
 3. **A project with a `solo-sdd/` tree.** Take the number and name by the pattern of the neighbouring changes (`solo-sdd list --json`, the next free number); create each new change with `solo-sdd new <id>`.
-   - Blockers of the current change: one new change `<number>-<topic>-blockers`: `proposal.md` (what we wait for and why), `tasks.md` (steps after the condition is lifted), a `WAITING` file with the condition, a line in `docs/waiting.md`. A link to it in `verification.md` of the current change.
+   - Blockers of the current change: one new change `<number>-<topic>-blockers`: `proposal.md` (what we wait for and why), `tasks.md` (steps after the condition is lifted), a `WAITING` file with the condition, a row in the first table of `docs/waiting.md`. A link to it in `verification.md` of the current change.
    - Findings: one change per independent topic: `proposal.md` and `tasks.md`, without `WAITING`.
    - Every new one: the rest of the artifacts (`verification.md`, deltas or `Specs: none`) by the "Writing rules" of `spec-plan`, then `solo-sdd validate <id>`.
-4. **A project without a `solo-sdd/` tree.** If it has `openspec/` instead, name the next step `solo-sdd import openspec` in the report. Blockers go into `docs/waiting.md`, findings into `docs/backlog.md`. No file: create it.
+4. **A project without a `solo-sdd/` tree.** If it has `openspec/` instead, name the next step `solo-sdd import openspec` in the report. Blockers go into the first table of `docs/waiting.md` (no file: create it by `~/.local/share/solo-sdd/templates/docs/waiting.md`), findings into `docs/backlog.md` (no file: create it).
 5. **Commit.** The new artifacts in a separate commit by the project rules (`/ship`).
 6. **Continuing.** Change the current change only with links. If you were running it, continue from the next item of `tasks.md` without stopping.
 
