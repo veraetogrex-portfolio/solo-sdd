@@ -78,14 +78,14 @@ Passes:
 
 | # | Pass | What it looks for |
 |---|---|---|
-| 1 | Coverage | A requirement or scenario without a task and a test; a task without a requirement |
+| 1 | Coverage | A requirement or scenario without a task and a test; a task without a requirement; a retell from `tasks.md` and the deltas alone, written before `proposal.md`, that misses a What Changes item or holds work no item names |
 | 2 | Solo frame | An empty Out of Scope; an unarchived Depends On; a retelling instead of a quote in Source; more than `process.max-tasks` tasks; waiting for a person in tasks; a Live Scenario that does not reach what the user sees |
 | 3 | Checkability | A task without an observable criterion |
 | 3a | Executable properties | An invariant, round trip or idempotence checked only by examples |
 | 4 | Consumer | A new field, module or value that nobody reads |
 | 5 | Ambiguities | Empty, erroneous and partial cases; "no data" versus "not read"; a repeat; what the user sees in each outcome; term drift; `TBD` |
 | 6 | Wording | A method instead of a property; line numbers instead of structure; hard-coded values; words without a measure |
-| 7 | Consistency | A contradiction with the main spec; a decision in design without a task; a task uses what appears later; drifting from the intent |
+| 7 | Consistency | A contradiction with the main spec; a decision in design without a task; a task uses what appears later; drifting from the intent; a task value in backquotes that differs from the value its requirement or scenario names for the same thing |
 | 7a | Requirement compatibility | Requirements that are true one by one and unsatisfiable together; incompatible constraints; an undescribed combination of conditions; a hidden assumption |
 
 Checks derived from the defects of a specific project live in its `solo-sdd/analyze.md` (laid out by `solo-sdd init`). The skill picks them up itself.
