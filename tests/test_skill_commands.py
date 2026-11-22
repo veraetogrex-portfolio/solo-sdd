@@ -335,6 +335,23 @@ class SkillCommandsTest(unittest.TestCase):
                       "in English in any reply language", "a path outside reach is not opened, listed or searched"):
             self.assertIn(words, step)
 
+    def test_next_up(self):
+        """Requirements: Work queue with sources, Queue order and cut, Unread sources, The Closed table, Readers of
+        waiting lines: only what the stand `tests/stands/next-up.py` does not reach (the manual-only flag, the read
+        limit, a red CI, no remote, a `doctor` line missing, a line break in a cell, the estimate bounds), the template
+        and `report` step 5."""
+        flat = lambda t: " ".join(t.split())
+        text = flat(skill_text.skill("next-up"))
+        for words in ("disable-model-invocation: true", "--limit 20", "a red last CI run, then hook errors",
+                      "no GitHub remote", "`doctor` output without a `hook errors` line", "a line break as a space",
+                      "`process.light-path.max-files`"):
+            self.assertIn(words, text)
+        template = flat((REPO / "templates/docs/waiting.md").read_text(encoding="utf-8"))
+        for words in ("Only the first table waits", "the row moves to the table under `## Closed`",
+                      "a row is never deleted", "the owner removes that file on `next-up`'s proposal"):
+            self.assertIn(words, template)
+        self.assertIn("5. **What waits**, from the first table of `docs/waiting.md` only", skill_text.skill("report"))
+
     def test_project_rules_through_config(self):
         """Requirements: Project rules in config, Project lines as the old source, Lesson from a correction or a fix:
         the rules and skills read the four keys through `solo-sdd config get`, the file value wins over the

@@ -1,0 +1,2 @@
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "tool_use", "name": "Bash", "input": {"command": "cd /var/folders/x/T/next-up.abc/project && HOME=/var/folders/x/T/next-up.abc/home PATH=/var/folders/x/T/next-up.abc/bin:$PATH solo-sdd doctor"}}]}}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "tool_use", "name": "SubagentHandback", "input": {"message": "=== report\nQueue: none of tests/stands/next-up read"}}]}}

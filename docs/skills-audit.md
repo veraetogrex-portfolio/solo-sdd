@@ -104,6 +104,17 @@ A skill with a task set under `tests/stands/skill-ablation/` is measured by `tes
 | What to check | 4. Local processes | method |  |  |
 | What to check | 5. The provider is down | method |  |  |
 
+## next-up
+
+| Heading | Step | Mark | Hook | Why |
+|---|---|---|---|---|
+| Order | 1. Sources | gate (text) | hook: no | an unread source named in the `Unread:` line is read from the report, not from a tool event |
+| Order | 2. Evidence | gate (text) | hook: no | whether an output or a log line meets a row's condition is a judgement |
+| Order | 3. Closing | gate (text) | hook: yes | a write hook could refuse an edit of `docs/waiting.md` that drops a first-table row not found under `## Closed` |
+| Order | 4. WAITING files | method |  |  |
+| Order | 5. Queue | method |  |  |
+| Order | 6. Stop | gate (text) | hook: no | a change started after the report is the owner's next request, not a tool event of this run |
+
 ## project-init
 
 | Heading | Step | Mark | Hook | Why |
@@ -289,6 +300,7 @@ The `hook: yes` rows above, for the owner to plan as changes.
 |---|---|---|---|
 | `copy-check` | Loop | 4. Final | a Write check of the changed text files for a long dash and ` -- ` between words |
 | `evidence-research` | Order | 9. Outside check | the `stop` hook could return a final answer with a source table when no `Check:` subagent ran |
+| `next-up` | Order | 3. Closing | a write hook could refuse an edit of `docs/waiting.md` that drops a first-table row not found under `## Closed` |
 | `project-init` | Order | 6. CLAUDE.md | a `stop` check for a project with AGENTS.md whose CLAUDE.md has no `@AGENTS.md` line |
 | `ship` | Order | 6. Push | a Bash guard refusing `git push --force` and `-f` |
 | `spec-analyze` | What to read | 0. Legacy tree | a write guard refusing change edits in a project with `openspec/` and no `solo-sdd/` |
