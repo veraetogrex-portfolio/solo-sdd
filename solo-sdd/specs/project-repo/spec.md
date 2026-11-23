@@ -1,7 +1,9 @@
+# project-repo Specification
+
 ## Purpose
 A request that names a project on this computer is worked in that project's own repository, with its rules, so that edits land under its git and nothing is left in a copy.
 
-## ADDED Requirements
+## Requirements
 
 ### Requirement: Work in the named project's repository
 Item 1 of section 0 of the global rules SHALL hold that a request naming a project on this computer is worked in that project's repository, which then takes the place of the current folder for items 1-3: its rules are read there, it is edited and run from there, and its sources are not copied into the session folder; a current folder already in a worktree or clone of it stays; a session that cannot write there SHALL name the access it needs and copy nothing.

@@ -1,7 +1,9 @@
+# action-first Specification
+
 ## Purpose
 The result of an analysis, a research or a data pull reaches the owner as actions with their expected effect, and its data as a file the owner can open, never only inside a tool.
 
-## ADDED Requirements
+## Requirements
 
 ### Requirement: Analysis opens with actions and their effect
 Section 1 of the global rules SHALL hold that the result of a request to analyse, assess, research or pull data opens, within its first 5 non-empty lines, with one to three actions written `<action> — <expected effect>`, the effect for the owner (a number when there is one), or with a line `No action follows:` and the reason, kept in English in any reply language; for such a report these lines take the place of the 2-4 plain lines of section 1.
