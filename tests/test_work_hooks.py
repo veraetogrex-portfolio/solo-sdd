@@ -1938,7 +1938,8 @@ NOT_PLAIN_CASES = {"#": "echo hi # see .env", "$'": "echo $'hi' .env", "${": "ec
 # Requirement: Known bypasses of the Bash guard. The Bash checks guard against accidental reads, not a boundary: these
 # forms pass today. A change that closes one moves it to a refused list; until then this test says docs/hooks.md is true.
 KNOWN_BYPASSES = ("cat .e{n,}v", "sh -c 'cat \"$1\"' _ .env", "ls >(cat ')' .env)", "cat <<EOF 'x\n'; cat .env\nEOF",
-                  "${X:-env} | wc -l", "sed '1r.env' a.txt")
+                  "${X:-env} | wc -l", "sed '1r.env' a.txt",
+                  'echo "$(date)"; grep -o "printenv" f > x; sh x')
 SECRET_WORDS = ["KEY", "TOKEN", "SECRET", "PASSWORD", "PASSWD", "WEBHOOK", "CREDENTIAL"]
 OTHER_WORDS = ["MONKEY", "KEYBOARD", "TOKENIZER", "SECRETARY", "PASSWORDLESS", "NAME", "API", "DB", "HOME", "PATH", "KEYED"]
 
@@ -2039,6 +2040,69 @@ class SecretFiles(HookCase):
         for c in ("set -e", "set -euo pipefail", "set -- a b", "export PATH=/x:$PATH", "export -n FOO", "declare -p HOME",
                   "env -u ELECTRON_RUN_AS_NODE npm test", "printenv HOME", "env FOO=1 make", "echo set"):
             assert not bash(c), c
+
+    def test_environment_dumps_refused_a_dump_word_in_a_search_pattern(self):
+        for c in (r'grep -n "secret\|printenv\|env |echo \$" skills/debug-profile/SKILL.md', r'grep -n "foo\|env\[" global/sdd_eval.py'):
+            assert not bash(c), c
+
+    def test_environment_dumps_refused_env_runs_a_program_next_to_a_substitution(self):
+        for c in ('[ -n "$(git status --short)" ] && echo yes; (cd /tmp && env -i HOME=$HOME PATH=/usr/bin:/bin python3 report.py '
+                  '< /dev/null | tail -4)', 'echo "$(date)"; env X=1 python3 -V', 'echo "$(date)"; env -u HOME python3 -V',
+                  'echo "$(date)"; env -C /tmp python3 -V', 'echo "$(date)"; env LC_ALL=C grep "printenv" f',
+                  'echo "$(date)"; env -u HOME grep "printenv" f'):
+            assert not bash(c), c
+
+    def test_environment_dumps_refused_dumps_still_refused(self):
+        for c in ("env", "env | grep TOKEN", "printenv", 'grep x "$(env)"', 'echo "$(date)"; env -i HOME=$HOME printenv',
+                  'echo "$(date)"; env -u X printenv', 'echo "$(date)"; env X=1 xargs printenv', 'echo "$(date)"; env -C /tmp printenv',
+                  'echo "$(date)"; env X=1 e""nv', 'echo "$(date)"; env p""rintenv', 'echo "$(date)"; env -u HOME /usr/bin/env',
+                  'echo "$(date)"; env -u HOME "env"', 'echo "$(date)"; env -S "X=1 printenv"', 'echo "$(date)"; env -u printenv',
+                  'echo "$(date)"; grep -o "printenv" f | sh', 'echo "$(date)"; grep x f | xargs "printenv"',
+                  'echo "$(date)"; grep "${HOME}env" f', 'echo "$(date)"; env Y="$(env -u X printenv)" sh -c \'echo $Y\'',
+                  'echo "$(date)"; rg --pre "printenv" x f', 'echo "$(date)"; rg "--pre=printenv" x f',
+                  'echo "$(date)"; rg --hostname-bin "printenv" x f', 'echo "$(date)"; env A-B=1', 'echo "$(date)"; env -i \'A B=1\'', 'echo "$(date)"; { grep -o "printenv" f; } | sh', 'echo "$(date)"; (grep -o "printenv" f) | sh', 'echo "$(date)"; grep -o "printenv" f | tee >(sh)', 'echo "$(date)"; grep -o "printenv" f | python3 -', 'echo "$(date)"; sudo -u grep "env"', 'echo "$(date)"; env X=1 /usr/bin/e[n]v', 'echo "$(date)"; env A.B=1 >/dev/null', 'echo "$(date)"; env A-B=1 2>&1 | head', 'echo "$(date)"; env A.B=1 > /tmp/x', 'echo "$(date)"; env -i \'A B=1\' 2>&1', 'echo "$(date)"; grep -o "printenv" f | sudo -u cat sh', 'echo "$(date)"; grep -o "printenv" f | env -u tee sh', 'echo "$(date)"; grep -o "printenv" f | exec -a cat sh', 'echo "$(date)"; grep -o "printenv" f | >cat sh', 'echo "$(date)"; exec -a grep "env"', 'echo "$(date)"; time -o grep "env"', 'echo "$(date)"; caffeinate -t grep "env"'):
+            assert bash(c), c
+
+    def test_environment_dumps_refused_other_programs_scripts_are_not_text(self):
+        for c in ('echo "$(date)"; sed \'s/.*/env/e\' f', 'echo "$(date)"; awk \'BEGIN{"env" | getline x; print x}\' /dev/null'):
+            assert bash(c), c
+
+    def test_environment_dumps_refused_shell_forms_the_exemption_cannot_read(self):
+        for c in ('echo ${X:-"a b"}; grep "x env" f', 'echo "$(date)"; grep "env x', r'echo "$(date)"; grep "a\\" ; env ; "x"',
+                  'echo "$(date)"; grep x f # it\'s\nprintenv; echo \'y\'', 'echo "$(true "; grep "; env; true "x")"'):
+            assert bash(c), c
+        assert not bash('echo "$(date)"; grep "x'), "no dump word"
+
+    def test_environment_dumps_refused_hostile_input(self):
+        for c in ('echo "$(date)"; grep "env" f \\', 'echo "$(date)"; grep "`env`" f', "grep $'a\\'' \"x\"\nprintenv; echo '\"'",
+                  r'echo "$(date)"; grep \" ; env ; "x"', 'echo "$(date)"; grep \'a"\' f; env; echo "b"',
+                  r'echo "$(date)"; grep "x\\" ; printenv; echo "" f', 'echo "$(date)"; cat <<EOF\nit\'s\nEOF\nprintenv',
+                  'echo "$(date)"; case x in x) grep "env" f;; esac', 'echo "$(date)"; grep "=(env" f', 'echo "$(date)"; grep "#env" f'):
+            assert bash(c), c
+        for c in (r'echo "$(date)"; grep "a\"env" f', 'echo "$(date)"; grep x "env"', 'echo "$(date)"; env X=1 python3 -V 2>&1 | tail -1',
+                  'echo "$(date)"; grep "env" f 2>/dev/null | head'):
+            assert not bash(c), c
+        big = 100_000
+        for c, want in (('echo "$(date)"; grep "' + "env |" * (big // 5) + '" f', False),
+                        ('echo "$(date)"; grep "' + "env " * (big // 4), True),
+                        ('echo "$(date)"; grep "' + '\\"' * (big // 2) + 'env" f', False),
+                        ('echo "$(date)";' + ' grep "env" f;' * (big // 14), False),
+                        ('echo "$(date)"; grep "env" f ' + "#" * big, True)):
+            assert bash(c) == want, (c[:60], want)
+            t = time.monotonic()  # the new reader; the hook's older readers of the same text are not timed here
+            wh.dump_text(c)
+            assert time.monotonic() - t < 1, c[:60]
+
+    @settings(max_examples=150, deadline=None)
+    @given(st.lists(st.sampled_from(['grep -n "printenv|env" f', "rg 'env |set' f", "env X=1 python3 -V", 'env -u HOME grep "set" f',
+                                     "env -i HOME=$HOME true"]), min_size=1, max_size=5),
+           st.lists(st.sampled_from(["; ", " && ", " || ", "\n"]), min_size=6, max_size=6),
+           st.sampled_from(["env", "printenv", 'env p""rintenv', "env -i printenv", "set", "env -u X e\\nv"]), st.integers(0, 5))
+    def test_environment_dumps_refused_property(self, segs, seps, dump, at):
+        join = lambda xs: "".join(x + seps[i] for i, x in enumerate(xs))
+        assert not bash('echo "$(date)"; ' + join(segs)), segs
+        c = 'echo "$(date)"; ' + join(segs[:at] + [dump] + segs[at:])
+        assert bash(c), c
 
     def test_known_bypasses_of_the_bash_guard_known_limits(self):
         for c in KNOWN_BYPASSES:

@@ -10,10 +10,10 @@ Cause: `global/work_hooks.py:2163`, `guard_secrets_bash`: a command holding any 
 
 ## What Changes
 
-- In a command that is not plain, a dump word inside a single- or double-quoted argument of `grep` or `rg` is text and does not count, unless that argument holds `$(` or a backquote.
-- In such a command, the `env` word, its options with their values (`-i`, `-u <name>`, `-C <dir>`), its assignments and its program word do not count when that program is not itself a dump word; a dump word after them still counts.
+- In a command that is not plain, a dump word inside a single- or double-quoted argument of `grep` or `rg` is text and does not count, unless that argument holds `$(`, `${` or a backquote, the search's pipeline goes on to a program that is not a text reader, or an `rg` word names `--pre` or `--hostname-bin` (options that run a program).
+- In such a command, the `env` word at a command position, its known options (the flags `-i`, `-`, `--ignore-environment`, and `ENV_VALUED`: `-u`, `--unset`, `-C`, `--chdir`, `-P` with their values), its assignments and its program word do not count when that program word, with its quotes removed, is not itself a dump word and no word after `env` holds a substitution or a dump word; any other `env` option keeps the whole `env` counted, a `grep` after such an `env` is read as `grep`, and a dump word after them still counts.
 - `env`, `env | grep TOKEN`, `printenv`, `export -p`, `grep x "$(env)"`, `env -i printenv`, `env -u X printenv`, `env X=1 xargs printenv` and the scripts of `sed` and `awk` stay refused next to a substitution.
-- The exemption applies only where the hook reads the quoting as the shell does: no cut when `#` or `$'` stands outside the quoted argument, an open quote or a trailing backslash refused, an escaped quote read as one argument; a 100 KB pattern is answered within 1 s.
+- The exemption applies only where the hook reads the quoting as the shell does: no cut when the command holds a `#`, a form of `UNCUT` (`$'`, `=(`, a `${` that is not a plain parameter expansion: the shared rule Shell forms the text cut cannot read of `command-guards`), a heredoc or the word `case` (its `)` would end a substitution early); an open quote or a trailing backslash disables the cut, so the command is refused only when a dump word remains; an escaped quote is read as one argument; a 100 KB input is answered within 1 s.
 - `docs/hooks.md` names the exemption in place of its sentence that a non-plain command holding `env` is refused anywhere, quoted text included.
 
 ## Capabilities
@@ -31,7 +31,7 @@ Cause: `global/work_hooks.py:2163`, `guard_secrets_bash`: a command holding any 
 
 ## Out of Scope
 
-- `awk 'BEGIN{system("env")}'`, `env -u X printenv` and `env -C /tmp printenv` in a plain command already pass (found 2026-11-23 while reproducing and by the analysis judge: `cmd_start` skips `-u` but not its value): a separate change, not this one.
+- `awk 'BEGIN{system("env")}'`, `env -u X printenv` and `env -C /tmp printenv` in a plain command already pass, with `env -u HOME env` (found 2026-11-23 while reproducing and by the analysis judge: `cmd_start` skips `-u` but not its value): the separate change `fix-env-dump-valued-options`, not this one.
 - The scripts of `sed` and `awk`, which the owner's item also named: their `e` command, `getline` and `system(` run programs, so they stay refused next to a substitution.
 - Reading non-plain commands with the full parser: a larger change of the guard.
 - Neighbouring changes of this plan: `action-first-project-repo`, `worktree-add-quiet`, `plan-input-skill`.
