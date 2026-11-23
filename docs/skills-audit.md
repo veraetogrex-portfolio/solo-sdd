@@ -168,6 +168,21 @@ not run: 0; leaked: 0; unreadable: 0; not made: 0
 | Order | 5. Queue | method |  |  |
 | Order | 6. Stop | gate (text) | hook: no | a change started after the report is the owner's next request, not a tool event of this run |
 
+## plan-input
+
+| Heading | Step | Mark | Hook | Why |
+|---|---|---|---|---|
+| Order | 1. Target | method |  |  |
+| Order | 2. Process tree | gate (text) | hook: no | whether the target the owner names has git and a `solo-sdd/` tree is read from that folder before any write; no tool event marks it |
+| Order | 3. Sections | method |  |  |
+| Order | 4. Done or planned | method |  |  |
+| Order | 5. Checks of a decided item | gate (text) | hook: no | a failed check is read from the commands' answers by judgement, not from one tool event |
+| Order | 6. Each letter section | method |  |  |
+| Order | 7. Slicing hint | method |  |  |
+| Order | 8. Nothing to plan | gate (text) | hook: no | whether any item is left to plan is a judgement on the sections |
+| Order | 9. Save | gate (text) | hook: yes | a write hook could refuse writing an input file inside a git repository or over an existing file |
+| Order | 10. Launch lines | gate (text) | hook: no | the lines stand in the file and the reply, a hook sees no reply text |
+
 ## project-init
 
 | Heading | Step | Mark | Hook | Why |
@@ -366,6 +381,7 @@ The `hook: yes` rows above, for the owner to plan as changes.
 | `copy-check` | Loop | 4. Final | a Write check of the changed text files for a long dash and ` -- ` between words |
 | `evidence-research` | Order | 9. Outside check | the `stop` hook could return a final answer with a source table when no `Check:` subagent ran |
 | `next-up` | Order | 3. Closing | a write hook could refuse an edit of `docs/waiting.md` that drops a first-table row not found under `## Closed` |
+| `plan-input` | Order | 9. Save | a write hook could refuse writing an input file inside a git repository or over an existing file |
 | `project-init` | Order | 6. CLAUDE.md | a `stop` check for a project with AGENTS.md whose CLAUDE.md has no `@AGENTS.md` line |
 | `review-principles` | Order | 5. REVIEW.md | a write hook could refuse a `REVIEW.md` edit that drops a rule line of the file before it |
 | `ship` | Order | 6. Push | a Bash guard refusing `git push --force` and `-f` |
