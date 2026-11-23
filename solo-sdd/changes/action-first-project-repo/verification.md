@@ -28,7 +28,7 @@ An empty answer, a truncated one (it ends inside an open code fence) or a non-UT
 ## Needs
 
 - Steps 2-4 run from the main session: from a subagent (under `spec-dispatch` the orchestrator is one) the hook refuses an untagged `general-purpose` subagent, as `goal-first` met on 2026-11-22.
-- The owner's decision to lay out the branch commit (`sync.py push` from the branch, the main branch's layout restored by `sync.py push` from main at the end), as for `goal-first` on 2026-11-22: the graded runs then read the rules the agents get.
+- The owner's decision to lay out the branch commit (`sync.py push` from the branch, the main branch's layout restored by `sync.py push` from main at the end), as for `goal-first` on 2026-11-22: the graded runs then read the rules the agents get. Given by the owner on 2026-11-23 (translated from Russian): "Yes, lay it out".
 
 ## Fallback
 
