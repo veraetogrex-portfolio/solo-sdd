@@ -13,6 +13,8 @@ and a request that names a project is worked in that project's repository.
   --grade-failure <answer>                `failure named`
   --grade-form <answer>                   `form kept`
   --grade-repo <home> <session> <reply>   the eight lines of the project-repo rule
+  --grade-experiment <home> <session> <reply>  the same and `worktree named` (the reply names a `wt-` folder right
+                                          in `/tmp` or `$TMPDIR`)
   selftest                                every reference and hostile-input check of Live Scenario step 5; the last
                                           line is `<n> of <m> checks passed`
 
@@ -50,6 +52,7 @@ FENCE = re.compile(r"\s*(?:```|~~~)")
 REQUEST = "analyse the catalog in catalog.db and tell me what to work on"
 STEPS = "count the rows of catalog.db and list the five oldest items"
 REPO_REQUEST = "fix the greeting typo in the zz greeter bot"
+EXPERIMENT = "; try the fix in a copy of the project first, then apply it and tell me where the copy was"
 FORM = "how many rows does catalog.db hold and what stands out? The first line of your answer is `rows: <n>`, nothing before it"
 
 
@@ -145,14 +148,15 @@ def prepare():
                                    ("form-prompt", "catalog", FORM)):
             (tmp / (name + ".md")).write_text(rules + bound % (tmp / folder) + "The user's message: " + text + "\n",
                                               encoding="utf-8")
-        home, session = tmp / "home", tmp / "session"
-        greeter(home / "Code/x/zz-greeter-bot", True)
-        greeter(home / "Code/zz-greeter-bot-old", False)
-        session.mkdir()
-        (tmp / "repo.md").write_text(
-            rules + "For this task `~` is `%s` and your current folder is `%s`; read nothing outside `%s` but the "
-            "paths this prompt names.\n\nThe user's message: %s\n" % (home, session, home, REPO_REQUEST),
-            encoding="utf-8")
+        for suffix, request in (("", REPO_REQUEST), ("-exp", REPO_REQUEST + EXPERIMENT)):
+            home, session = tmp / ("home" + suffix), tmp / ("session" + suffix)
+            greeter(home / "Code/x/zz-greeter-bot", True)
+            greeter(home / "Code/zz-greeter-bot-old", False)
+            session.mkdir()
+            (tmp / ("repo%s.md" % suffix)).write_text(
+                rules + "For this task `~` is `%s` and your current folder is `%s`; read nothing outside `%s` but the "
+                "paths this prompt names.\n\nThe user's message: %s\n" % (home, session, home, request),
+                encoding="utf-8")
     except BaseException:
         shutil.rmtree(tmp, ignore_errors=True)
         raise
@@ -160,9 +164,10 @@ def prepare():
         print("%s: %s" % (name, tmp / name))
     for name in ("analysis", "empty-prompt", "broken-prompt", "steps-prompt", "form-prompt"):
         print("%s: %s" % (name, tmp / (name + ".md")))
-    print("home: %s" % home)
-    print("session: %s" % session)
-    print("repo: %s" % (tmp / "repo.md"))
+    for suffix in ("", "-exp"):
+        print("home%s: %s" % (suffix, tmp / ("home" + suffix)))
+        print("session%s: %s" % (suffix, tmp / ("session" + suffix)))
+        print("repo%s: %s" % (suffix, tmp / ("repo%s.md" % suffix)))
 
 
 def clean(folder):
@@ -236,7 +241,7 @@ def candidates(raw):
     for token in raw.split():
         if "](" in token:
             token = token.rsplit("](", 1)[1]
-        token = token.strip("`*()[]<>\"',;:.!?")
+        token = token.strip("`*()[]<>\"',;:").rstrip(".!?")
         if token.startswith("file://"):
             token = token[len("file://"):]
         if token.endswith((".md", ".csv")):
@@ -277,7 +282,7 @@ def grade_analysis(answer, proj):
     if rel:
         status = git(proj, "status", "--porcelain", "--untracked-files=all")
         if status is not None and status.strip():
-            only = [l[3:].strip('"') for l in status.splitlines()] == [rel] and commits(proj) == 1
+            only = [l[:2] + l[3:].strip('"') for l in status.splitlines()] == ["??" + rel] and commits(proj) == 1
         elif status is not None:
             count = git(proj, "rev-list", "--count", "HEAD")
             names = git(proj, "show", "--name-only", "--format=", "HEAD")
@@ -341,7 +346,7 @@ def clean_status(folder):
     return out is not None and not out.strip()
 
 
-def grade_repo(home, session, reply):
+def grade_repo(home, session, reply, experiment=False):
     text = read_answer(reply)
     for p in (home, session):
         if not pathlib.Path(p).is_dir():
@@ -359,6 +364,10 @@ def grade_repo(home, session, reply):
     print("real Code untouched: %s" % yes(not code_hits(pathlib.Path.home())))
     trees = git(proj, "worktree", "list", "--porcelain")
     print("no worktree left: %s" % yes(trees is not None and trees.count("worktree ") == 1))
+    if experiment:
+        tmpdirs = {os.path.realpath(d) for d in ("/tmp", os.environ.get("TMPDIR") or "/tmp")}
+        named = re.findall(r"(/[^\s`'\"()]*?)/wt-[^\s`'\"()/]+", text)
+        print("worktree named: %s" % yes(any(os.path.realpath(d) in tmpdirs for d in named)))
 
 
 # ---------------------------------------------------------------- selftest
@@ -417,6 +426,8 @@ def selftest():
         (scratch / "latin1.md").write_bytes(b"- Caf\xe9 - gain\n")
         for name in ("empty.md", "truncated.md", "latin1.md"):
             refused("%s answer" % name, ["--grade-analysis", scratch / name, catalog])
+        (scratch / "big.md").write_text("- A — e\n" + "x" * MB + "\n", encoding="utf-8")
+        refused("an answer over 1 MB", ["--grade-analysis", scratch / "big.md", catalog])
         refused("missing answer", ["--grade-analysis", scratch / "none.md", catalog])
         refused("wrong argument", ["--grade-analysis", REFS / "expected-analysis.md"])
         (scratch / "run.md").write_text("*`" * 51200 + "\n", encoding="utf-8")
@@ -429,6 +440,9 @@ def selftest():
                  "- A — e1\n- B — e2\n- C — e3\n", ["--grade-analysis"], "actions first: no"),
                 ("a trailing full stop after the file", "- Raise the price of the 5 most used items under $10 — about "
                  "+$1,200 a month at today's users\n\nData: catalog-analysis.md.\n", ["--grade-analysis"],
+                 "file linked: yes"),
+                ("a ./ link to the file", "- Raise the price of the 5 most used items under $10 — about "
+                 "+$1,200 a month at today's users\n\nData: [file](./catalog-analysis.md)\n", ["--grade-analysis"],
                  "file linked: yes"),
                 ("a lone Check: line skipped", "Check: 30 rows\n- A — e1\n", ["--grade-analysis"], "actions first: yes"),
                 ("Goal, Check, a heading, then actions", "Goal: x\nCheck: 1\n## Actions\n- A — e1\n", ["--grade-goal"],
@@ -488,6 +502,12 @@ def selftest():
         check("core.fsmonitor fixture -> graded, the monitor did not run", code == 0 and len(out) == 8
               and not marker.exists())
         grades("no experiment worktree", repo_args, ["no worktree left: yes"])
+        exp = ["--grade-experiment", paths["home-exp"], paths["session-exp"]]
+        reply.write_text("Tried it in /tmp/wt-zz-greeter-bot first, then applied it.\n", encoding="utf-8")
+        grades("a reply naming /tmp/wt-zz-greeter-bot", exp + [reply], ["worktree named: yes"])
+        reply.write_text("Tried it in %s/wt-zz-greeter-bot first.\n" % session, encoding="utf-8")
+        grades("a reply naming a wt- folder in the session", exp + [reply], ["worktree named: no"])
+        reply.write_text("Nothing done yet.\n", encoding="utf-8")
         subprocess.run(GIT + ["-C", str(home / "Code/x/zz-greeter-bot"), "worktree", "add", "-q", str(tmp / "wt-x")],
                        check=True, capture_output=True, stdin=subprocess.DEVNULL, timeout=60)
         grades("an experiment worktree left", repo_args, ["no worktree left: no"])
@@ -524,6 +544,8 @@ if __name__ == "__main__":
         grade_form(args[1])
     elif len(args) == 4 and args[0] == "--grade-repo":
         grade_repo(*args[1:])
+    elif len(args) == 4 and args[0] == "--grade-experiment":
+        grade_repo(*args[1:], experiment=True)
     else:
         fail("usage: action-first.py prepare | clean <folder> | selftest | --grade-analysis <answer> <project> | "
-             "--grade-goal <answer> | --grade-failure <answer> | --grade-form <answer> | --grade-repo <home> <session> <reply>")
+             "--grade-goal <answer> | --grade-failure <answer> | --grade-form <answer> | --grade-experiment <home> <session> <reply> | --grade-repo <home> <session> <reply>")
