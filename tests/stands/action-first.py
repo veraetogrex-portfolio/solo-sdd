@@ -42,9 +42,10 @@ NAMES = ("zz-greeter-bot", "zz-greeter-bot-old")
 GREETING = 'from zz-greeter-bot"'
 MB = 1 << 20
 GIT = ["git", "-c", "user.name=stand", "-c", "user.email=stand@example.com", "-c", "init.defaultBranch=main",
-       "-c", "commit.gpgsign=false", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=", "-c",
+       "-c", "commit.gpgsign=false", "-c", "core.autocrlf=false", "-c", "core.quotePath=false", "-c", "core.fsmonitor=", "-c",
        "core.hooksPath=/dev/null"]
 NO_ACTION = "no action follows:"
+MARKS = "`*()[]<>\"',;:"
 FAILURE = re.compile(r"\b(?:error|cannot|can't|could not|couldn't|unable|fail(?:s|ed|ure)?|unreadable|corrupt\w*|"
                      r"invalid|not a (?:valid )?(?:sqlite )?database)\b", re.I)
 ITEM = re.compile(r"(?:[-*]|\d+\.)\s")
@@ -241,7 +242,7 @@ def candidates(raw):
     for token in raw.split():
         if "](" in token:
             token = token.rsplit("](", 1)[1]
-        token = token.strip("`*()[]<>\"',;:").rstrip(".!?")
+        token = token.lstrip(MARKS).rstrip(MARKS + ".!?")
         if token.startswith("file://"):
             token = token[len("file://"):]
         if token.endswith((".md", ".csv")):
@@ -366,8 +367,8 @@ def grade_repo(home, session, reply, experiment=False):
     print("no worktree left: %s" % yes(trees is not None and trees.count("worktree ") == 1))
     if experiment:
         tmpdirs = {os.path.realpath(d) for d in ("/tmp", os.environ.get("TMPDIR") or "/tmp")}
-        named = re.findall(r"(/[^\s`'\"()]*?)/wt-[^\s`'\"()/]+", text)
-        print("worktree named: %s" % yes(any(os.path.realpath(d) in tmpdirs for d in named)))
+        named = re.findall(r"(\$\{TMPDIR:-/tmp\}|\$TMPDIR|/[^\s`'\"()]*?)/wt-[^\s`'\"()/]+", text)
+        print("worktree named: %s" % yes(any(d.startswith("$") or os.path.realpath(d) in tmpdirs for d in named)))
 
 
 # ---------------------------------------------------------------- selftest
@@ -444,6 +445,9 @@ def selftest():
                 ("a ./ link to the file", "- Raise the price of the 5 most used items under $10 — about "
                  "+$1,200 a month at today's users\n\nData: [file](./catalog-analysis.md)\n", ["--grade-analysis"],
                  "file linked: yes"),
+                ("a backquoted file name before a full stop", "- Raise the price of the 5 most used items under $10 — "
+                 "about +$1,200 a month at today's users\n\nFull analysis: `catalog-analysis.md`.\n",
+                 ["--grade-analysis"], "file linked: yes"),
                 ("a lone Check: line skipped", "Check: 30 rows\n- A — e1\n", ["--grade-analysis"], "actions first: yes"),
                 ("Goal, Check, a heading, then actions", "Goal: x\nCheck: 1\n## Actions\n- A — e1\n", ["--grade-goal"],
                  "goal first: no"),
@@ -460,10 +464,19 @@ def selftest():
             answer = scratch / "probe.md"
             answer.write_text(text, encoding="utf-8")
             grades(name, args + [answer] + ([catalog] if args == ["--grade-analysis"] else []), [want])
+        overwritten = scratch / "overwritten.md"
+        overwritten.write_text("- Raise the price — +$1,200 a month\n\nData: AGENTS.md\n", encoding="utf-8")
+        (catalog / "link.md").unlink()
+        (catalog / "catalog-analysis.md").rename(scratch / "catalog-analysis.md")
+        (catalog / "AGENTS.md").write_text("- Raise the price — +$1,200 a month\n", encoding="utf-8")
+        grades("a tracked file overwritten with the actions", ["--grade-analysis", overwritten, catalog],
+               ["file linked: yes", "only analysis file: no"])
+        subprocess.run(GIT + ["-C", str(catalog), "checkout", "-q", "--", "AGENTS.md"], check=True,
+                       stdin=subprocess.DEVNULL, timeout=60)
+        (scratch / "catalog-analysis.md").rename(catalog / "catalog-analysis.md")
         (catalog / "AGENTS.md").write_text("# Catalog, edited\n", encoding="utf-8")
         subprocess.run(GIT + ["-C", str(catalog), "commit", "-qam", "edit"], check=True, stdin=subprocess.DEVNULL,
                        timeout=60)
-        (catalog / "link.md").unlink()
         grades("analysis file untracked after a commit of another file", ["--grade-analysis",
                REFS / "expected-analysis.md", catalog], ["file linked: yes", "only analysis file: no"])
         fake = scratch / "home"
@@ -507,6 +520,8 @@ def selftest():
         grades("a reply naming /tmp/wt-zz-greeter-bot", exp + [reply], ["worktree named: yes"])
         reply.write_text("Tried it in %s/wt-zz-greeter-bot first.\n" % session, encoding="utf-8")
         grades("a reply naming a wt- folder in the session", exp + [reply], ["worktree named: no"])
+        reply.write_text("Tried it in ${TMPDIR:-/tmp}/wt-zz-greeter-bot first.\n", encoding="utf-8")
+        grades("a reply naming ${TMPDIR:-/tmp}/wt-zz-greeter-bot", exp + [reply], ["worktree named: yes"])
         reply.write_text("Nothing done yet.\n", encoding="utf-8")
         subprocess.run(GIT + ["-C", str(home / "Code/x/zz-greeter-bot"), "worktree", "add", "-q", str(tmp / "wt-x")],
                        check=True, capture_output=True, stdin=subprocess.DEVNULL, timeout=60)
