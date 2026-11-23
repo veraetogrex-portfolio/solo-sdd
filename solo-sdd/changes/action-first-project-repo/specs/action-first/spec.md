@@ -40,8 +40,8 @@ Section 1 of the global rules SHALL hold that a report form and rules on writing
 
 #### Scenario: A database that cannot be read
 - **WHEN** the agent is asked to analyse a catalog whose `catalog.db` is not a SQLite file
-- **THEN** within the first 5 non-empty lines its answer names `catalog.db`, and no line starts with `No action follows:`
+- **THEN** a line among the first 5 non-empty lines of its answer names `catalog.db` together with a read failure (such as `error`, `cannot`, `not a database`), and no line starts with `No action follows:`
 
-#### Scenario: A skill's own report form
-- **WHEN** the agent runs a skill whose report form fixes its first line, such as `spec-analyze` with `analyze <change>:`
-- **THEN** the report opens with the skill's form, not with the actions
+#### Scenario: A report form the request prescribes
+- **WHEN** the agent is asked about the catalog and the request says the first line of the answer is `rows: <n>`, nothing before it
+- **THEN** the first non-empty line of its answer starts with `rows:`

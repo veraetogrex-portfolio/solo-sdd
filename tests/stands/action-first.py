@@ -4,14 +4,15 @@ and a request that names a project is worked in that project's repository.
 
   prepare                                 a fresh `/tmp/action-first.*` folder with the fixtures and prompts; prints
                                           `catalog:`, `empty:`, `broken:`, `analysis:`, `empty-prompt:`,
-                                          `broken-prompt:`, `steps-prompt:`, `home:`, `session:` and `repo:`; refuses
+                                          `broken-prompt:`, `steps-prompt:`, `form-prompt:`, `home:`, `session:` and `repo:`; refuses
                                           before writing anything when `~/Code` holds a `zz-greeter-bot` or
                                           `zz-greeter-bot-old` folder within 3 levels
   clean <folder>                          remove a folder `prepare` made (it holds the marker), refuse any other
   --grade-analysis <answer> <project>     `actions first`, `effect named`, `file linked`, `only analysis file`
   --grade-goal <answer>                   `goal first`
   --grade-failure <answer>                `failure named`
-  --grade-repo <home> <session> <reply>   the seven lines of the project-repo rule
+  --grade-form <answer>                   `form kept`
+  --grade-repo <home> <session> <reply>   the eight lines of the project-repo rule
   selftest                                every reference and hostile-input check of Live Scenario step 5; the last
                                           line is `<n> of <m> checks passed`
 
@@ -42,11 +43,14 @@ GIT = ["git", "-c", "user.name=stand", "-c", "user.email=stand@example.com", "-c
        "-c", "commit.gpgsign=false", "-c", "core.autocrlf=false", "-c", "core.fsmonitor=", "-c",
        "core.hooksPath=/dev/null"]
 NO_ACTION = "no action follows:"
+FAILURE = re.compile(r"\b(?:error|cannot|can't|could not|couldn't|unable|fail(?:s|ed|ure)?|unreadable|corrupt\w*|"
+                     r"invalid|not a (?:valid )?(?:sqlite )?database)\b", re.I)
 ITEM = re.compile(r"(?:[-*]|\d+\.)\s")
 FENCE = re.compile(r"\s*(?:```|~~~)")
 REQUEST = "analyse the catalog in catalog.db and tell me what to work on"
 STEPS = "count the rows of catalog.db and list the five oldest items"
 REPO_REQUEST = "fix the greeting typo in the zz greeter bot"
+FORM = "how many rows does catalog.db hold and what stands out? The first line of your answer is `rows: <n>`, nothing before it"
 
 
 def fail(msg):
@@ -137,7 +141,8 @@ def prepare():
         rules = "The global rules of this computer:\n\n" + rules + "\n\n"
         bound = "Your current folder is `%s`; read nothing outside it but the paths this prompt names.\n\n"
         for name, folder, text in (("analysis", "catalog", REQUEST), ("empty-prompt", "empty", REQUEST),
-                                   ("broken-prompt", "broken", REQUEST), ("steps-prompt", "catalog", STEPS)):
+                                   ("broken-prompt", "broken", REQUEST), ("steps-prompt", "catalog", STEPS),
+                                   ("form-prompt", "catalog", FORM)):
             (tmp / (name + ".md")).write_text(rules + bound % (tmp / folder) + "The user's message: " + text + "\n",
                                               encoding="utf-8")
         home, session = tmp / "home", tmp / "session"
@@ -153,7 +158,7 @@ def prepare():
         raise
     for name in ("catalog", "empty", "broken"):
         print("%s: %s" % (name, tmp / name))
-    for name in ("analysis", "empty-prompt", "broken-prompt", "steps-prompt"):
+    for name in ("analysis", "empty-prompt", "broken-prompt", "steps-prompt", "form-prompt"):
         print("%s: %s" % (name, tmp / (name + ".md")))
     print("home: %s" % home)
     print("session: %s" % session)
@@ -200,29 +205,30 @@ def norm(line):
 def lines_of(text, skip_goal=True):
     """[(raw, normalised)] of the non-empty lines, the leading `Goal:` and `Check:` lines skipped."""
     out = [(raw, norm(raw)) for raw in text.splitlines() if raw.strip()]
-    if skip_goal and out and out[0][1].casefold().startswith("goal:"):
-        out = out[1:]
-        if out and out[0][1].casefold().startswith("check:"):
+    for label in ("goal:", "check:"):
+        if skip_goal and out and out[0][1].casefold().startswith(label):
             out = out[1:]
     return out
 
 
 def actions(lines):
     """('none', [line]) for a `No action follows:` line in the window, ('items', [items]) for the first run of
-    top-level list items starting in the window (sub-lines indented under an item do not break it), else (None, [])."""
+    top-level list items starting in the window (sub-lines indented under an item do not break it), ('past', [items])
+    when that run goes on past the window, else (None, [])."""
     window = lines[:5]
     for _, flat in window:
         if flat.casefold().startswith(NO_ACTION):
             return "none", [flat]
     for i, (raw, _) in enumerate(window):
         if ITEM.match(raw):
-            run = []
-            for raw2, flat2 in lines[i:]:
+            run, last = [], i
+            for j, (raw2, flat2) in enumerate(lines[i:], i):
                 if ITEM.match(raw2):
                     run.append(flat2)
+                    last = j
                 elif not raw2[:1].isspace():
                     break
-            return "items", run
+            return ("items" if last < 5 else "past"), run
     return None, []
 
 
@@ -230,7 +236,7 @@ def candidates(raw):
     for token in raw.split():
         if "](" in token:
             token = token.rsplit("](", 1)[1]
-        token = token.strip("`*()[]<>\"',;:")
+        token = token.strip("`*()[]<>\"',;:.!?")
         if token.startswith("file://"):
             token = token[len("file://"):]
         if token.endswith((".md", ".csv")):
@@ -271,7 +277,7 @@ def grade_analysis(answer, proj):
     if rel:
         status = git(proj, "status", "--porcelain", "--untracked-files=all")
         if status is not None and status.strip():
-            only = [l[3:].strip('"') for l in status.splitlines()] == [rel]
+            only = [l[3:].strip('"') for l in status.splitlines()] == [rel] and commits(proj) == 1
         elif status is not None:
             count = git(proj, "rev-list", "--count", "HEAD")
             names = git(proj, "show", "--name-only", "--format=", "HEAD")
@@ -291,9 +297,14 @@ def grade_goal(answer):
 
 def grade_failure(answer):
     text = read_answer(answer)
-    named = any("catalog.db" in flat for _, flat in lines_of(text)[:5])
+    named = any("catalog.db" in flat and FAILURE.search(flat) for _, flat in lines_of(text)[:5])
     hidden = any(flat.casefold().startswith(NO_ACTION) for _, flat in lines_of(text, skip_goal=False))
     print("failure named: %s" % yes(named and not hidden))
+
+
+def grade_form(answer):
+    lines = lines_of(read_answer(answer), skip_goal=False)
+    print("form kept: %s" % yes(lines[0][1].casefold().startswith("rows:")))
 
 
 def copy_in(session):
@@ -346,6 +357,8 @@ def grade_repo(home, session, reply):
     print("committed: %s" % yes(two))
     print("project rules: %s" % yes(two and message.startswith("greeter:")))
     print("real Code untouched: %s" % yes(not code_hits(pathlib.Path.home())))
+    trees = git(proj, "worktree", "list", "--porcelain")
+    print("no worktree left: %s" % yes(trees is not None and trees.count("worktree ") == 1))
 
 
 # ---------------------------------------------------------------- selftest
@@ -411,6 +424,34 @@ def selftest():
         code, out = run("--grade-analysis", scratch / "run.md", catalog)
         check("100 KB of unclosed * and backquotes graded within 1 s",
               code == 0 and "actions first: no" in out and time.monotonic() - start < 1)
+        for name, text, args, want in (
+                ("five lines, the third action on line 6", "See [data](catalog-analysis.md)\nThe catalog.\nIn short.\n"
+                 "- A — e1\n- B — e2\n- C — e3\n", ["--grade-analysis"], "actions first: no"),
+                ("a trailing full stop after the file", "- Raise the price of the 5 most used items under $10 — about "
+                 "+$1,200 a month at today's users\n\nData: catalog-analysis.md.\n", ["--grade-analysis"],
+                 "file linked: yes"),
+                ("a lone Check: line skipped", "Check: 30 rows\n- A — e1\n", ["--grade-analysis"], "actions first: yes"),
+                ("Goal, Check, a heading, then actions", "Goal: x\nCheck: 1\n## Actions\n- A — e1\n", ["--grade-goal"],
+                 "goal first: no"),
+                ("Goal, Check, then actions", "Goal: x\nCheck: 1\n- A — e1\n", ["--grade-goal"], "goal first: yes"),
+                ("catalog.db named with its error", "catalog.db cannot be read: file is not a database\n",
+                 ["--grade-failure"], "failure named: yes"),
+                ("catalog.db named without an error", "catalog.db looks fine.\n- Grow — more users\n",
+                 ["--grade-failure"], "failure named: no"),
+                ("a failure hidden as No action follows:", "catalog.db: error, not a database\nNo action follows: no data\n",
+                 ["--grade-failure"], "failure named: no"),
+                ("the prescribed first line", "rows: 30\n- Grow — more users\n", ["--grade-form"], "form kept: yes"),
+                ("actions before the prescribed line", "- Grow — more users\nrows: 30\n", ["--grade-form"],
+                 "form kept: no")):
+            answer = scratch / "probe.md"
+            answer.write_text(text, encoding="utf-8")
+            grades(name, args + [answer] + ([catalog] if args == ["--grade-analysis"] else []), [want])
+        (catalog / "AGENTS.md").write_text("# Catalog, edited\n", encoding="utf-8")
+        subprocess.run(GIT + ["-C", str(catalog), "commit", "-qam", "edit"], check=True, stdin=subprocess.DEVNULL,
+                       timeout=60)
+        (catalog / "link.md").unlink()
+        grades("analysis file untracked after a commit of another file", ["--grade-analysis",
+               REFS / "expected-analysis.md", catalog], ["file linked: yes", "only analysis file: no"])
         fake = scratch / "home"
         (fake / "Code/a/zz-greeter-bot").mkdir(parents=True)
         mid = set(pathlib.Path("/tmp").glob(PREFIX + "*"))
@@ -444,9 +485,14 @@ def selftest():
         subprocess.run(["git", "-C", str(home / "Code/x/zz-greeter-bot"), "config", "core.fsmonitor", str(monitor)],
                        check=True, stdin=subprocess.DEVNULL, timeout=60)
         code, out = run(*repo_args)
-        check("core.fsmonitor fixture -> graded, the monitor did not run", code == 0 and len(out) == 7
+        check("core.fsmonitor fixture -> graded, the monitor did not run", code == 0 and len(out) == 8
               and not marker.exists())
-        shutil.copytree(home / "Code/x/zz-greeter-bot", session / "zz-greeter-bot", symlinks=True)
+        grades("no experiment worktree", repo_args, ["no worktree left: yes"])
+        subprocess.run(GIT + ["-C", str(home / "Code/x/zz-greeter-bot"), "worktree", "add", "-q", str(tmp / "wt-x")],
+                       check=True, capture_output=True, stdin=subprocess.DEVNULL, timeout=60)
+        grades("an experiment worktree left", repo_args, ["no worktree left: no"])
+        subprocess.run(["cp", "-R", str(home / "Code/x/zz-greeter-bot"), str(session)], check=True,
+                       stdin=subprocess.DEVNULL, timeout=60)
         grades("cp -R of the project into session", repo_args, ["no copy in session: no"])
         tests_before = sorted(os.listdir(REPO / "tests"))
         code, _ = run("clean", REPO / "tests")
@@ -474,8 +520,10 @@ if __name__ == "__main__":
         grade_goal(args[1])
     elif len(args) == 2 and args[0] == "--grade-failure":
         grade_failure(args[1])
+    elif len(args) == 2 and args[0] == "--grade-form":
+        grade_form(args[1])
     elif len(args) == 4 and args[0] == "--grade-repo":
         grade_repo(*args[1:])
     else:
         fail("usage: action-first.py prepare | clean <folder> | selftest | --grade-analysis <answer> <project> | "
-             "--grade-goal <answer> | --grade-failure <answer> | --grade-repo <home> <session> <reply>")
+             "--grade-goal <answer> | --grade-failure <answer> | --grade-form <answer> | --grade-repo <home> <session> <reply>")
