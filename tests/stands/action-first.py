@@ -45,7 +45,7 @@ GIT = ["git", "-c", "user.name=stand", "-c", "user.email=stand@example.com", "-c
        "-c", "commit.gpgsign=false", "-c", "core.autocrlf=false", "-c", "core.quotePath=false", "-c", "core.fsmonitor=", "-c",
        "core.hooksPath=/dev/null"]
 NO_ACTION = "no action follows:"
-MARKS = "`*()[]<>\"',;:"
+MARKS = "`*()[]<>\"',;:\u00ab\u00bb\u201c\u201d\u2018\u2019"
 FAILURE = re.compile(r"\b(?:error|cannot|can't|could not|couldn't|unable|fail(?:s|ed|ure)?|unreadable|corrupt\w*|"
                      r"invalid|not a (?:valid )?(?:sqlite )?database)\b", re.I)
 ITEM = re.compile(r"(?:[-*]|\d+\.)\s")
@@ -242,7 +242,7 @@ def candidates(raw):
     for token in raw.split():
         if "](" in token:
             token = token.rsplit("](", 1)[1]
-        token = token.lstrip(MARKS).rstrip(MARKS + ".!?")
+        token = token.lstrip(MARKS).rstrip(MARKS + ".!?\u2026")
         if token.startswith("file://"):
             token = token[len("file://"):]
         if token.endswith((".md", ".csv")):
@@ -367,8 +367,9 @@ def grade_repo(home, session, reply, experiment=False):
     print("no worktree left: %s" % yes(trees is not None and trees.count("worktree ") == 1))
     if experiment:
         tmpdirs = {os.path.realpath(d) for d in ("/tmp", os.environ.get("TMPDIR") or "/tmp")}
-        named = re.findall(r"(\$\{TMPDIR:-/tmp\}|\$TMPDIR|/[^\s`'\"()]*?)/wt-[^\s`'\"()/]+", text)
-        print("worktree named: %s" % yes(any(d.startswith("$") or os.path.realpath(d) in tmpdirs for d in named)))
+        folders = [tok.replace('"', "").lstrip(MARKS).split("/wt-", 1)[0] for tok in text.split() if "/wt-" in tok]
+        print("worktree named: %s" % yes(any(d in ("${TMPDIR:-/tmp}", "$TMPDIR", "${TMPDIR}") or (
+            d.startswith("/") and os.path.realpath(d) in tmpdirs) for d in folders)))
 
 
 # ---------------------------------------------------------------- selftest
@@ -448,6 +449,9 @@ def selftest():
                 ("a backquoted file name before a full stop", "- Raise the price of the 5 most used items under $10 — "
                  "about +$1,200 a month at today's users\n\nFull analysis: `catalog-analysis.md`.\n",
                  ["--grade-analysis"], "file linked: yes"),
+                ("a file name in guillemets", "- Raise the price of the 5 most used items under $10 — about "
+                 "+$1,200 a month at today's users\n\nData: \u00abcatalog-analysis.md\u00bb.\n", ["--grade-analysis"],
+                 "file linked: yes"),
                 ("a lone Check: line skipped", "Check: 30 rows\n- A — e1\n", ["--grade-analysis"], "actions first: yes"),
                 ("Goal, Check, a heading, then actions", "Goal: x\nCheck: 1\n## Actions\n- A — e1\n", ["--grade-goal"],
                  "goal first: no"),
@@ -522,6 +526,11 @@ def selftest():
         grades("a reply naming a wt- folder in the session", exp + [reply], ["worktree named: no"])
         reply.write_text("Tried it in ${TMPDIR:-/tmp}/wt-zz-greeter-bot first.\n", encoding="utf-8")
         grades("a reply naming ${TMPDIR:-/tmp}/wt-zz-greeter-bot", exp + [reply], ["worktree named: yes"])
+        for text in ("~/tmp/wt-zz-greeter-bot", "session-exp/tmp/wt-zz-greeter-bot", "tmp/wt-zz-greeter-bot"):
+            reply.write_text("Tried it in %s first.\n" % text, encoding="utf-8")
+            grades("a reply naming %s" % text, exp + [reply], ["worktree named: no"])
+        reply.write_text('Tried it in "$TMPDIR"/wt-zz-greeter-bot first.\n', encoding="utf-8")
+        grades('a reply naming "$TMPDIR"/wt-zz-greeter-bot', exp + [reply], ["worktree named: yes"])
         reply.write_text("Nothing done yet.\n", encoding="utf-8")
         subprocess.run(GIT + ["-C", str(home / "Code/x/zz-greeter-bot"), "worktree", "add", "-q", str(tmp / "wt-x")],
                        check=True, capture_output=True, stdin=subprocess.DEVNULL, timeout=60)
