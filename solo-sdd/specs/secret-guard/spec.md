@@ -58,12 +58,24 @@ As a guard against accidental dumps, not a boundary, `guard` SHALL refuse a Bash
 - **WHEN** the agent runs `echo ${X:-"a b"}; grep "x env" f`, `echo "$(date)"; grep "env x`, `echo "$(date)"; grep "a\\" ; env ; "x"`, `echo "$(date)"; grep x f # it's`, a newline, `printenv; echo 'y'`, or `echo "$(true "; grep "; env; true "x")"`
 - **THEN** each command is refused: a `#`, a form of `UNCUT`, a heredoc or `case` anywhere in the command, an open quote or a trailing backslash leaves the whole command counted, and the inside of `$(…)`, `${…}` and a backquote is read with its own quotes and never cut; `echo "$(date)"; grep "x` passes, as it holds no dump word
 
+#### Scenario: A wrapper option with a value
+- **WHEN** the agent runs `env -u X printenv`, `env -C /tmp printenv`, `env -P /usr/bin printenv`, `/usr/bin/env -u X printenv`, `timeout 5 env -u X printenv`, `sudo -u root printenv`, `sudo -u root env`, `sudo -u root printenv GITHUB_TOKEN`, `env -u X sh -c env`, `sudo -u root sh -c printenv`, `caffeinate -t 5 printenv`, `caffeinate -w 1 printenv`, `exec -a NAME printenv`, `npx -p x printenv`, `npx --package x printenv`, `time -o /tmp/x printenv` or `/usr/bin/time -f %e printenv`
+- **THEN** each command is refused, and `env -u HOME python3 -V`, `env -C /tmp ls`, `env -u X sh -c ls`, `sudo -u root ls`, `caffeinate -t 5 ls`, `npx -p x eslint .`, `time -o /tmp/x ls` and `env -u X printenv HOME` pass
+
+#### Scenario: A dump nested past the parsed depth
+- **WHEN** the agent runs `eval eval eval eval env` or `eval eval eval eval printenv`
+- **THEN** each command is refused: a text that `eval` or a shell's `-c` string hands on past three levels counts by any dump word in it; `eval eval eval eval ls` and `eval eval eval env X=1 python3 -V` pass, as the third level's program word is still read
+
 ### Requirement: Known bypasses of the Bash guard
-`docs/hooks.md` SHALL name as outside the Bash guard: brace expansion, `sh -c` with the file as a positional argument, process substitution with a quoted `)`, a heredoc marker line with an open quote, `${X:-env}` and BSD `sed r` without a space; the boundary SHALL be `Read(**/.env)` in `permissions.deny` and secrets kept only in `.env`.
+`docs/hooks.md` SHALL name as outside the Bash guard: brace expansion, `sh -c` with the file as a positional argument, process substitution with a quoted `)`, a heredoc marker line with an open quote, `${X:-env}`, BSD `sed r` with no space and, in a plain command, an interpreter's script that runs or reads the environment or a dump word another program runs from its argument (`xargs`, sed `e`, `env -S`); the boundary SHALL be `Read(**/.env)` in `permissions.deny` and secrets kept only in `.env`.
 
 #### Scenario: A known bypass
 - **WHEN** the agent runs `cat .e{n,}v` or `sh -c 'cat "$1"' _ .env`
 - **THEN** the guard lets it through and `docs/hooks.md` lists the form as a known bypass
+
+#### Scenario: An interpreter prints the environment
+- **WHEN** the agent runs `awk 'BEGIN{system("env")}' /dev/null`, `python3 -c 'import os; print(os.environ)'`, `xargs printenv`, `sed 's/.*/env/e' f` or `env -S env`
+- **THEN** the guard lets each through and `docs/hooks.md` lists an interpreter's script that runs or reads the environment and a dump word run by another program from its arguments as known bypasses
 
 ### Requirement: Secret variable names
 A variable SHALL count as secret when one part of its name, split at `_`, digits and a lower-to-upper case change and compared in any case, is `KEY`, `TOKEN`, `SECRET`, `PASSWORD`, `PASSWD`, `WEBHOOK` or `CREDENTIAL`, alone or with a trailing `S`. `guard` SHALL refuse `echo`, `printf` and `printenv` of a secret variable and SHALL pass them for any other variable.
