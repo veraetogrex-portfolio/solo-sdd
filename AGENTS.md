@@ -95,7 +95,7 @@ Before "done": the `Tests` row, the lint from the table without output, `python3
 
 ## Lessons
 
-- A stand runs exactly what it means to test: real inputs through the host, model runs as subagents of its own session (never `claude -p`), a base commit pinned by hash, reads on a condition, every imported module copied, no grading or golden answer in the measured agent's reach. ([full text](LESSONS.md#stand-runs-what-it-tests))
+- A stand runs exactly what it means to test: real inputs through the host, model runs as subagents of its own session (never `claude -p`) told where their answer goes, a base commit pinned by hash, reads on a condition, every imported module copied, no grading or golden answer in reach. ([full text](LESSONS.md#stand-runs-what-it-tests))
 - Environment detection looks only inside the passed home and PATH, a check of what another process will find runs in that process's own launch form, and a test fixture pins every git and interpreter default it relies on. ([full text](LESSONS.md#environment-facts))
 - A claim about a tool's behaviour, a record of edited files or of affected tests, or a new test counted as run, is written only after checking it here against the tool on the realistic form of its input, the source or the suite runner's output. ([full text](LESSONS.md#probe-before-claim))
 - An unnamed "our product" means solo-sdd itself; the owner's other products are neither the subject nor a source of facts unless named. ([full text](LESSONS.md#unnamed-product))
@@ -108,7 +108,7 @@ Before "done": the `Tests` row, the lint from the table without output, `python3
 - Every reader and gate takes a setting and the copy it reads from one shared definition, reports a default with its source, and falls back to it only when the command or the tree is missing, never on an error or an empty answer. ([full text](LESSONS.md#setting-sources))
 - A bulk wording replacement keeps quoted program output verbatim and is reread line by line. ([full text](LESSONS.md#bulk-wording))
 - A script that moves or rewrites a branch decides from the commits themselves, never from a setting. ([full text](LESSONS.md#branch-scripts-from-commits))
-- Every edge form of an input (digits, a closed stdin, line endings, links, escaping, a text longer than the screen, a long markup run a pattern backtracks on) is checked at one point every reader passes, never on one path only. ([full text](LESSONS.md#input-edge-forms))
+- Every edge form of an input (digits, a closed stdin, line endings, links, escaping, a text longer than the screen, a long markup run a pattern backtracks on, a wrapper option's value) is checked at one point every reader passes, never on one path only or behind one caller's switch. ([full text](LESSONS.md#input-edge-forms))
 - Before a test of a removed requirement is deleted, its checks for kept requirements move into a kept test. ([full text](LESSONS.md#removed-requirement-tests))
 - A new outcome, exemption or ban of a step is written where the rule it changes is read, and checked against every rule that requires what it bans. ([full text](LESSONS.md#new-outcomes-where-read))
 - A scenario of a new behaviour names what only the new code produces, a scenario's test asserts the literal form its THEN names, and a plan for a feature covers its life around the request. ([full text](LESSONS.md#scenarios-only-new-code))
