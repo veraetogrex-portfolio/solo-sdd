@@ -1619,20 +1619,32 @@ SUDO_VALUED = {"-u", "--user", "-g", "--group", "-U", "--other-user", "-C", "--c
 PY_VALUED = {"-W", "-X"}
 
 
-def wrapper_values_cut(w, valued=None):
+def wrapper_values_cut(w, valued=None, glued=False):
     """The words with the values of the wrappers' valued options read as options: `sudo -u root x` as `sudo -u - x`
     (replaced, not dropped, so an index still points at the same raw word). valued maps a wrapper's name (a path's base
-    name: /usr/bin/env is env) to its valued options; by default sudo's and env's."""
+    name: /usr/bin/env is env) to its valued options; by default sudo's and env's. With glued (env_dump) a wrapper word is
+    also read without a subshell's `(`, and a short option cluster takes a value when its first valued letter is its last
+    (`sudo -Hu root`; `-uroot` holds its value); archive_runs keeps the plain reading."""
     valued = valued or {"sudo": SUDO_VALUED, "env": ENV_VALUED}
     out, opts = list(w), None
     for j, x in enumerate(w):
-        if opts is not None and j and w[j - 1] in opts and out[j - 1] != "-":
+        name = os.path.basename(x.lstrip("({!") if glued else x)
+        if opts is not None and j and out[j - 1] != "-" and takes_value(w[j - 1], opts, glued):
             out[j] = "-"
-        elif os.path.basename(x) in valued:
-            opts = valued[os.path.basename(x)]
+        elif name in valued:
+            opts = valued[name]
         elif not x.startswith("-"):
             opts = None
     return out
+
+
+def takes_value(o, opts, glued):
+    """o takes the next word as its value: a valued option, or with glued a short cluster whose first valued letter is its last."""
+    if o in opts:
+        return True
+    if not glued or not re.fullmatch(r"-[A-Za-z]{2,}", o):
+        return False
+    return next(k for k in range(1, len(o) + 1) if k == len(o) or "-" + o[k] in opts) == len(o) - 1
 
 
 def archive_name(w, i):
@@ -2131,7 +2143,7 @@ def env_dump(cmd, depth=0):
             return d
     parts = split_cmd(cmd)
     for k in range(0, len(parts), 2):
-        raw = wrapper_values_cut(part_words(parts[k])[0], DUMP_VALUED)  # `env -u X printenv`: X is no program
+        raw = wrapper_values_cut(part_words(parts[k])[0], DUMP_VALUED, glued=True)  # `env -u X printenv`: X is no program
         inner = shell_text(parts, k, raw)
         if inner is not None:
             if depth >= 3:  # past the depth any dump word of the handed-on text counts

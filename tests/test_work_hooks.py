@@ -2101,10 +2101,13 @@ class SecretFiles(HookCase):
                   "exec -a NAME printenv", "npx -p x printenv", "npx --package x printenv", "time -o /tmp/x printenv",
                   "/usr/bin/time -f %e printenv", "env -u X -u Y printenv", "env -u X sudo -u root printenv",
                   "sudo -u root env -u X printenv", "sudo -g wheel printenv", "env -u X bash -c env", "env --unset X printenv",
-                  "env --chdir /tmp printenv", "sudo --user root printenv", "env -u"):
+                  "env --chdir /tmp printenv", "sudo --user root printenv", "env -u", "(env -u X printenv)",
+                  "(sudo -u root printenv)", "x=1; (sudo -u root printenv)", "sudo -Hu root printenv", "sudo -iu root printenv",
+                  "env -iu X printenv", "sudo -uroot printenv"):
             assert bash(c), c
         for c in ("env -u HOME python3 -V", "env -C /tmp ls", "env -u X sh -c ls", "sudo -u root ls", "caffeinate -t 5 ls",
-                  "npx -p x eslint .", "time -o /tmp/x ls", "env -u X printenv HOME", "sudo -u"):
+                  "npx -p x eslint .", "time -o /tmp/x ls", "env -u X printenv HOME", "sudo -u", "(sudo -u root ls)",
+                  "sudo -Hu root ls", "sudo -uroot ls"):
             assert not bash(c), c
         assert wh.archive_runs("caffeinate -t 5 solo-sdd archive x") == []  # the archive guard's reading, not changed here
         c = "env" + " -u X" * 20_000 + " printenv"
