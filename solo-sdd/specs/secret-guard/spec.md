@@ -32,7 +32,7 @@ As an accident guard, not a boundary, `guard` SHALL refuse a Bash command that g
 - **THEN** each command passes
 
 ### Requirement: Environment dumps refused
-As a guard against accidental dumps, not a boundary, `guard` SHALL refuse a Bash command that runs `env` or `printenv` without arguments, `set` without arguments, `export -p` or `declare -p`, alone or in a pipe, and a command that is not plain and holds such a word outside a quoted argument of `grep` or `rg` free of `$(` and a backquote, and outside an `env` at a command position with its options, values, assignments and a program that is no dump word.
+As a guard against accidental dumps, not a boundary, `guard` SHALL refuse a Bash command that runs `env` or `printenv` without arguments, `set` without arguments, `export -p` or `declare -p`, alone or in a pipe, and a command that is not plain and holds such a word outside a quoted argument of `grep` or `rg` free of `$(` and a backquote, and outside an `env` at a command position with its options, values, assignments, a literal nested `env` and a program that is no dump word.
 
 #### Scenario: A shell dump
 - **WHEN** the agent runs `set | grep -i api` or `export -p`
@@ -66,15 +66,19 @@ As a guard against accidental dumps, not a boundary, `guard` SHALL refuse a Bash
 - **WHEN** the agent runs `eval eval eval eval env` or `eval eval eval eval printenv`
 - **THEN** each command is refused: a text that `eval` or a shell's `-c` string hands on past three levels counts by any dump word in it; `eval eval eval eval ls` and `eval eval eval env X=1 python3 -V` pass, as the third level's program word is still read
 
+#### Scenario: env runs env
+- **WHEN** the agent runs `env env`, `env -i env`, `env -u X env`, `env FOO=1 env`, `env env -i`, `/usr/bin/env env`, `env /usr/bin/env`, `sudo env env`, `timeout 5 env env`, `env "env"`, `env -- env`, `env -uX env`, `env --unset=X env`, `printf x | env env`, `env -S env`, `echo "$(date)"; env "$(xargs printenv)"/env ls`, `echo "$(date)"; env $X/env ls` or `echo "$(date)"; env /u*/bin/env ls`
+- **THEN** each command is refused with the reason "The command prints the whole environment or a secret", and `env env ls`, `env -i env HOME=/x true`, `env env printenv HOME`, `echo "$(date)"; env env ls` and `echo "$(date)"; env e""nv ls` pass: a nested `env` is read on as `env` only as a literal word, never with a `$`, a backquote or a glob
+
 ### Requirement: Known bypasses of the Bash guard
-`docs/hooks.md` SHALL name as outside the Bash guard: brace expansion, `sh -c` with the file as a positional argument, process substitution with a quoted `)`, a heredoc marker line with an open quote, `${X:-env}`, BSD `sed r` with no space and, in a plain command, an interpreter's script that runs or reads the environment or a dump word another program runs from its argument (`xargs`, sed `e`, `env -S`); the boundary SHALL be `Read(**/.env)` in `permissions.deny` and secrets kept only in `.env`.
+`docs/hooks.md` SHALL name as outside the Bash guard: brace expansion, `sh -c` with the file as a positional argument, process substitution with a quoted `)`, a heredoc marker line with an open quote, `${X:-env}`, BSD `sed r` unspaced and, in a plain command, an interpreter's script that runs or reads the environment or a dump word another program runs from its argument (`xargs`, sed `e`, a spaced `env -S`); the boundary is `Read(**/.env)` in `permissions.deny` and secrets kept only in `.env`.
 
 #### Scenario: A known bypass
 - **WHEN** the agent runs `cat .e{n,}v` or `sh -c 'cat "$1"' _ .env`
 - **THEN** the guard lets it through and `docs/hooks.md` lists the form as a known bypass
 
 #### Scenario: An interpreter prints the environment
-- **WHEN** the agent runs `awk 'BEGIN{system("env")}' /dev/null`, `python3 -c 'import os; print(os.environ)'`, `xargs printenv`, `sed 's/.*/env/e' f` or `env -S env`
+- **WHEN** the agent runs `awk 'BEGIN{system("env")}' /dev/null`, `python3 -c 'import os; print(os.environ)'`, `xargs printenv`, `sed 's/.*/env/e' f` or `env -S 'A=1 env'`
 - **THEN** the guard lets each through and `docs/hooks.md` lists an interpreter's script that runs or reads the environment and a dump word run by another program from its arguments as known bypasses
 
 ### Requirement: Secret variable names
