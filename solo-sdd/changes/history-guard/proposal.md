@@ -8,11 +8,11 @@ Their scripts match substrings (`grep -qE "push --force"`), which refuses `git c
 
 ## What Changes
 
-- `guard` refuses a Bash command that runs `git push` with `--force`, `-f` (alone or in a cluster such as `-fu`), `--force-with-lease`, `--force-if-includes`, an unambiguous prefix git reads as one of them (git 2.43 forced an update on `--force-w`) or a refspec that starts with `+`, and a command that runs `git reset` with `--hard` or its prefix (`--har` reset hard on git 2.43), in any project and from any caller, with a reason that names the rule and the safe way: a new commit and a normal push, or `git stash` / `git restore <path>`.
-- It reads words the way the merge guard does: past `git -C <path>` and other global options (`git_sub`), wrappers, assignments, `eval`, a shell's `-c` string and substitutions up to depth 3; a commit or tag message, a search pattern and a heredoc body for a text program are not commands.
+- `guard` refuses a Bash command that runs `git push` with `--force`, `-f` (alone or in a cluster such as `-fu`), `--force-with-lease`, `--force-if-includes`, a prefix git reads as one of them (git 2.54 forced an update on `--force-w`) or a refspec that starts with `+`, and a command that runs `git reset` with `--hard` or its prefix (`--h` and `--har` reset hard on git 2.54), in any project and from any caller, with a reason that names the rule and the safe way: a new commit and a normal push, or `git stash` / `git restore <path>`.
+- It reads words the way the merge guard does: past `git -C <path>` and other global options (`git_sub`), wrappers, assignments, `eval`, a shell's `-c` string and substitutions up to depth 3; a commit or tag message, a search pattern and a heredoc body for a text program are not commands, except on a line read with quotes ignored (`A=(…)`, `$'`, `${`, a `#` word), where `A=(1 2); git commit -m "a; git push -f later"` is refused as the merge guard refuses its form, pinned by a test.
 - `git push origin main`, `git push --delete origin x`, `git reset --soft HEAD~1`, `git worktree remove --force x` and `python3 sync.py push --force` pass.
-- Known bypasses are listed by name and pinned by a test that they pass: `xargs`, `find -exec`, a shell function, `A=(1 2) bash -c` and `A=(1 2) eval`, substitutions deeper than 3, a git alias, and a `python3` or `node` heredoc body that runs git. Branch protection on the remote stays the boundary for a push; for a hard reset nothing else stands in the way.
-- Broken input (an unclosed quote or substitution, a very long command) is refused within the hook's time and raises nothing, since an exception in `guard` lets the call through.
+- Known bypasses are listed by name and pinned by a test that they pass: `xargs`, `find -exec`, `sudo -u`, `env -u`, a shell function, a `)` or `(` that moves a substitution end, a backslash-newline between `$` and `(`, `A=(1 2) bash -c` and `A=(1 2) eval`, substitutions deeper than 3, a wrapper option taking a value (`caffeinate -t 5`, `time -o f`), a git alias, a configured `+` refspec, and a `python3` or `node` heredoc body that runs git. Branch protection on the remote stays the boundary for a push; for a hard reset nothing else stands in the way.
+- Broken input (an unclosed quote or substitution, a very long command, a long run of backslash-newline lines, deep nesting) is refused within the hook's time and raises nothing, since an exception in `guard` lets the call through.
 - `docs/hooks.md` lists the new refusal; the `ship` row of `docs/skills-audit.md` becomes `gate (code)` and leaves "Gates a hook could hold".
 
 ## Capabilities
@@ -25,6 +25,7 @@ Their scripts match substrings (`grep -qE "push --force"`), which refuses `git c
 ## Impact
 
 - `global/work_hooks.py`
+- `global/process-guard.py`
 - `tests/test_work_hooks.py`
 - `tests/test_skill_commands.py`
 - `docs/hooks.md`

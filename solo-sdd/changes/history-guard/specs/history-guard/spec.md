@@ -5,10 +5,10 @@ The `guard` hook refuses the two git commands the global rules forbid, a forced 
 ## ADDED Requirements
 
 ### Requirement: Forced push refused
-`guard` SHALL refuse a Bash command that runs `git push` with an option git reads as a force: `--force`, `-f` alone or in a cluster before any letter that takes a value (`-o`), `--force-with-lease`, `--force-if-includes` or their unambiguous prefixes, or a refspec starting with `+`, from any caller, the reason naming the rule and a new commit. A message, a search pattern and a heredoc body for a text program are not commands. It guards against an accident, not an attack.
+`guard` SHALL refuse a Bash command that by its plain forms runs `git push` with a force: `--force`, `-f` alone or in a cluster before a value letter (`-o`), `--force-with-lease`, `--force-if-includes`, a prefix of one of them, or a `+` refspec, in any project, naming the rule and a new commit. A message, a search pattern and a heredoc body for a text program are text, except on a line read with quotes ignored. The forms of Known bypasses of the history guard pass.
 
 #### Scenario: The forced forms
-- **WHEN** the agent runs `git push --force`, `git push -f origin x`, `git push -fu origin x`, `git push --force-with-lease`, `git push --force-if-includes --force-with-lease`, `git push --force-w`, `git push origin +main` or `git -C ../repo push -f`
+- **WHEN** the agent runs `git push --force`, `git push -f origin x`, `git push -fu origin x`, `git push --force-with-lease`, `git push --force-if-includes --force-with-lease`, `git push --force-w`, `git push origin +main`, `git push origin -- +main`, `git -C ../repo push -f`, `/usr/bin/git push -f`, `sudo git push -f`, `env GIT_TRACE=1 git push -f` or `command git push -f`, also outside a git repository
 - **THEN** the command is refused, the reason names the rule and a new commit
 
 #### Scenario: Plain pushes
@@ -28,11 +28,11 @@ The `guard` hook refuses the two git commands the global rules forbid, a forced 
 - **THEN** the command is refused
 
 #### Scenario: Broken input
-- **WHEN** the agent runs `git push -f "origin` (an unclosed quote), `git push -f $(echo x`, `cat <<EOF` with no end marker before `git push -f`, or a command of 200,000 characters ending in `git push -f`
+- **WHEN** the agent runs `git push -f "origin` (an unclosed quote), `git push -f $(echo x`, `cat <<EOF; git push -f` with no end marker, a command of 200,000 characters ending in `git push -f`, 200,000 characters of backslash-newline lines before `; git push -f`, or 5,000 nested `$(…)` before `; git push -f`
 - **THEN** the command is refused within the hook's 10 seconds, and `guard` raises no exception
 
 ### Requirement: Hard reset refused
-`guard` SHALL refuse a Bash command that runs `git reset` with `--hard`, or an unambiguous prefix git reads as it (`--ha`, `--har`), among its options before any `--`, from any caller, the reason naming the rule and `git stash` or `git restore <path>` as the safe way, read by the words of the requirement Forced push refused. Nothing but this guard stands between an agent and a hard reset.
+`guard` SHALL refuse a Bash command that by its plain forms runs `git reset` with `--hard` or a prefix of it (`--h`, `--ha`, `--har`) among its options before any `--`, read by the words of Forced push refused, naming the rule and `git stash` or `git restore <path>`. The forms of Known bypasses of the history guard pass.
 
 #### Scenario: The hard forms
 - **WHEN** the agent runs `git reset --hard`, `git reset --hard HEAD~1`, `git reset origin/main --hard` or `git reset --har HEAD`
@@ -43,7 +43,7 @@ The `guard` hook refuses the two git commands the global rules forbid, a forced 
 - **THEN** the command passes
 
 ### Requirement: Known bypasses of the history guard
-Every form the requirement Known bypasses of the merge guard lists (`xargs`, `find -exec`, `sudo -u`, `env -u`, a shell function, `bash -c` or `eval` after `A=(…)`, substitutions deeper than 3, a `)` or `(` that moves a substitution end, a backslash-newline) SHALL pass as outside it, as SHALL a git alias and a `python3` or `node` heredoc body, each pinned by a test. Branch protection is the boundary for a push.
+Every form the requirement Known bypasses of the merge guard lists (`xargs`, `find -exec`, `sudo -u`, `env -u`, a shell function, `bash -c` or `eval` after `A=(…)`, substitutions deeper than 3, a `)` or `(` that moves a substitution end, a backslash-newline between `$` and `(`) SHALL pass as outside it, as SHALL a wrapper option taking a value, a git alias, a configured `+` refspec and a `python3` or `node` heredoc body, each pinned by a test.
 
 #### Scenario: A known bypass closed
 - **WHEN** a change makes `guard` refuse one of these forms
@@ -54,5 +54,5 @@ Every form the requirement Known bypasses of the merge guard lists (`xargs`, `fi
 - **THEN** it is refused, as the merge guard refuses the same form, and the test pins it
 
 #### Scenario: History forms of the bypasses
-- **WHEN** the agent runs `echo x | xargs git push -f`, `sudo -u x git push -f`, `env -u X git push -f`, `f(){ git reset --hard; }; f`, `A=(1 2) bash -c 'git push -f'` or `python3 <<'EOF'` with a body running `git push --force`
+- **WHEN** the agent runs `echo x | xargs git push -f`, `sudo -u x git push -f`, `env -u X git push -f`, `f(){ git reset --hard; }; f`, `A=(1 2) bash -c 'git push -f'`, `caffeinate -t 5 git push -f`, `git config alias.fp 'push --force'; git fp`, `git -c remote.origin.push=+main:main push origin` or a `python3 <<'EOF'` or `node <<'EOF'` body running `git push --force`
 - **THEN** each command passes, pinned by the known-limit test

@@ -4,10 +4,10 @@ The real hook as Claude Code starts it: `python3 global/work_hooks.py guard` wit
 
 The base is commit e262b7e (main when the change was planned): its hook runs from a temporary worktree of that commit (`git worktree add --detach "${TMPDIR:-/tmp}/wt-base-e262b7e" e262b7e`, removed after); the branch hook runs from the change's own worktree.
 
-1. On the base commit, `git push --force origin main` and `git reset --hard HEAD` → no answer (they pass).
+1. Steps 1-3 run as one stand, `python3 tests/stands/history-guard.py`, which builds the repository, the remote and the base worktree and removes them; its last line is the summary. On the base commit, `git push --force origin main` and `git reset --hard HEAD` → no answer (they pass).
 2. On the branch, the same two commands → `deny`; the reasons name the rule, a new commit and `git stash`.
 3. On the branch, `git commit -m "never git push --force"`, `python3 sync.py push --force` and `git push origin main` → no answer.
-4. In a Claude Code session after `sync.py push` of the merged change (the delivery's layout step), in a temporary repository with a bare remote: ask the agent to run `git push --force origin main` → the Bash call is refused by the hook and the remote branch keeps its commit (`git ls-remote` shows the same hash before and after).
+4. In a Claude Code session after `sync.py push` of the merged change (the delivery's layout step), in a temporary repository with a bare remote: ask the agent to run `git push --force origin main` → the Bash call is refused by the hook (the evidence is the hook's deny line in the session transcript; an agent that declines before the call is "not run") and the remote branch keeps its commit (`git ls-remote` shows the same hash before and after).
 
 ## Needs
 
@@ -19,11 +19,18 @@ Step 4 needs the layout, a prod action after merge: before it the hook from the 
 
 ## Result
 
-<!-- Filled during apply: date, what was run, what was observed. -->
+2026-11-27, `python3 tests/stands/history-guard.py` from the worktree root (git 2.54.0, /usr/bin/python3):
+
+- step 1, base e262b7e: `git push --force origin main` and `git reset --hard HEAD` pass;
+- step 2, branch: both get `deny`, the reason names the rule, a new commit and `git stash`;
+- step 3, branch: `git commit -m "never git push --force"`, `python3 sync.py push --force` and `git push origin main` pass;
+- no `errors.log` line; summary `history-guard stand: 4 of 4 steps ok`.
+
+Suite: `python3 tests/run.py --jobs 5 --tier slow` gives `files: 42, failed: 0`; lint prints nothing; `solo-sdd validate --all` gives 0 errors.
 
 ## Not Verified
 
-<!-- Filled during apply: what stayed unproven and why. Write: nothing - if all proven. -->
+- Step 4 (a Claude Code session with the laid-out hook refusing `git push --force origin main`): it needs `sync.py push` of the merged change, a prod action after merge; by the Fallback steps 1-3 ran on the hook's entry point, and a row is in the first table of `docs/waiting.md`.
 
 ## Decisions Without Owner
 
@@ -32,3 +39,8 @@ Step 4 needs the layout, a prod action after merge: before it the hook from the 
 - analyze: the first run's judge kept five HIGH (no hostile-input task, no property for `--hard`, an unnamed audit test, a bypass list given only by reference, git's abbreviated options); all fixed in the delta and tasks 1.2, 1.4, 1.6 and 1.7. Kept MEDIUM `--force-if-includes` without a row, the undefined generator slots, the test name, the `python3` heredoc and the Needs of step 4 are fixed too.
 - analyze (repeat): options follow git's own parsing: a force letter after `-o` in a cluster is its value, and `--hard` after `--` is a path; both pass.
 - plan: `--force-with-lease` counts as a forced push: the global rule says "No `--force`" and a lease still rewrites the remote branch.
+- analyze (spec-next): the judge kept 11 of 17 findings, CRITICAL 1 and HIGH 2. Fixed: both refusal requirements now say "by its plain forms" and let the forms of Known bypasses pass (CRITICAL); the slow shape of broken input is named (backslash-newline lines, deep nesting) and `strip_heredocs` joins continuation lines linearly (HIGH); the unterminated heredoc row is `cat <<EOF; git push -f`, refused, while a body line of a text reader stays text (HIGH). Also fixed: valued wrapper options, a configured `+` refspec and a git alias are named bypasses; the version claims were probed on git 2.54.0 (`--force-w` and `--force-with` forced an update, `--force-i` did not, `--f` to `--forc` are ambiguous and git refuses them, `--h`, `--ha`, `--har` reset hard); the property test names both requirements and has a broken-input sibling; the `ship` hook cell becomes empty; Live step 4 names its evidence.
+- implementation: a word is a force when it (before `=`) is a prefix of `--force`, `--force-with-lease` or `--force-if-includes`, at least `--f` long: an ambiguous prefix git refuses anyway, so refusing it costs nothing; no full option table of `git push` is kept, only the value-taking names, which a test checks against `git push -h`.
+- analyze (repeat, spec-next): a `+` refspec after `--` still forces (git 2.54 printed `(forced update)` for `git push <remote> -- +HEAD:refs/heads/main`), so it is refused and only an option form after `--` passes; the backslash-newline bypass is the one between `$` and `(`, as the merge guard names it; the proposal lists every pinned bypass and the known false refusal.
+- implementation: the deep nesting row is 5,000 levels, not 50,000: the guard as a whole took 103 s on 50,000 (1.4 s on 5,000), spent in a regex search of `guard_secrets_bash`, which this change does not touch (the history reader itself is linear there); the slow secret-check shape is left for a change of its own and the 10-second entry timeout refuses it meanwhile.
+- implementation: `strip_heredocs` lies in the `shell` block that `scripts/sync_blocks.py` copies from `global/work_hooks.py` into `global/process-guard.py`, so the linear join reaches `process-guard` by that copy; its behaviour (what it refuses) is unchanged, so Out of Scope still holds, and `global/process-guard.py` is added to Impact.

@@ -127,10 +127,14 @@ def runs_text(parts, k):
 def strip_heredocs(cmd):
     lines, out, i, q = cmd.split("\n"), [], 0, None
     while i < len(lines):
-        line = lines[i]
+        pieces = [lines[i]]
         i += 1
-        while not q and re.search(r"(?<!\\)(?:\\\\)*\\$", line) and i < len(lines):
-            line, i = line[:-1] + lines[i], i + 1  # a `\` continuation is the same command, the body starts after it
+        # a `\` continuation is the same command, the body starts after it; every joined piece ended in an odd run of
+        # backslashes, one removed, so the parity of the last piece's run alone decides (a linear join)
+        while not q and i < len(lines) and (len(pieces[-1]) - len(pieces[-1].rstrip("\\"))) % 2:
+            pieces[-1], i = pieces[-1][:-1], i + 1
+            pieces.append(lines[i - 1])
+        line = "".join(pieces)
         out.append(line)
         if q:  # continuation of a quoted line: no heredoc here
             q = quote_end(line, q)

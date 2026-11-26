@@ -902,6 +902,15 @@ class SkillsAudit(unittest.TestCase):
                   "only the owner removes that line or the skill"):
             self.assertIn(w, text)
 
+    def test_ship_push_is_a_code_gate(self):
+        """The history guard of `guard` holds the push step of `ship` (history-guard): a code gate, not a planned hook."""
+        doc = (REPO / "docs/skills-audit.md").read_text(encoding="utf-8")
+        ship = doc.split("\n## ship\n", 1)[1].split("\n## ", 1)[0]
+        row = [l for l in ship.splitlines() if l.startswith("| Order | 6. Push |")]
+        self.assertEqual(len(row), 1, row)
+        self.assertEqual([c.strip() for c in row[0].split("|")[3:5]], ["gate (code)", ""])
+        self.assertNotIn("| `ship` | Order | 6. Push |", doc.split("## Gates a hook could hold", 1)[1])
+
     def test_step_reader(self):
         text = ("---\nname: x\n---\n# x\n\nIntro.\n\n## Order\n\n1. **Look.** Text.\n   - nested\n   3. nested item\n"
                 "**2. Hold on.** More.\n2a. Plain title: more words.\n```\n# not a heading\n4. not an item\n```\n"
