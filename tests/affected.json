@@ -14,7 +14,9 @@
   ".gitignore": [
    "tests/test_cli.py"
   ],
-  "AGENTS.md": [],
+  "AGENTS.md": [
+   "tests/test_work_hooks.py"
+  ],
   "ALGORITHM.md": [
    "tests/test_cli.py",
    "tests/test_providers.py",
@@ -37,6 +39,9 @@
   "docs/": [],
   "docs/agents.md": [
    "tests/test_providers.py"
+  ],
+  "docs/hooks.md": [
+   "tests/test_work_hooks.py"
   ],
   "docs/release.md": [
    "tests/test_skill_commands.py"

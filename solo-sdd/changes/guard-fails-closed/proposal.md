@@ -9,6 +9,7 @@ Both gaps follow a project rule, `AGENTS.md`: "Hooks are fail-open: an internal 
 ## What Changes
 
 - An exception inside `guard_env_write`, `guard_env_read` or `guard_secrets_bash` gives a `deny` answer that names the failed check and `errors.log`, and is still written to `errors.log`; an exception in any other check keeps passing.
+- Input `guard` cannot read (stdin that is not a JSON object, a `tool_input` that is not an object, a field of the wrong type) gives the same `deny`, naming `guard input` or the secret check the field is built for.
 - `install --hooks` connects the `guard` entry with `onFailure: "block"` next to its 10-second timeout, so a crash before `main()` and a timeout refuse the call; a settings file with the earlier entry gets the new one on the next `install --hooks`.
 - A missing `work_hooks.py` or a missing `/usr/bin/python3` still passes (`G` in `solo_sdd/hooks.py` checks both before `exec`): that is the state after `uninstall` or on a machine without the interpreter, not a failure of the guard.
 - The rule line of `AGENTS.md`, the docstring of `global/work_hooks.py`, the `DENY` comment of `solo_sdd/hooks.py` and `docs/hooks.md` name the exception.
@@ -18,7 +19,7 @@ Both gaps follow a project rule, `AGENTS.md`: "Hooks are fail-open: an internal 
 ### New Capabilities
 
 ### Modified Capabilities
-- `secret-guard`: ADDED requirement Secret checks fail closed.
+- `secret-guard`: ADDED requirements Secret checks fail closed, Unreadable guard input refused.
 - `cli`: ADDED requirement Guard entry fails closed.
 
 ## Impact
@@ -29,6 +30,7 @@ Both gaps follow a project rule, `AGENTS.md`: "Hooks are fail-open: an internal 
 - `tests/test_cli.py`
 - `docs/hooks.md`
 - `AGENTS.md`
+- `tests/stands/guard-fails-closed.py`
 
 ## Out of Scope
 

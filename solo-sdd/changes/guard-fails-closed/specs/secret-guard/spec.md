@@ -22,3 +22,22 @@ When `guard_env_write`, `guard_env_read` or `guard_secrets_bash` raises, or the 
 #### Scenario: Another check raises
 - **WHEN** `guard_models_agent` raises on an `Agent` call
 - **THEN** the call passes and `errors.log` holds the error
+
+### Requirement: Unreadable guard input refused
+`guard` SHALL answer `deny` naming `guard input` and `~/.claude/hook-state/errors.log`, and write the error there, when stdin is not a JSON object, or a call of Bash, Read, Grep, Write, Edit, MultiEdit or NotebookEdit has a `tool_input` that is not an object or a `cwd` that is not a string. A present `command`, `file_path` or `notebook_path` that is not a string SHALL deny naming its secret check instead. Other tools pass as before.
+
+#### Scenario: Stdin is not a JSON object
+- **WHEN** `guard` gets `[1]`, an empty stdin or text that is not JSON
+- **THEN** the answer is `deny` naming `guard input`, and `errors.log` holds the error
+
+#### Scenario: A field of the wrong type
+- **WHEN** `guard` gets a `Read` with `cwd` `5`, `0` or `[]`, a Read, Bash or Write call whose `tool_input` is `["README.md"]`, `0` or `[]`, a Bash call with `command` `5`, `0`, `[]` or `false`, a `Write` with `file_path` `5` or `0`, or a `NotebookEdit` with `notebook_path` `["a.ipynb"]`
+- **THEN** the answer is `deny` naming `guard input` for the `cwd` and `tool_input` cases, `guard_secrets_bash` for `command` and `guard_env_write` for `file_path` and `notebook_path`
+
+#### Scenario: Absent fields and other tools
+- **WHEN** `guard` gets a `Read` with `cwd` null, a Bash call with `command` null, a `Write` with `tool_input` null, or an `AskUserQuestion` with `tool_input` `0` and `cwd` `5`
+- **THEN** no answer comes
+
+#### Scenario: Hostile command text
+- **WHEN** `guard` gets a Bash command with unbalanced quotes, an unterminated heredoc, nested `$(` and backquotes (1,000 levels of `$(` at most), or 100,000 characters of `\"` pairs or of `a |` inside one quoted `grep` pattern, none naming a secret
+- **THEN** no answer comes, `errors.log` stays empty, and each call returns within 5 seconds

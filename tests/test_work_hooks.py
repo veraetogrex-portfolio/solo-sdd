@@ -44,8 +44,8 @@ def setUpModule():
 H = REPO = ENV = OWNER = None
 
 
-def call(mod, cmd, inp, env, raw=False):
-    """One in-process hook call `work_hooks.py <cmd>` with `inp` on stdin and exactly `env` as the environment."""
+def call(mod, cmd, inp, env, raw=False, stdin=None):
+    """One in-process hook call `work_hooks.py <cmd>` with `inp` (or the text `stdin`) on stdin and exactly `env` as the environment."""
     home = env.get("HOME") or OUTSIDE
     out = io.StringIO()
     with contextlib.ExitStack() as s:
@@ -54,7 +54,7 @@ def call(mod, cmd, inp, env, raw=False):
         s.enter_context(mock.patch.object(mod, "STATE", os.path.join(home, ".claude", "hook-state")))
         s.enter_context(mock.patch.object(mod, "_roots", {}))
         s.enter_context(mock.patch.object(sys, "argv", [mod.__file__, cmd]))
-        s.enter_context(mock.patch.object(sys, "stdin", io.StringIO(json.dumps(inp))))
+        s.enter_context(mock.patch.object(sys, "stdin", io.StringIO(json.dumps(inp) if stdin is None else stdin)))
         s.enter_context(contextlib.redirect_stdout(out))
         try:
             code = mod.main()
@@ -67,8 +67,8 @@ def call(mod, cmd, inp, env, raw=False):
     return json.loads(text) if text.strip() else None
 
 
-def run(cmd, inp, env=None, raw=False):
-    return call(wh, cmd, inp, env or ENV, raw)
+def run(cmd, inp, env=None, raw=False, stdin=None):
+    return call(wh, cmd, inp, env or ENV, raw, stdin)
 
 
 def entry(cmd, inp, env=None):
@@ -258,6 +258,104 @@ class Secrets(HookCase):
         assert bash("git add .env"), "explicit .env"
         assert denied({"tool_name": "Write", "tool_input": {"file_path": os.path.join(REPO, ".env"), "content": "x"}}), "write .env"
         assert denied({"tool_name": "Write", "tool_input": {"file_path": os.path.join(REPO, "sub/.env"), "content": "x"}}), "second .env"
+
+
+class SecretChecksFailClosed(HookCase):
+    """Requirements: Secret checks fail closed; Unreadable guard input refused."""
+
+    @staticmethod
+    def boom(*a, **k):
+        raise RuntimeError("boom-42")
+
+    def answer(self, inp=None, stdin=None):
+        out = run("guard", dict({"session_id": "S1", "cwd": REPO}, **(inp or {})), stdin=stdin)
+        return out["hookSpecificOutput"] if out else None
+
+    def log_text(self):
+        """The errors.log text, removed after reading so the tearDown check stays for the rows that must log nothing."""
+        log = os.path.join(H, ".claude/hook-state/errors.log")
+        if not os.path.exists(log):
+            return ""
+        text = open(log).read()
+        os.remove(log)
+        return text
+
+    def assert_refused(self, out, name, logged):
+        self.assertTrue(out and out["permissionDecision"] == "deny", out)
+        why = out["permissionDecisionReason"]
+        self.assertIn("`%s`" % name, why)
+        self.assertIn("~/.claude/hook-state/errors.log", why)
+        text = self.log_text()
+        self.assertIn("guard " + name, text)
+        self.assertIn(logged, text)
+
+    def test_secret_checks_fail_closed_raising_checks(self):
+        env_local = {"tool_name": "Bash", "tool_input": {"command": "cat .env.local"}}
+        rows = (("guard_secrets_bash", "guard_secrets_bash", env_local),
+                ("guard_env_read", "guard_env_read", {"tool_name": "Read", "tool_input": {"file_path": os.path.join(REPO, "README.md")}}),
+                ("guard_env_write", "guard_env_write", {"tool_name": "Write", "tool_input": {"file_path": os.path.join(REPO, "notes.md"), "content": "x"}}),
+                ("command_text", "guard_secrets_bash", env_local))
+        for patched, name, inp in rows:
+            with self.subTest(patched), mock.patch.object(wh, patched, self.boom):
+                self.assert_refused(self.answer(inp), name, "boom-42")
+
+    def test_secret_checks_fail_closed_another_check_raises(self):
+        write = {"tool_name": "Write", "tool_input": {"file_path": os.path.join(REPO, "notes.md"), "content": "x"}}
+        ls = {"tool_name": "Bash", "tool_input": {"command": "ls"}}
+        rows = [(n, write) for n in ("guard_override_write", "guard_scope", "guard_claim")]
+        rows += [(n, ls) for n in ("guard_override_bash", "guard_models_bash", "guard_worktree", "guard_merge", "guard_archive", "note_claim_cmd")]
+        rows += [("guard_models_agent", agent("Explore a")),
+                 ("guard_question", {"tool_name": "AskUserQuestion", "tool_input": {"questions": [{"question": "Which one?"}]}}),
+                 ("status_problems", {"tool_name": "SubagentHandback", "tool_input": {"message": "done"}})]
+        for name, inp in rows:
+            with self.subTest(name):
+                self.assertIsNone(self.answer(inp), "passes without the fault")
+                self.assertEqual(self.log_text(), "")
+                with mock.patch.object(wh, name, self.boom):
+                    self.assertIsNone(self.answer(inp))
+                self.assertIn("boom-42", self.log_text())
+
+    def test_unreadable_guard_input_refused_stdin(self):
+        for text in ("[1]", "not json", ""):
+            with self.subTest(text):
+                self.assert_refused(self.answer(stdin=text), "guard input", "Error")
+
+    def test_unreadable_guard_input_refused_a_field_of_the_wrong_type(self):
+        rows = [("guard input", {"tool_name": "Read", "tool_input": {"file_path": "README.md"}, "cwd": v}) for v in (5, 0, [])]
+        rows += [("guard input", {"tool_name": t, "tool_input": v}) for t, v in (("Read", ["README.md"]), ("Bash", 0), ("Write", []))]
+        rows += [("guard_secrets_bash", {"tool_name": "Bash", "tool_input": {"command": v}}) for v in (5, 0, [], False)]
+        rows += [("guard_env_write", {"tool_name": "Write", "tool_input": {"file_path": v, "content": "x"}}) for v in (5, 0)]
+        rows += [("guard_env_write", {"tool_name": "NotebookEdit", "tool_input": {"notebook_path": ["a.ipynb"]}})]
+        for name, inp in rows:
+            with self.subTest(inp):
+                self.assert_refused(self.answer(inp), name, "TypeError")
+        for inp in ({"tool_name": "Read", "tool_input": {"file_path": os.path.join(REPO, "README.md")}, "cwd": None},
+                    {"tool_name": "Bash", "tool_input": {"command": None}}, {"tool_name": "Write", "tool_input": None}):
+            with self.subTest(inp):
+                self.assertIsNone(self.answer(inp), "an absent or null field passes as before")
+        self.assertIsNone(self.answer({"tool_name": "AskUserQuestion", "tool_input": 0, "cwd": 5}), "another tool passes as before")
+        self.assertIn("guard TypeError", self.log_text())
+
+    def test_unreadable_guard_input_refused_hostile_command_text(self):
+        big = 100_000
+        for c in ('echo "a', "echo 'a", "cat <<EOF\nhello", "echo $(echo `date $(id -u)`)", 'echo "$(printf %s `date`)"',
+                  'echo "' + '\\"' * (big // 2), 'grep "' + "a |" * (big // 3) + '" f', "echo " + "$(" * 1000):
+            with self.subTest(c[:40]):
+                t = time.monotonic()
+                self.assertIsNone(self.answer({"tool_name": "Bash", "tool_input": {"command": c}}))
+                self.assertLess(time.monotonic() - t, 5)
+                self.assertEqual(self.log_text(), "")
+
+    def test_secret_checks_fail_closed_named_in_the_rules(self):
+        root = os.path.dirname(os.path.dirname(HOOK))
+        flat = lambda t: " ".join(t.split())
+        agents = flat(open(os.path.join(root, "AGENTS.md")).read())
+        docs = open(os.path.join(root, "docs", "hooks.md")).read().splitlines()
+        deny = [l for l in open(os.path.join(root, "solo_sdd", "hooks.py")).read().splitlines() if l.startswith("DENY = ")]
+        self.assertTrue("secret checks" in agents, "AGENTS.md")
+        self.assertTrue("secret checks" in flat(wh.__doc__), "the docstring of work_hooks.py")
+        self.assertTrue("secret checks" in deny[0], deny[0])
+        self.assertTrue(any("secret checks" in l and "onFailure" in l for l in docs), "docs/hooks.md: one line names both")
 
 
 class Models(HookCase):

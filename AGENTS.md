@@ -72,7 +72,7 @@ Mode: prod. Prod here is the agent folders on this computer (`~/.claude`, `~/.co
 
 - Edits only here, then `sync.py push`. Files in agent folders are not edited by hand.
 - `sync.py push` does not overwrite a copy edited in place (`drift`); before overwriting it saves the previous text to `~/.local/share/solo-sdd/backup/`.
-- Hooks are fail-open: an internal error lets the action through and is written to `~/.claude/hook-state/errors.log`.
+- Hooks are fail-open: an internal error lets the action through and is written to `~/.claude/hook-state/errors.log`. The exception is the secret checks of `guard`: an error in them or in the input they read refuses the call, and the `guard` entry has `onFailure: "block"`, so a crash or timeout of the whole hook refuses too.
 - All repository text is in English, with no Cyrillic letter (`tests/test_repo_language.py`).
 
 ## Checks
