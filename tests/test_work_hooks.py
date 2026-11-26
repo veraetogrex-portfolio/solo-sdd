@@ -1920,6 +1920,29 @@ class ArchiveRunners(HookCase):
                   "sudo -u root bash -c 'solo-sdd archive add-words'", "env -u X eval 'solo-sdd archive add-words'"):
             archive_refused(c)
 
+    def test_archive_run_behind_runners_and_options_valued_options_of_other_wrappers(self):
+        for c in ("caffeinate -t 5 solo-sdd archive add-words", "caffeinate -w 1 solo-sdd archive add-words",
+                  "exec -a NAME solo-sdd archive add-words", "npx -p x solo-sdd archive add-words",
+                  "time -o /tmp/x solo-sdd archive add-words", "/usr/bin/time -f %e solo-sdd archive add-words",
+                  "(sudo -u root solo-sdd archive add-words)", "(env -u X solo-sdd archive add-words)",
+                  "sudo -Hu root solo-sdd archive add-words", "env -iu X solo-sdd archive add-words"):
+            archive_refused(c)
+        assert wh.archive_runs("caffeinate -t 5 solo-sdd archive x") == ["x"]
+        for c in ("sudo" + " -H" * 20_000 + " -u root solo-sdd archive x", "sudo -" + "H" * 20_000 + " -u root solo-sdd archive x"):
+            t = time.monotonic()
+            assert wh.archive_runs(c) == ["x"], c[:40]
+            assert time.monotonic() - t < 1, c[:40]
+        for c in ("sudo -Hu", "(sudo -u", "(", "exec -a", "caffeinate -t", "sudo -u 'root"):
+            assert wh.archive_runs(c) == [], c
+
+    def test_archive_run_behind_runners_and_options_an_option_value_is_not_the_program(self):
+        for c in ("npx -p solo-sdd archive add-words", "npx --package solo-sdd archive add-words",
+                  "sudo -Hu solo-sdd archive add-words"):
+            assert archive5([EDIT5], cmd=c) is None, "not an archive run: " + c
+            assert run("guard", {"session_id": "S60", "cwd": R6, "tool_name": "Bash", "tool_input": {"command": c}}) is None, c
+        for c in ("npx -p solo-sdd solo-sdd archive add-words", "uvx --from solo-sdd archive add-words"):
+            archive_refused(c)
+
     def test_archive_run_behind_runners_and_options_end_of_options_before_the_c_string(self):
         archive_refused("bash -c -- 'solo-sdd archive add-words'")
 
@@ -2121,7 +2144,6 @@ class SecretFiles(HookCase):
                   "npx -p x eslint .", "time -o /tmp/x ls", "env -u X printenv HOME", "sudo -u", "(sudo -u root ls)",
                   "sudo -Hu root ls", "sudo -uroot ls"):
             assert not bash(c), c
-        assert wh.archive_runs("caffeinate -t 5 solo-sdd archive x") == []  # the archive guard's reading, not changed here
         c = "env" + " -u X" * 20_000 + " printenv"
         assert bash(c), "20,000 valued options"
         t = time.monotonic()
