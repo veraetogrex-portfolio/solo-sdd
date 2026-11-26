@@ -20,16 +20,19 @@ When a lesson's class of cause is mechanical, that is a fixed string, character,
 - **THEN** its status block holds it under `NOTES` and the dispatcher report holds it in the `Lessons:` line with the change name
 
 ### Requirement: Lesson held by a check
-When a change adds a check that refuses every case a `## Lessons` line names, it SHALL remove the line, keep its text under its id (created if missing) in `LESSONS.md` with `Held by: <check>`, and report `Lesson held: <line> -> <check>`; a check that refuses only some keeps the line. As an exception to Lesson from a correction or a fix, a lesson a `Held by:` entry covers writes no line and no `Lesson gate:`. Where edits are not allowed, nothing is removed.
+When a change or an edit adds a check that runs on every change (a hook, CI or the test suite) and refuses every case a `## Lessons` line names, the agent SHALL remove the line, keep its text under its id in `LESSONS.md` with `Held by: <check command or file> — <where it runs>`, and report `Lesson held: <line> -> <check>`; a check that refuses only some, or that nothing runs, keeps it. Where edits are forbidden or `lessons.write` is `off`, nothing is removed and no `Lesson held:` is given.
 
 #### Scenario: The check covers the class
-- **WHEN** a change adds a check that fails on an em dash in every UI string file of the project and `## Lessons` holds the dash line
+- **WHEN** a change adds a test to the project suite that fails on an em dash in every UI string file of the project and `## Lessons` holds the dash line
 - **THEN** the line is gone from `## Lessons`, `LESSONS.md` holds its text under a `### <id>` heading with `Held by:` naming the check, and the report holds `Lesson held:` with the line and the check
 
 #### Scenario: The check covers a part
-- **WHEN** the added check fails on the dash only in `.json` files and the lesson is about every UI string
+- **WHEN** the added test fails on the dash only in `.json` files and the lesson is about every UI string
 - **THEN** the line stays in `## Lessons`
+
+### Requirement: Held lesson not written again
+The search for duplicates of Lessons without duplicates SHALL also read the `Held by:` entries of the project's `LESSONS.md`. As an exception to Lesson from a correction or a fix and to Gate for a mechanical lesson, a lesson such an entry covers writes no `## Lessons` line and no `Lesson gate:`, and the report gives `Lesson held: <lesson> -> <check>`.
 
 #### Scenario: The same class after removal
 - **WHEN** the dash line was removed with `Held by:` and the owner again says "no em dash in UI strings"
-- **THEN** no new `## Lessons` line and no `Lesson gate:` line are written, and the report names the check that holds it
+- **THEN** no new `## Lessons` line and no `Lesson gate:` line are written, and the report holds `Lesson held:` naming the check that holds it

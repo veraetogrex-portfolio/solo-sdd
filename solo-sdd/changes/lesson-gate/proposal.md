@@ -9,21 +9,22 @@ The `retro` skill of Matt Pocock (https://github.com/mattpocock/skills, `skills/
 ## What Changes
 
 - Section 15 of `global/AGENTS.md`: when a lesson's class of cause is mechanical, the agent writes the lesson as now and also gives the report line `Lesson gate: <the check> — <where it would run>`; a judgement-call lesson gets no such line. The line starts with `Lesson`, so the status block of an orchestrator and the dispatcher's `Lessons:` line carry it with no change to `spec-dispatch`.
-- When a change adds a check that refuses every case a lesson's words name, the same change removes that line from `## Lessons` and keeps its text under its id in `LESSONS.md` with `Held by: <check>`; a check that refuses only some keeps the line. The search for duplicates reads the `Held by:` entries too, so the same correction later writes no second line.
-- The report form of `spec-next` names `Lesson gate:` among its extra lesson lines.
+- When a change adds a check that runs on every change (a hook, CI or the test suite) and refuses every case a lesson's words name, the same change removes that line from `## Lessons` and keeps its text under its id in `LESSONS.md` with `Held by: <check command or file> — <where it runs>` and reports `Lesson held: <line> -> <check>`; a check that refuses only some, or one nothing runs, keeps the line, and where edits are forbidden or `lessons.write` is `off` nothing is removed. The search for duplicates reads the `Held by:` entries too, so the same correction later writes no second line and reports `Lesson held:` instead.
+- The report form of `spec-next` names `Lesson gate:` and `Lesson held:` among its extra lesson lines.
 
 ## Capabilities
 
 ### New Capabilities
 
 ### Modified Capabilities
-- `lesson-routing`: ADDED requirements Gate for a mechanical lesson and Lesson held by a check.
+- `lesson-routing`: ADDED requirements Gate for a mechanical lesson, Lesson held by a check and Held lesson not written again.
 
 ## Impact
 
 - `global/AGENTS.md`
 - `skills/spec-next/SKILL.md`
 - `tests/test_skill_commands.py`
+- `tests/stands/lesson-gate.py`
 
 ## Out of Scope
 

@@ -423,6 +423,37 @@ class SkillCommandsTest(unittest.TestCase):
             self.assertIn(phrase, lessons)
         self.assertNotIn("merging or generalising the closest lines", lessons)
 
+    def test_mechanical_lesson_gate(self):
+        """Requirements: Gate for a mechanical lesson, Lesson held by a check, Held lesson not written again: section 15
+        gives a mechanical lesson a `Lesson gate:` line, a check that holds a line whole removes it with `Held by:`,
+        the search for duplicates reads those entries, and the report lines reach spec-next and spec-dispatch."""
+        flat = lambda t: " ".join(t.split())
+        lessons = flat(skill_text.read(REPO / "global/AGENTS.md")).split("## 15.", 1)[1]
+        for phrase in ("a fixed string, character, command, API name, import form or file path whose presence a "
+                       "program decides without judging intent",
+                       "the report also gives `Lesson gate: <the check> — <where it would run>`",
+                       "a lesson whose check needs judgement of intent, and a `Lesson for solo-sdd:`, gets no such line",
+                       "adds a check that runs on every change (a hook, CI or the test suite) and refuses every case a "
+                       "`## Lessons` line names removes that line",
+                       "keeps its text under its id (created if missing) in `LESSONS.md` with "
+                       "`Held by: <check command or file> — <where it runs>`",
+                       "the report gives `Lesson held: <line> -> <check>`",
+                       "a check that refuses only some cases, or that nothing runs, keeps the line",
+                       "where edits are forbidden or `lessons.write` is `off`, nothing is removed and no `Lesson held:` "
+                       "is given",
+                       "First search `## Lessons`, the rest of that `AGENTS.md` and the `Held by:` entries of its "
+                       "`LESSONS.md`",
+                       "a lesson a `Held by:` entry covers writes no line and no `Lesson gate:`, and the report gives "
+                       "`Lesson held: <lesson> -> <check>`"):
+            self.assertIn(phrase, lessons)
+        report = flat(skill_text.skill("spec-next")).split("Lesson: <line written or refined", 1)[1]
+        self.assertIn("Lesson gate: <the check> — <where it would run>", report)
+        self.assertIn("Lesson held: <line> -> <check>", report)
+        self.assertIn("The report's `Lesson` lines (global rules, section Lessons) go right under `NOTES`",
+                      flat(skill_text.skill("spec-next")))
+        self.assertIn("Lines starting with `Lesson` under `NOTES` of a status of any kind go into the report line "
+                      "`Lessons:` with the change name", flat(skill_text.skill("spec-dispatch")))
+
     def test_executor_setting_from_the_owner(self):
         """Requirement: Executor setting from the owner: agents.executor codex counts as the owner naming
         codex-orchestration; an agent changes the key only on the owner's words."""
