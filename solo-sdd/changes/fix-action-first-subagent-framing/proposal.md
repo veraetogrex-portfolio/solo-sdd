@@ -10,8 +10,8 @@ Cause: `global/AGENTS.md:19` ends section 1's analysis rule with "a subagent's r
 
 ## What Changes
 
-- Section 1 of the global rules keeps the subagent exemption for a report the caller reads for its own step, and holds a subagent to the analysis opening when its prompt holds the line `Your final message is passed to the owner as your answer.`; the goal lines of section 6 already hold for it (no exemption there), and the new scenario A subagent given steps for the owner checks them.
-- `tests/stands/action-first.py` (its prepare) writes that line into every prompt file, so a stand run is graded as an answer to the owner, not as a report to a lead.
+- Section 1 of the global rules keeps the subagent exemption for a report the caller reads for its own step, and when its prompt holds the line `Your final message is passed to the owner as your answer.` makes that final message a report to the owner: the analysis opening of section 1 and the goal lines of sections 1 and 6 hold for it, and the new scenario A subagent given steps for the owner checks the goal lines.
+- `tests/stands/action-first.py` (its prepare) writes that line into every prompt file, and its selftest checks the line and the clause, so a stand run is graded as an answer to the owner, not as a report to a lead.
 
 ## Capabilities
 

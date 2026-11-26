@@ -1,7 +1,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: Prescribed forms and failed reads
-Section 1 of the global rules SHALL hold that a report form and rules on writing files prescribed by a running skill or by the request win over the opening and the file of an analysis, a subagent's report to its caller is not such a result unless its prompt holds the line `Your final message is passed to the owner as your answer.`, and that a data source that cannot be read is reported as a failure naming the source and its error, never as `No action follows:`.
+Section 1 of the global rules SHALL hold that a report form and rules on writing files prescribed by a running skill or by the request win over the opening and the file of an analysis, a subagent's report to its caller is not such a result unless its prompt holds the line `Your final message is passed to the owner as your answer.`, which makes it a report to the owner, and that an unreadable data source is reported as a failure naming the source and its error, never as `No action follows:`.
 
 #### Scenario: A database that cannot be read
 - **WHEN** the agent is asked to analyse a catalog whose `catalog.db` is not a SQLite file
