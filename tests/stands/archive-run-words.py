@@ -3,7 +3,8 @@
 
 1. A transcript where the session edits `src/app.py` and runs no `Review:` agent: every form is refused naming
    `src/app.py`; the TEXT rows pass (`echo solo-sdd archive add-words`, a wrapper's option value `solo-sdd`).
-2. The same forms against a change with a foreign CLAIM and no edits: refused as a foreign archive.
+2. The same forms against a change with a foreign CLAIM and no edits: refused as a foreign archive; the TEXT rows pass.
+3-4 (change fix-archive-runs-command-values): the DUMP rows are refused by the env guard first, the QUIET rows pass.
 Run from the repository root: python3 tests/stands/archive-run-words.py drives the repository's hook;
 SOLO_SDD_HOOK=<path> drives another copy instead, such as the deployed ~/.claude/hooks/work_hooks.py. Temporary folders
 are removed (HOME of the hook is one of them); the last line is the summary."""
@@ -19,9 +20,29 @@ FORMS = ["uvx --from solo-sdd solo-sdd archive add-words", "uv run python -m sol
          "exec -a NAME solo-sdd archive add-words", "npx -p x solo-sdd archive add-words",
          "time -o /tmp/x solo-sdd archive add-words", "/usr/bin/time -f %e solo-sdd archive add-words",
          "(sudo -u root solo-sdd archive add-words)", "(env -u X solo-sdd archive add-words)",
-         "sudo -Hu root solo-sdd archive add-words", "env -iu X solo-sdd archive add-words"]
+         "sudo -Hu root solo-sdd archive add-words", "env -iu X solo-sdd archive add-words",
+         # change fix-archive-runs-command-values: a command string in an option value, GNU time's long options
+         "env -S 'solo-sdd archive add-words'", "env --split-string 'solo-sdd archive add-words'",
+         "env -iS 'solo-sdd archive add-words'", "env -S 'solo-sdd archive' add-words", "uv run env -S 'solo-sdd archive add-words'",
+         "npx -c 'solo-sdd archive add-words'", "npx --call 'solo-sdd archive add-words'",
+         "npx --call='solo-sdd archive add-words'", "sudo -u root npx -c 'bash -c \"solo-sdd archive add-words\"'",
+         "time --output /tmp/x solo-sdd archive add-words", "/usr/bin/time --format %e solo-sdd archive add-words",
+         "time --output=/tmp/x solo-sdd archive add-words",
+         "env -S '' solo-sdd archive add-words", "npx -yc 'solo-sdd archive add-words'",
+         "npm exec -c 'solo-sdd archive add-words'", "npm x --call 'solo-sdd archive add-words'",
+         "env -S 'bash -c' 'solo-sdd archive add-words'", "npx -c 'echo hi' -c 'solo-sdd archive add-words'",
+         "npm exec --prefix /tmp -c 'solo-sdd archive add-words'", "npm --prefix /tmp exec -c 'solo-sdd archive add-words'"]
 TEXT = ["echo solo-sdd archive add-words", "uvx --from solo-sdd solo-sdd validate --all",
-        "npx -p solo-sdd archive add-words", "npx --package solo-sdd archive add-words", "sudo -Hu solo-sdd archive add-words"]
+        "npx -p solo-sdd archive add-words", "npx --package solo-sdd archive add-words", "sudo -Hu solo-sdd archive add-words",
+        "env -S 'solo-sdd validate --all'", "npx -c 'echo solo-sdd archive add-words'", "env -u S 'solo-sdd archive add-words'",
+        "npx -c'solo-sdd archive add-words'", "env -S -i 'solo-sdd archive add-words'",
+        "npm exec -- prettier -c 'solo-sdd archive add-words'",
+        "echo env -S 'solo-sdd archive add-words'"]
+# refused by the env guard first, with its reason: a joined env string, GNU time's long options before printenv
+DUMP = ["env -S'solo-sdd archive add-words'", "env --split-string='solo-sdd archive add-words'",
+        "env -S '-i solo-sdd archive add-words'",
+        "time --output /tmp/x printenv", "/usr/bin/time --format %e printenv"]
+QUIET = ["time --output /tmp/x ls", "env -S 'A=1 env'"]  # the second: a listed known bypass of the env guard
 
 
 def git(cwd, *args):
@@ -54,8 +75,15 @@ with tempfile.TemporaryDirectory() as t:
         r = guard(env, {"session_id": "S1", "cwd": claimed, "tool_name": "Bash", "tool_input": {"command": c}})
         checks.append(("2 foreign CLAIM", c, bool(r) and "taken by another agent" in r))
     for c in TEXT:
-        r = guard(env, {"session_id": "S1", "cwd": edited, "tool_name": "Bash", "transcript_path": tr, "tool_input": {"command": c}})
-        checks.append(("1 passes", c, r is None))
+        for step, cwd in (("1 passes", edited), ("2 passes", claimed)):
+            r = guard(env, {"session_id": "S1", "cwd": cwd, "tool_name": "Bash", "transcript_path": tr, "tool_input": {"command": c}})
+            checks.append((step, c, r is None))
+    for c in DUMP:
+        r = guard(env, {"session_id": "S1", "cwd": claimed, "tool_name": "Bash", "tool_input": {"command": c}})
+        checks.append(("4 env guard", c, bool(r) and "prints the whole environment" in r))
+    for c in QUIET:
+        r = guard(env, {"session_id": "S1", "cwd": claimed, "tool_name": "Bash", "tool_input": {"command": c}})
+        checks.append(("4 passes", c, r is None))
     for step, c, good in checks:
         print("%s %s: %s" % ("ok " if good else "FAILED", step, c))
     print("archive-run-words: %d of %d checks passed" % (sum(g for _, _, g in checks), len(checks)))
