@@ -318,7 +318,7 @@ def counts(text):
         got = []
         for line in lines(text):  # line by line: "planned: 0" and "Not checked: 1" on two lines are not "0 not checked"
             line = line.casefold()
-            got += re.findall(NUM + r"\s+(?:items?\s+)?(?:(?:are|were|is)\s+)?" + pre + re.escape(label) + r"\b", line)
+            got += re.findall(r"\b" + NUM + r"\s+(?:items?\s+)?(?:(?:are|were|is)\s+)?" + pre + re.escape(label) + r"\b", line)
             got += re.findall(r"\b" + pre + re.escape(label) + r"\b\s*(?:items?)?[\s:|(\-–—=]*" + NUM, line)
         out[label] = {int(n) if n.isdigit() else WORDS[n] for n in got}
     return out
@@ -446,7 +446,8 @@ def grade_unchecked(stand, reply):
     print("no input: %s" % yes(no_input(stand)))
     print("check named: %s" % yes(re.search(r"check could not run:?\s*solo-sdd list", text, re.I)
                                   and re.search(r"nothing\s+(?:left\s+)?to\s+plan", text, re.I)
-                                  and c["not checked"] == {6} and c["not decided"] == {1}))
+                                  and c["not checked"] == {6} and c["not decided"] == {1}
+                                  and c["done"] <= {0} and c["planned"] <= {0}))
 
 
 def grade_chat(stand, reply):
