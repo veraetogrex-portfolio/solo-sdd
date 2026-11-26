@@ -31,8 +31,8 @@ When `guard_env_write`, `guard_env_read` or `guard_secrets_bash` raises, or the 
 - **THEN** the answer is `deny` naming `guard input`, and `errors.log` holds the error
 
 #### Scenario: A field of the wrong type
-- **WHEN** `guard` gets a `Read` with `cwd` `5`, `0` or `[]`, a Read, Bash or Write call whose `tool_input` is `["README.md"]`, `0` or `[]`, a Bash call with `command` `5`, `0`, `[]` or `false`, a `Write` with `file_path` `5` or `0`, or a `NotebookEdit` with `notebook_path` `["a.ipynb"]`
-- **THEN** the answer is `deny` naming `guard input` for the `cwd` and `tool_input` cases, `guard_secrets_bash` for `command` and `guard_env_write` for `file_path` and `notebook_path`
+- **WHEN** `guard` gets a `Read` with `cwd` `5`, `0` or `[]`, a Read, Bash or Write call whose `tool_input` is `["README.md"]`, `0` or `[]`, a Bash call with `command` `5`, `0`, `[]` or `false`, a `Write` with `file_path` `5` or `0`, a `Read` with `file_path` `5` or `["a/.env"]`, or a `NotebookEdit` with `notebook_path` `["a.ipynb"]`
+- **THEN** the answer is `deny` naming `guard input` for the `cwd` and `tool_input` cases, `guard_secrets_bash` for `command` and `guard_env_write` for the Write `file_path` and `notebook_path`, and `guard_env_read` for the Read `file_path`
 
 #### Scenario: Absent fields and other tools
 - **WHEN** `guard` gets a `Read` with `cwd` null, a Bash call with `command` null, a `Write` with `tool_input` null, or an `AskUserQuestion` with `tool_input` `0` and `cwd` `5`

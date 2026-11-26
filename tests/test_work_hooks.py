@@ -326,6 +326,7 @@ class SecretChecksFailClosed(HookCase):
         rows += [("guard_secrets_bash", {"tool_name": "Bash", "tool_input": {"command": v}}) for v in (5, 0, [], False)]
         rows += [("guard_env_write", {"tool_name": "Write", "tool_input": {"file_path": v, "content": "x"}}) for v in (5, 0)]
         rows += [("guard_env_write", {"tool_name": "NotebookEdit", "tool_input": {"notebook_path": ["a.ipynb"]}})]
+        rows += [("guard_env_read", {"tool_name": "Read", "tool_input": {"file_path": v}}) for v in (5, ["a/.env"])]
         for name, inp in rows:
             with self.subTest(inp):
                 self.assert_refused(self.answer(inp), name, "TypeError")

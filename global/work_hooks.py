@@ -2759,6 +2759,7 @@ def cmd_guard(inp):
         guard_scope(sid, cwd, path)
         guard_claim(sid, path, tool, ti)
     elif tool in ("Read", "Grep"):
+        fail_closed("guard_env_read", text_field, ti, "file_path")
         fail_closed("guard_env_read", guard_env_read, ti, cwd)
     elif tool == "Bash":
         cmd = fail_closed("guard_secrets_bash", text_field, ti, "command")
