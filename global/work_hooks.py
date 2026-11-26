@@ -2628,19 +2628,26 @@ def gh_merge_words(w):
 
 
 def shell_words(seg):
-    """The words of seg split at unquoted whitespace, with their quotes and backslashes kept."""
-    out, cur, q, i = [], [], None, 0
+    """The words of seg split at unquoted space, tab and newline, with their quotes and backslashes kept; a $(…) or `…`
+    stays inside its word, its parentheses counted as substituted counts them."""
+    out, cur, q, depth, i = [], [], None, 0, 0
     while i < len(seg):
         c = seg[i]
         if c == "\\" and q != "'":
             cur.append(seg[i:i + 2])
             i += 2
             continue
-        if q:
+        if depth and q != "`":
+            depth += {"(": 1, ")": -1}.get(c, 0)
+        elif q:
             q = None if c == q else q
-        elif c in "'\"":
+            if c == "$" and q == '"' and seg[i + 1:i + 2] == "(":
+                depth, c, i = 1, "$(", i + 1
+        elif c in "'\"`":
             q = c
-        elif c.isspace():
+        elif c == "$" and seg[i + 1:i + 2] == "(":
+            depth, c, i = 1, "$(", i + 1
+        elif c in " \t\n":
             if cur:
                 out.append("".join(cur))
                 cur = []
