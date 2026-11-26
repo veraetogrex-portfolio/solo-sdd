@@ -1,8 +1,9 @@
-## Purpose
+# history-guard Specification
 
+## Purpose
 The `guard` hook refuses the two git commands the global rules forbid, a forced push and a hard reset, by the words the shell will run, so the rule holds when an agent forgets it, while text that only mentions them passes.
 
-## ADDED Requirements
+## Requirements
 
 ### Requirement: Forced push refused
 `guard` SHALL refuse a Bash command that by its plain forms runs `git push` with a force: `--force`, `-f` alone or in a cluster before a value letter (`-o`), `--force-with-lease`, `--force-if-includes`, a prefix of one of them, or a `+` refspec, in any project, naming the rule and a new commit. A message, a search pattern and a heredoc body for a text program are text, except on a line read with quotes ignored. The forms of Known bypasses of the history guard pass.
