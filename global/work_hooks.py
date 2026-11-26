@@ -2106,7 +2106,7 @@ def eval_text(parts, k, text, depth=0):
         return text
     sub = split_cmd(text)
     j = next((j for j in heads(sub) if reads_input(part_words(sub[j])[0], depth)), None)
-    if j is None and any(runs_stdin(words_of(x)) for x in sub[::2]):  # `echo env | sh -c 'true; (true; sh)'`: the
+    if j is None and any(runs_stdin(sub, x) for x in range(0, len(sub), 2)):  # `echo env | sh -c 'true; (true; sh)'`: the
         j = next((j for j in heads(sub) if opens(words_of(sub[j]))), None)  # compound's commands read the text's stdin
     if j is not None:
         sub[j] = "echo %s | %s" % (shlex.quote(t), sub[j])
@@ -2227,18 +2227,33 @@ def opens(w):
     return any(x[:1] == "(" or x in COMPOUND for x in w)
 
 
-def runs_stdin(w, depth=0):
-    """The part with the bare words w runs a program that reads commands from its stdin: a shell without a script or with
-    -s, or an eval or a shell's -c string whose text has such a part (past three levels any); the program is the word after
-    the keywords, wrappers and a subshell's or group's brackets, or the word after a case pattern's `)`."""
-    starts = [k + 1 for k, x in enumerate(w) if re.search(r"\)\d*$", x)]
-    w = [x.lstrip("({!").split(")")[0].rstrip("}") for x in w]  # `(sh)2>/dev/null`: the fd after `)` is the redirection's
-    for i in [cmd_start(w, extra=("coproc",))] + starts:
+def runs_stdin(parts, k, depth=0):
+    """Part k runs a program that reads commands from its stdin: a shell without a script or with -s and no input redirection,
+    or an eval or a shell's -c string whose text has such a part (past three levels any). The part is read as the walk reads
+    a command (part_words, wrapper_values_cut, cmd_start, handed_text) with its closing brackets cut from its end; in a case
+    item the program may also follow the pattern's `)`."""
+    raw = wrapper_values_cut(part_words(parts[k])[0])
+    # only the unquoted ones: a quoted or escaped `')'` is a script
+    closes = len(re.findall(r"[)}]", re.sub(r"\\.|'[^']*'|\"(?:\\.|[^\"\\])*\"", "", parts[k])))
+    item = first_word(parts[k]) == "case" or k >= 4 and parts[k - 3:k] == [";", "", ";"]
+    starts = [0] + ([next((j + 1 for j, x in enumerate(raw) if x.endswith(")")), len(raw))] if item else [])
+    for start in starts:
+        w, budget = list(raw[start:]), closes
+        while w and budget:  # `( true; sh )`, `(sh)2>/dev/null`: a closing bracket and the fd glued after it are no argument
+            m = re.search(r"[)}]\d*$", w[-1])
+            if not m:
+                break
+            w[-1], budget = w[-1][:m.start()], budget - 1
+            if not w[-1]:
+                w.pop()
+        i = cmd_start(w, extra=("coproc",))
         p = os.path.basename(w[i]) if i < len(w) else ""
-        text = " ".join(eval_words(w, i)) if p == "eval" else shell_reads_stdin(w, i)[0] if p in SHELLS else None
-        if text is not None and (depth >= 3 or any(runs_stdin(words_of(x), depth + 1) for x in split_cmd(text)[::2])):
-            return True
-        if text is None and p in SHELLS and shell_reads_stdin(w, i)[1]:
+        text = handed_text(w, i)
+        if text is not None:
+            sub = split_cmd(text)
+            if depth >= 3 or any(runs_stdin(sub, j, depth + 1) for j in range(0, len(sub), 2)):
+                return True
+        elif p in SHELLS and shell_reads_stdin(w, i)[1] and not re.search(r"(?<![<>])<(?!\()", protect_quoted(parts[k])):
             return True
     return False
 
@@ -2250,10 +2265,10 @@ def unread(parts):
     commands share its stdin and output; and from the first part that runs case to the last esac, as a pattern's `)` and
     `|` hide the program after it. '' else."""
     words = [words_of(parts[k]) for k in range(0, len(parts), 2)]
-    ends = lambda w: any(re.search(r"[^(]\)\d*$", x) or x in COMPOUND_END for x in w)
+    ends = lambda w: any(re.search(r"\)\d*$", x) and not x.endswith("()") or x in COMPOUND_END for x in w)
     piped = any(parts[2 * n + 1:2 * n + 2] == ["|"] and (ends(w) or n + 1 < len(words) and opens(words[n + 1]))
                 for n, w in enumerate(words))
-    if piped and any(runs_stdin(w) for w in words):
+    if piped and any(runs_stdin(parts, k) for k in range(0, len(parts), 2)):
         return "".join(parts)
     runs = [n for n, w in enumerate(words) if first_word(parts[2 * n]) == "case"]
     if not runs:
