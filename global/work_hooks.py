@@ -2157,7 +2157,8 @@ def env_dump(cmd, depth=0):
         # a word ends at a glued redirection or a subshell end, as in archive_runs; /usr/bin/env is env
         w = [os.path.basename(y) if os.path.basename(y) in WRAPPERS else y for y in (re.split(r"[<>)&]", x, 1)[0] for x in raw) if y]
         i = cmd_start(w)
-        e = next((j for j in range(min(i, len(w))) if w[j] == "env"), None)
+        # the last env before the program runs it: `env env`, `env -i env` print the environment
+        e = next((j for j in reversed(range(min(i, len(w)))) if w[j] == "env"), None)
         if e is not None and env_alone(w[e + 1:]):
             return "dump"
         if i >= len(w):
@@ -2286,6 +2287,9 @@ def dump_text(raw):
         return raw
     subst = lambda x: substitution(x) or "${" in x
     dump = lambda x: subst(x) or DUMP_WORDS.search(flat(x)) or re.search(r"[*?\[]", x)  # a glob may expand to a dump word
+    # a nested env (`env env ls`) is read on as env, only as a literal word: a substitution, a `$`, a backquote or a glob
+    # may be anything
+    nested = lambda x: os.path.basename(flat(x)) == "env" and not subst(x) and not re.search(r"[$`*?\[]", x)
     # output that may reach a program running it (a pipe into anything but a bare text reader, >(…)) keeps every search counted
     readers = TEXT_SINKS - {"python", "python3", "node"}
     piped = ">(" in raw or any(segs[k - 1][1] in ("|", "|&") and os.path.basename(flat(raw[slice(*segs[k][0][0])]) if segs[k][0] else "")
@@ -2300,8 +2304,10 @@ def dump_text(raw):
         # an option before the program (`sudo -u grep`, `exec -a grep`) may take the next word as its value: no cut
         if e is not None and cmd_start(f[:e]) == e and not any(x.startswith("-") for x in f[:e]):
             j, p = e + 1, len(w)  # an env that cannot be read leaves the whole segment counted
-            while j < len(w) and not dump(w[j]):
-                if f[j] in ENV_FLAGS or "=" in f[j] and not f[j].startswith("-"):  # env takes any word with = as an assignment
+            while j < len(w) and (nested(w[j]) or not dump(w[j])):
+                if nested(w[j]):
+                    j += 1
+                elif f[j] in ENV_FLAGS or "=" in f[j] and not f[j].startswith("-"):  # env takes any word with = as an assignment
                     j += 1
                 elif f[j] in ENV_VALUED and j + 1 < len(w) and not dump(w[j + 1]):
                     j += 2
