@@ -37,7 +37,7 @@ As a guard against accidental dumps, not a boundary, `guard` SHALL refuse a Bash
 
 #### Scenario: env runs env
 - **WHEN** the agent runs `env env`, `env -i env`, `env -u X env`, `env FOO=1 env`, `env env -i`, `/usr/bin/env env`, `env /usr/bin/env`, `sudo env env`, `timeout 5 env env`, `env "env"`, `env -- env`, `env -uX env`, `env --unset=X env`, `printf x | env env` or `env -S env`
-- **THEN** each command is refused with the reason "The command prints the whole environment or a secret", and `env env ls`, `env -i env HOME=/x true` and `env env printenv HOME` pass
+- **THEN** each command is refused with the reason "The command prints the whole environment or a secret", and `env env ls`, `env -i env HOME=/x true`, `env env printenv HOME` and `echo "$(date)"; env env ls` pass
 
 ### Requirement: Known bypasses of the Bash guard
 `docs/hooks.md` SHALL name as outside the Bash guard: brace expansion, `sh -c` with the file as a positional argument, process substitution with a quoted `)`, a heredoc marker line with an open quote, `${X:-env}`, BSD `sed r` unspaced and, in a plain command, an interpreter's script that runs or reads the environment or a dump word another program runs from its argument (`xargs`, sed `e`, a spaced `env -S`); the boundary is `Read(**/.env)` in `permissions.deny` and secrets kept only in `.env`.

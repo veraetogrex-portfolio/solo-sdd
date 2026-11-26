@@ -13,7 +13,7 @@ The same reading also refuses `env -S env`, listed today as a known bypass (the 
 ## What Changes
 
 - `env_dump` takes the last `env` before the program word, not the first: `env env`, `env -i env`, `env -u X env`, `env FOO=1 env`, `env env -i`, `/usr/bin/env env`, `env /usr/bin/env`, `sudo env env`, `timeout 5 env env`, `env "env"`, `env -- env`, `env -uX env`, `env --unset=X env`, `printf x | env env` and `env -S env` are refused with the existing reason "The command prints the whole environment or a secret".
-- `env env ls`, `env -i env HOME=/x true` and `env env printenv HOME` still pass.
+- `env env ls`, `env -i env HOME=/x true` and `env env printenv HOME` still pass; in a command that is not plain, `dump_text` reads a nested `env` on as `env`, so `echo "$(date)"; env env ls`, refused today, passes.
 - The known bypass of the split string of `env -S` keeps its place in `docs/hooks.md`, with the example `env -S 'A=1 env'` instead of `env -S env`, which is now refused.
 
 ## Capabilities

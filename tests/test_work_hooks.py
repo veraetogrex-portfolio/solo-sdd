@@ -1940,7 +1940,7 @@ NOT_PLAIN_CASES = {"#": "echo hi # see .env", "$'": "echo $'hi' .env", "${": "ec
 KNOWN_BYPASSES = ("cat .e{n,}v", "sh -c 'cat \"$1\"' _ .env", "ls >(cat ')' .env)", "cat <<EOF 'x\n'; cat .env\nEOF",
                   "${X:-env} | wc -l", "sed '1r.env' a.txt",
                   'echo "$(date)"; grep -o "printenv" f > x; sh x', "awk 'BEGIN{system(\"env\")}' /dev/null",
-                  "python3 -c 'import os; print(os.environ)'", "xargs printenv", "sed 's/.*/env/e' f", "env -S env")
+                  "python3 -c 'import os; print(os.environ)'", "xargs printenv", "sed 's/.*/env/e' f", "env -S 'A=1 env'")
 SECRET_WORDS = ["KEY", "TOKEN", "SECRET", "PASSWORD", "PASSWD", "WEBHOOK", "CREDENTIAL"]
 OTHER_WORDS = ["MONKEY", "KEYBOARD", "TOKENIZER", "SECRETARY", "PASSWORDLESS", "NAME", "API", "DB", "HOME", "PATH", "KEYED"]
 
@@ -2036,10 +2036,14 @@ class SecretFiles(HookCase):
                   "/usr/bin/env", "bash -c -- env", "echo env | bash -s x", "ls # it's\nenv", "echo x\\\t#; env",
                   "echo ${X:- #}; env", "echo \"$(echo \" #\"; env)\"", "echo $'x' # it's\nenv", "echo ${X:-\"}\" #}; env",
                   "echo \"$(echo \")\" \" #\"; env)\"", "e\\nv # x", "x=1 # y\nset", "echo `export -p`", "declare -x # c",
-                  "typeset -x # c", "set 2>&1 # c", "export 2>&1 # c", "declare -x 2>&1 # c", "set > /tmp/s # c"):
+                  "typeset -x # c", "set 2>&1 # c", "export 2>&1 # c", "declare -x 2>&1 # c", "set > /tmp/s # c",
+                  "env env", "env -i env", "env -u X env", "env FOO=1 env", "env env -i", "/usr/bin/env env", "env /usr/bin/env",
+                  "sudo env env", "timeout 5 env env", 'env "env"', "env -- env", "env -uX env", "env --unset=X env",
+                  "printf x | env env", "env -S env"):
             assert bash(c), c
         for c in ("set -e", "set -euo pipefail", "set -- a b", "export PATH=/x:$PATH", "export -n FOO", "declare -p HOME",
-                  "env -u ELECTRON_RUN_AS_NODE npm test", "printenv HOME", "env FOO=1 make", "echo set"):
+                  "env -u ELECTRON_RUN_AS_NODE npm test", "printenv HOME", "env FOO=1 make", "echo set", "env env ls",
+                  "env -i env HOME=/x true", "env env printenv HOME"):
             assert not bash(c), c
 
     def test_environment_dumps_refused_a_dump_word_in_a_search_pattern(self):
@@ -2093,6 +2097,11 @@ class SecretFiles(HookCase):
             t = time.monotonic()  # the new reader; the hook's older readers of the same text are not timed here
             wh.dump_text(c)
             assert time.monotonic() - t < 1, c[:60]
+        c = " ".join(["env"] * big)
+        assert bash(c), "100,000 env words"
+        t = time.monotonic()
+        assert wh.env_dump(c) == "dump"
+        assert time.monotonic() - t < 1
 
     def test_environment_dumps_refused_a_wrapper_option_with_a_value(self):
         for c in ("env -u X printenv", "env -C /tmp printenv", "env -P /usr/bin printenv", "/usr/bin/env -u X printenv",
@@ -2124,11 +2133,12 @@ class SecretFiles(HookCase):
 
     @settings(max_examples=150, deadline=None)
     @given(st.lists(st.sampled_from(['grep -n "printenv|env" f', "rg 'env |set' f", "env X=1 python3 -V", 'env -u HOME grep "set" f',
-                                     "env -i HOME=$HOME true", "sudo -u root ls", "caffeinate -t 5 ls"]), min_size=1, max_size=5),
+                                     "env -i HOME=$HOME true", "sudo -u root ls", "caffeinate -t 5 ls", "env env ls",
+                                     "env -i env HOME=/x true"]), min_size=1, max_size=5),
            st.lists(st.sampled_from(["; ", " && ", " || ", "\n"]), min_size=6, max_size=6),
            st.sampled_from(["env", "printenv", 'env p""rintenv', "env -i printenv", "set", "env -u X e\\nv", "sudo -u root printenv",
                             "env -u X printenv", "caffeinate -t 5 printenv", "exec -a N printenv", "npx -p x printenv",
-                            "time -o /tmp/x printenv"]), st.integers(0, 5))
+                            "time -o /tmp/x printenv", "env env", "env -i env", "env -u X env"]), st.integers(0, 5))
     def test_environment_dumps_refused_property(self, segs, seps, dump, at):
         join = lambda xs: "".join(x + seps[i] for i, x in enumerate(xs))
         for lead in ('echo "$(date)"; ', ""):  # without the substitution the command is plain and only env_dump reads it

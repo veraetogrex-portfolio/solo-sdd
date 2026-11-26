@@ -2,10 +2,10 @@
 
 The real hook as Claude Code starts it: `python3 global/work_hooks.py guard` with a PreToolUse JSON on stdin (`tool_name: Bash`, the command, `cwd` the repository), run from a script file; an empty answer means the command passes, a `deny` answer prints its reason.
 
-1. On the base commit 58c1d41, its hook run from a temporary worktree of that commit: `env env`, `env -i env`, `env -u X env`, `env FOO=1 env`, `env env -i`, `/usr/bin/env env`, `env /usr/bin/env`, `sudo env env`, `timeout 5 env env`, `env "env"`, `env -- env`, `env -uX env`, `env --unset=X env`, `printf x | env env` and `env -S env` → no answer (each passes).
+1. On the base commit 58c1d41, its hook run from a temporary worktree of that commit: `env env`, `env -i env`, `env -u X env`, `env FOO=1 env`, `env env -i`, `/usr/bin/env env`, `env /usr/bin/env`, `sudo env env`, `timeout 5 env env`, `env "env"`, `env -- env`, `env -uX env`, `env --unset=X env`, `printf x | env env` and `env -S env` → no answer (each passes); `echo "$(date)"; env env ls` → `deny`.
 2. On the branch, the same fifteen commands and `echo "$(date)"; env env` → each `deny`, "The command prints the whole environment or a secret".
-3. On the branch, `env env ls`, `env -i env HOME=/x true`, `env env printenv HOME` and `env -S 'A=1 env'` → no answer; `docs/hooks.md` names `env -S 'A=1 env'` among the known bypasses.
-Steps 1-3 run in one call of the stand, which makes and removes its temporary home and base worktree: `python3 tests/stands/env-runs-env.py`, printing `env-runs-env: 36 of 36 checks passed`.
+3. On the branch, `env env ls`, `env -i env HOME=/x true`, `env env printenv HOME`, `echo "$(date)"; env env ls` and `env -S 'A=1 env'` → no answer; `docs/hooks.md` names `env -S 'A=1 env'` among the known bypasses.
+Steps 1-3 run in one call of the stand, which makes and removes its temporary home and base worktree: `python3 tests/stands/env-runs-env.py`, printing `env-runs-env: 38 of 38 checks passed`.
 
 4. In a Claude Code session after `sync.py push` of the merged change: `env env` run through the Bash tool is refused with the same reason instead of printing the environment.
 
@@ -38,3 +38,4 @@ Step 4 needs the layout, a prod action after merge: before it the hook from the 
 - analyze repeat (2026-11-26, A5): the archived stand `tests/stands/env-dump-valued-options.py` expects `env -S env` to pass on the current tree, so it goes red after this fix → left as it is — a stand is a one-off record of its change on its pinned base, `tests/run.py` does not run stands, and its row moves to this change's stand.
 - analyze repeat (2026-11-26, A6): the Known bypasses text named `env -S` as a whole while the new scenario refuses `env -S env` → its item narrows to a spaced `env -S` (a split string with a space); to stay within 500 characters, `with no space` reads `unspaced` and `SHALL be` the boundary reads `is` — the boundary sentence keeps its meaning.
 - analyze repeat (2026-11-26, A1, A2, A4): the stand in What Changes, a test of its own for the scenario and the Source wording → not changed, as the judge marked the same findings dropped (J9, J10, J11).
+- spec-next (task 1.1, 2026-11-26): the property's new passing sample `env env ls` failed on the base also in its non-plain branch, `echo "$(date)"; env env ls`, refused by `dump_text`, which stopped at the nested `env` as at a dump word → `dump_text` reads a nested `env` on as `env`, the scenario env runs env, the stand and `docs/hooks.md` name it — the same cause in the second reader of the requirement (lesson input-edge-forms); keeping the sample plain-only was rejected, since it would leave the two readers of one form apart.

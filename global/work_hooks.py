@@ -2157,7 +2157,8 @@ def env_dump(cmd, depth=0):
         # a word ends at a glued redirection or a subshell end, as in archive_runs; /usr/bin/env is env
         w = [os.path.basename(y) if os.path.basename(y) in WRAPPERS else y for y in (re.split(r"[<>)&]", x, 1)[0] for x in raw) if y]
         i = cmd_start(w)
-        e = next((j for j in range(min(i, len(w))) if w[j] == "env"), None)
+        # the last env before the program runs it: `env env`, `env -i env` print the environment
+        e = next((j for j in reversed(range(min(i, len(w)))) if w[j] == "env"), None)
         if e is not None and env_alone(w[e + 1:]):
             return "dump"
         if i >= len(w):
@@ -2300,8 +2301,10 @@ def dump_text(raw):
         # an option before the program (`sudo -u grep`, `exec -a grep`) may take the next word as its value: no cut
         if e is not None and cmd_start(f[:e]) == e and not any(x.startswith("-") for x in f[:e]):
             j, p = e + 1, len(w)  # an env that cannot be read leaves the whole segment counted
-            while j < len(w) and not dump(w[j]):
-                if f[j] in ENV_FLAGS or "=" in f[j] and not f[j].startswith("-"):  # env takes any word with = as an assignment
+            while j < len(w) and (os.path.basename(f[j]) == "env" or not dump(w[j])):
+                if os.path.basename(f[j]) == "env":  # a nested env (`env env ls`) is read on as env
+                    j += 1
+                elif f[j] in ENV_FLAGS or "=" in f[j] and not f[j].startswith("-"):  # env takes any word with = as an assignment
                     j += 1
                 elif f[j] in ENV_VALUED and j + 1 < len(w) and not dump(w[j + 1]):
                     j += 2
