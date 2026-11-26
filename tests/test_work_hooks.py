@@ -2095,6 +2095,7 @@ class ArchiveRunners(HookCase):
 
     def test_archive_run_behind_runners_and_options_end_of_options_before_the_c_string(self):
         archive_refused("bash -c -- 'solo-sdd archive add-words'")
+        archive_refused("eval -- solo-sdd archive add-words")
 
     def test_archive_run_behind_runners_and_options_words_that_stay_text(self):
         for c in ("echo solo-sdd archive add-words", "uvx --from solo-sdd solo-sdd validate --all"):
@@ -2116,6 +2117,14 @@ KNOWN_BYPASSES = ("cat .e{n,}v", "sh -c 'cat \"$1\"' _ .env", "ls >(cat ')' .env
                   "python3 -c 'import os; print(os.environ)'", "xargs printenv", "sed 's/.*/env/e' f", "env -S 'A=1 env'")
 SECRET_WORDS = ["KEY", "TOKEN", "SECRET", "PASSWORD", "PASSWD", "WEBHOOK", "CREDENTIAL"]
 OTHER_WORDS = ["MONKEY", "KEYBOARD", "TOKENIZER", "SECRETARY", "PASSWORDLESS", "NAME", "API", "DB", "HOME", "PATH", "KEYED"]
+
+
+# Requirement: Environment dumps refused. The compound commands a pipe feeds (X: the command in it) and the readers of the pipe
+COMPOUNDS = ["(true; X)", "(cd /tmp && X)", "(true || X)", "(true & X)", "{ true; X; }", "if true; then X; fi",
+             "while false; do :; done; X", "until false; do X; done", "select x in a; do X; done", "for i in 1; do X; done",
+             "! (true; X)", "(true && (X))"]
+READERS = ["sh", "sh -s", "sh>out", "sh 2>/dev/null", "eval sh", "eval -- sh", "sh -c sh", "sh -c 'cat | sh'", "/bin/sh", '"sh"',
+           "exec sh", "command sh"]
 
 
 class SecretFiles(HookCase):
@@ -2173,7 +2182,8 @@ class SecretFiles(HookCase):
                   "printf $'KEY=1\\n' >> .env", "echo ${X:-\"}\" #}; cat .env", "echo \"$(echo \")\" \" #\"; cat .env)\"",
                   "echo ${X:-(a) #}; cat .env", "cat .e\\nv # x", "cat .e\"\"nv", "cat x # cat <<EOF\ncat .env\nEOF",
                   "echo $'a\\'\ncat <<EOF\n'; cat .env\nEOF", "cat .e\\\nnv # c", "cat .e\\\nnv ${X:-}",
-                  "eval echo cat .env | sh", "echo cat .env |& sh"):
+                  "eval echo cat .env | sh", "echo cat .env |& sh", "echo cat .env | (true; sh)", "echo cat .env | sh>out",
+                  "(cat <.env)", "case x in x) cat .env;; esac"):
             assert bash(c), c
 
     def test_secret_file_reads_in_bash_allowed_uses(self):
@@ -2225,20 +2235,43 @@ class SecretFiles(HookCase):
                   "echo env | (sh)", "echo env | ( sh )", "echo env | ( (sh))", "echo env | (eval sh)",
                   "eval '(' true ')' ';' printenv", "eval '(' true ')' '&&' env", "eval -- '(' true ')' ';' printenv",
                   "echo env | eval '(' true ')' ';' sh", "bash --rcfile ')' -c printenv", "bash --init-file ')' -c env",
-                  "( bash --rcfile ')' -c printenv )"):
+                  "( bash --rcfile ')' -c printenv )",
+                  "echo env | (true; sh)", "echo env | (cd /tmp && sh)", "echo env | if true; then sh; fi",
+                  "echo env | case x in x) sh;; esac", "echo env | sh -c sh", "echo env | sh>out", "echo env | (sh)>out",
+                  "echo env | (sh)2>/dev/null", "echo env | (cat) | sh", "echo env | (eval cat) | sh", "case x in x) env;; esac",
+                  "echo env | (true); sh", "case x in x) grep env f;; esac", "echo env | (true; cat) | sh",
+                  "echo env | sh -c cat | sh", "echo env | sh&>out", "echo env | sh -c \"eval 'sh -c sh'\"",
+                  "echo env | sh -c \"sh -c 'sh -c \\\"sh -c \\\\\\\"sh -c sh\\\\\\\"\\\"'\"",
+                  'echo "$(case x in x) env;; esac)"', "echo $(case x in x) env;; esac)", 'y=$(case x in x) env;; esac); echo "$y"'):
             assert bash(c), c
         for c in ("set -e", "set -euo pipefail", "set -- a b", "export PATH=/x:$PATH", "export -n FOO", "declare -p HOME",
                   "env -u ELECTRON_RUN_AS_NODE npm test", "printenv HOME", "env FOO=1 make", "echo set", "env env ls",
                   "env -i env HOME=/x true", "env env printenv HOME", 'echo "$(date)"; env e""nv ls',
                   'echo "$(date)"; env /usr/bin/env ls', "eval echo hi | sh", "echo ls | eval sh", "echo ok | eval cat",
                   "echo env | eval true", "eval \"echo 'env\" | sh", "echo ls |& sh", "echo ls |\nsh", "eval -- ls",
-                  "echo ls | eval -- sh", "echo ls | (sh)", 'echo "$(date)"; grep "env" f |& cat'):
+                  "echo ls | eval -- sh", "echo ls | (sh)", 'echo "$(date)"; grep "env" f |& cat',
+                  "echo ls | (true; sh)", "echo ls | sh -c sh", "echo ls | sh>out", "echo ls | (cat) | sh", "case x in x) ls;; esac",
+                  "echo env | (true; sh ')')", "echo env | (cat) > out"):
             assert not bash(c), c
         # every pipe form into every shell form: what a dump word prints is refused, ls passes
         for p, sh, w in itertools.product(("| ", "|& ", "|\n", "| \n\n "), ("sh", "bash -s", "(sh)", "( sh )", "( (sh) )", "( (sh))",
                                           "eval sh", "eval -- sh", "eval '--' sh", "(eval sh)"), ("env", "printenv", "export -p", "ls")):
             c = "echo %s %s%s" % (w, p, sh)
             assert bash(c) == (w != "ls"), c
+        # every compound form a pipe feeds, with every reader in it: what a dump word prints is refused, ls passes
+        for form, r, w in itertools.product(COMPOUNDS, READERS, ("env", "printenv", "export -p", "set", "declare -p", "ls")):
+            c = "echo %s | %s" % (w, form.replace("X", r))
+            assert bash(c) == (w != "ls"), c
+
+    @settings(max_examples=300, deadline=None)
+    @given(st.lists(st.sampled_from(COMPOUNDS), min_size=1, max_size=4), st.sampled_from(READERS),
+           st.sampled_from(["env", "printenv", "export -p", "set", "declare -p", "ls"]))
+    def test_environment_dumps_refused_compound_property(self, forms, r, w):
+        c = r
+        for form in forms:  # each level nests the one before as its X
+            c = form.replace("X", c)
+        c = "echo %s | %s" % (w, c)
+        assert bash(c) == (w != "ls"), c
 
     def test_environment_dumps_refused_a_dump_word_in_a_search_pattern(self):
         for c in (r'grep -n "secret\|printenv\|env |echo \$" skills/debug-profile/SKILL.md', r'grep -n "foo\|env\[" global/sdd_eval.py'):
@@ -2297,7 +2330,11 @@ class SecretFiles(HookCase):
                         ("echo env | eval", False),
                         ("echo env |" + "\n" * 10_000 + "sh", True), ("echo env" + " |& tee" * 5_000 + " | sh", True),
                         ("echo ls |& " * 10_000 + "sh", False), ("echo env | " + "( " * 1_000 + "sh" + ")" * 1_000, True),
-                        ("echo env | (sh", True), ("echo env |\n", False), ("echo env | eval --", False)):
+                        ("echo env | (sh", True), ("echo env |\n", False), ("echo env | eval --", False),
+                        ("sh; " * 10_000, False), ("echo env | (" + "true; " * 5_000 + "sh)", True),
+                        ("echo ls | (" + "sh; " * 10_000 + ")", False), ("echo env" + " | ( true )" * 3_000 + " | sh", False),
+                        ("echo env | " + "( " * 3_000 + "true; sh" + ")" * 3_000, True), ("echo ls | sh" + ")" * 20_000, False),
+                        ("echo env | (true; sh", True), ("echo env | sh>", True)):
             assert bash(c) == want, (c[:60], want)
             t = time.monotonic()
             wh.env_dump(c)
@@ -2416,8 +2453,9 @@ class DirectMerge(HookCase):
         subprocess.run(["git", "init", "-q", TREE], check=True, capture_output=True)
 
     def test_direct_merge_refused_in_a_process_tree_a_process_tree(self):
-        why = merge_denied("gh pr merge 5 --squash")
-        assert why and "sdd-pr.py merge" in why, why
+        for c in ("gh pr merge 5 --squash", "eval -- gh pr merge 1"):
+            why = merge_denied(c)
+            assert why and "sdd-pr.py merge" in why, (c, why)
 
     def test_direct_merge_refused_in_a_process_tree_the_api_form(self):
         assert merge_denied("gh api -X PUT repos/o/r/pulls/5/merge")
