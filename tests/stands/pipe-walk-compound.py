@@ -19,7 +19,7 @@ DUMPS = ["echo env | (true; sh)", "echo env | (cd /tmp && sh)", "echo env | if t
          "echo env | (sh)2>/dev/null", "echo env | (cat) | sh", "echo env | (eval cat) | sh", "case x in x) env;; esac"]
 MERGE, ARCHIVE = "eval -- gh pr merge 1", "eval -- solo-sdd archive add-words"
 PASS = ["echo ls | (true; sh)", "echo ls | sh -c sh", "echo ls | sh>out", "echo ls | (cat) | sh", "case x in x) ls;; esac",
-        "echo env | (true; sh ')')", "echo env | (cat) > out"]
+        "echo ls | (true; sh ')')", "echo env | (cat) > out"]
 checks = []
 
 
