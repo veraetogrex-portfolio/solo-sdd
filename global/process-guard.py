@@ -30,7 +30,9 @@ HEREDOC = re.compile(r"(?<![<\\])<<(?!<)(-?)\s*([\"']?)([A-Za-z_]\w*)\2")
 
 
 def split_cmd(text):
-    """Splits a command into parts on ; && || | & and newline outside quotes: [part, separator, part, ...]."""
+    """Splits a command into parts on ; && || | & and newline outside quotes: [part, separator, part, ...]. `|&` is a pipe
+    (its `&` a space at the start of the next part, so every offset into the text stays), and the newlines after a pipe
+    go into the next part: the pipeline goes on, as the shell reads it."""
     out, cur, q, i, n = [], [], None, 0, len(text)
     while i < n:
         c = text[i]
@@ -53,6 +55,12 @@ def split_cmd(text):
             if sep:
                 out += ["".join(cur), sep]
                 cur, i = [], i + len(sep)
+                if sep == "|":
+                    if text.startswith("&", i):
+                        cur, i = [" "], i + 1
+                    while i < n and text[i] in " \t\n":
+                        cur.append(text[i])
+                        i += 1
                 continue
         cur.append(c)
         i += 1

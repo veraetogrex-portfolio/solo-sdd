@@ -6,7 +6,7 @@ sys.stdin are patched and stdout is captured; the git-root cache starts empty, a
 own temporary HOME (`wh-home-*`), removed when the test ends, also when it fails. `EntryPoint` runs the real
 `global/work_hooks.py` as a process, one to three times per command `main` dispatches.
 """
-import contextlib, datetime, importlib.util, io, json, os, shutil, subprocess, sys, tempfile, time, unicodedata, unittest, warnings
+import contextlib, datetime, importlib.util, io, itertools, json, os, shutil, subprocess, sys, tempfile, time, unicodedata, unittest, warnings
 from unittest import mock
 
 from hypothesis import given, settings, strategies as st
@@ -2023,7 +2023,7 @@ class SecretFiles(HookCase):
                   "printf $'KEY=1\\n' >> .env", "echo ${X:-\"}\" #}; cat .env", "echo \"$(echo \")\" \" #\"; cat .env)\"",
                   "echo ${X:-(a) #}; cat .env", "cat .e\\nv # x", "cat .e\"\"nv", "cat x # cat <<EOF\ncat .env\nEOF",
                   "echo $'a\\'\ncat <<EOF\n'; cat .env\nEOF", "cat .e\\\nnv # c", "cat .e\\\nnv ${X:-}",
-                  "eval echo cat .env | sh"):
+                  "eval echo cat .env | sh", "echo cat .env |& sh"):
             assert bash(c), c
 
     def test_secret_file_reads_in_bash_allowed_uses(self):
@@ -2070,14 +2070,25 @@ class SecretFiles(HookCase):
                   "eval 'echo env; true' | sh", "eval eval eval eval echo env | sh", "echo env | eval sh",
                   "echo env | eval 'true; sh'", "echo env | eval 'cat | sh'", "printf env | eval eval sh",
                   "echo env | eval 'eval true; sh'", "echo env | eval eval eval eval sh", "echo env | eval cat | sh",
-                  "echo env | eval tee | sh", "eval echo env | eval sh", "echo env | eval cat | eval cat | eval cat | eval cat | sh"):
+                  "echo env | eval tee | sh", "eval echo env | eval sh", "echo env | eval cat | eval cat | eval cat | eval cat | sh",
+                  "echo env |& sh", "echo env |& bash -s", "echo env |\nsh", "eval -- env", "echo env | eval -- sh",
+                  "echo env | (sh)", "echo env | ( sh )", "echo env | ( (sh))", "echo env | (eval sh)",
+                  "eval '(' true ')' ';' printenv", "eval '(' true ')' '&&' env", "eval -- '(' true ')' ';' printenv",
+                  "echo env | eval '(' true ')' ';' sh", "bash --rcfile ')' -c printenv", "bash --init-file ')' -c env",
+                  "( bash --rcfile ')' -c printenv )"):
             assert bash(c), c
         for c in ("set -e", "set -euo pipefail", "set -- a b", "export PATH=/x:$PATH", "export -n FOO", "declare -p HOME",
                   "env -u ELECTRON_RUN_AS_NODE npm test", "printenv HOME", "env FOO=1 make", "echo set", "env env ls",
                   "env -i env HOME=/x true", "env env printenv HOME", 'echo "$(date)"; env e""nv ls',
                   'echo "$(date)"; env /usr/bin/env ls', "eval echo hi | sh", "echo ls | eval sh", "echo ok | eval cat",
-                  "echo env | eval true", "eval \"echo 'env\" | sh"):
+                  "echo env | eval true", "eval \"echo 'env\" | sh", "echo ls |& sh", "echo ls |\nsh", "eval -- ls",
+                  "echo ls | eval -- sh", "echo ls | (sh)", 'echo "$(date)"; grep "env" f |& cat'):
             assert not bash(c), c
+        # every pipe form into every shell form: what a dump word prints is refused, ls passes
+        for p, sh, w in itertools.product(("| ", "|& ", "|\n", "| \n\n "), ("sh", "bash -s", "(sh)", "( sh )", "( (sh) )", "( (sh))",
+                                          "eval sh", "eval -- sh", "eval '--' sh", "(eval sh)"), ("env", "printenv", "export -p", "ls")):
+            c = "echo %s %s%s" % (w, p, sh)
+            assert bash(c) == (w != "ls"), c
 
     def test_environment_dumps_refused_a_dump_word_in_a_search_pattern(self):
         for c in (r'grep -n "secret\|printenv\|env |echo \$" skills/debug-profile/SKILL.md', r'grep -n "foo\|env\[" global/sdd_eval.py'):
@@ -2133,7 +2144,10 @@ class SecretFiles(HookCase):
         # eval in a pipe: long eval runs, many segments, a long chain of pipes through eval, and broken eval texts
         for c, want in (("eval " * 10_000 + "echo env | sh", True), ("echo env | eval '" + "sh -c ls; " * 5_000 + "'", False),
                         ("echo env | " + "eval cat | " * 500 + "sh", True), ("echo env | eval 'sh \\'", True),
-                        ("echo env | eval", False)):
+                        ("echo env | eval", False),
+                        ("echo env |" + "\n" * 10_000 + "sh", True), ("echo env" + " |& tee" * 5_000 + " | sh", True),
+                        ("echo ls |& " * 10_000 + "sh", False), ("echo env | " + "( " * 1_000 + "sh" + ")" * 1_000, True),
+                        ("echo env | (sh", True), ("echo env |\n", False), ("echo env | eval --", False)):
             assert bash(c) == want, (c[:60], want)
             t = time.monotonic()
             wh.env_dump(c)

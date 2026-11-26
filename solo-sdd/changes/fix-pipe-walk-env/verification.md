@@ -2,10 +2,10 @@
 
 The real hook as Claude Code starts it: `python3 global/work_hooks.py guard` with a PreToolUse JSON on stdin (`tool_name: Bash`, the command, `cwd` the repository), run from a script file; an empty answer means the command passes, a `deny` answer prints its reason.
 
-1. On the base commit 5549bc4, its hook run from a temporary worktree of that commit: `echo env |& sh`, `echo env |& bash -s`, `echo env |` + newline + `sh`, `eval -- env`, `echo env | eval -- sh`, `echo env | (sh)`, `echo env | ( sh )` and `echo env | (eval sh)` → no answer (each passes).
-2. On the branch, the same eight commands → each `deny`, "The command prints the whole environment or a secret".
+1. On the base commit 5549bc4, its hook run from a temporary worktree of that commit: `echo env |& sh`, `echo env |& bash -s`, `echo env |` + newline + `sh`, `eval -- env`, `echo env | eval -- sh`, `echo env | (sh)`, `echo env | ( sh )`, `echo env | ( (sh))` and `echo env | (eval sh)` → no answer (each passes).
+2. On the branch, the same nine commands → each `deny`, "The command prints the whole environment or a secret".
 3. On the branch, `echo ls |& sh`, `echo ls |` + newline + `sh`, `eval -- ls`, `echo ls | eval -- sh` and `echo ls | (sh)` → no answer.
-Steps 1-3 run in one call of the stand, which makes and removes its temporary home and base worktree: `python3 tests/stands/pipe-walk-env.py`, printing `pipe-walk-env: 21 of 21 checks passed`.
+Steps 1-3 run in one call of the stand, which makes and removes its temporary home and base worktree: `python3 tests/stands/pipe-walk-env.py`, printing `pipe-walk-env: 23 of 23 checks passed`.
 
 4. In a Claude Code session after `sync.py push` of the merged change: `echo env |& sh | wc -l` and `echo env | (sh) | wc -l` run through the Bash tool are refused with the same reason instead of printing a line count of the environment, and `echo ls | (sh) > /dev/null && echo passed` prints `passed`.
 
@@ -41,4 +41,5 @@ Step 4 needs the layout, a prod action after merge: before it the hook from the 
 - analyze repeat (2026-11-26, R4): `echo env | (sh` is refused on the base → task 1.1 names it as a regression row outside the failing list.
 - analyze repeat (2026-11-26, R5): a newline after `|` in a command that is not plain stays refused by `dump_text` → Out of Scope names it as a false refusal on the safe side.
 - plan commit (2026-11-26, pass 7b): `fix-archive-runs-command-values` (plan merged as #100 while this change was analyzed) modifies the same requirement Environment dumps refused (`time --output` in the scenario A wrapper option with a value) → it is named in `Depends On`; this delta's copy of the block is brought to that change's archived text before `/spec-next` starts, so neither archive drops the other's scenario.
+- owner (2026-11-26, "Start now"): the code starts before `fix-archive-runs-command-values` is archived, as its session stopped at 3 of 5 tasks → it leaves `Depends On`; the code of both touches different functions, and whichever change archives second brings its delta's copy of Environment dumps refused to the first one's archived block (`solo-sdd archive` prints a `sibling:` line for it).
 - analyze (2026-11-26): dropped by the judge as misreads or already answered: the subshell cause (`cmd_start` strips the `(` in place), a quoted `--` (`part_words` removes the quotes), the `env_read` scenario, the timing bound (the existing hostile test's pattern), the forms after a `)` and nested `eval --` (decided by the scenario's rule), `scripts/sync_blocks.py` in Impact (run, not edited).

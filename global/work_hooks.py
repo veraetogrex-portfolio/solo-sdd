@@ -1341,7 +1341,9 @@ HEREDOC = re.compile(r"(?<![<\\])<<(?!<)(-?)\s*([\"']?)([A-Za-z_]\w*)\2")
 
 
 def split_cmd(text):
-    """Splits a command into parts on ; && || | & and newline outside quotes: [part, separator, part, ...]."""
+    """Splits a command into parts on ; && || | & and newline outside quotes: [part, separator, part, ...]. `|&` is a pipe
+    (its `&` a space at the start of the next part, so every offset into the text stays), and the newlines after a pipe
+    go into the next part: the pipeline goes on, as the shell reads it."""
     out, cur, q, i, n = [], [], None, 0, len(text)
     while i < n:
         c = text[i]
@@ -1364,6 +1366,12 @@ def split_cmd(text):
             if sep:
                 out += ["".join(cur), sep]
                 cur, i = [], i + len(sep)
+                if sep == "|":
+                    if text.startswith("&", i):
+                        cur, i = [" "], i + 1
+                    while i < n and text[i] in " \t\n":
+                        cur.append(text[i])
+                        i += 1
                 continue
         cur.append(c)
         i += 1
@@ -2003,13 +2011,33 @@ def heads(parts):
     return [j for j in range(0, len(parts), 2) if j == 0 or parts[j - 1] != "|"]
 
 
+def eval_words(w, i):
+    """The words the eval at index i runs: past one `--` right after it, which ends its options."""
+    return w[i + 2:] if w[i + 1:i + 2] == ["--"] else w[i + 1:]
+
+
+def subshell_end(words, w, i):
+    """The words w (cmd_start's copy of words, program word at i) without the `)` that close the subshells opened before
+    the program word, one `)` cut from their end per `(`: `(sh)`, `( sh )` and `( (sh))` run sh alone, while a `)` inside
+    the command (a quoted value, a group in eval's text) stays."""
+    opens = sum(x[:len(x) - len(x.lstrip("({!"))].count("(") for x in words[:i + 1])
+    w = list(w)
+    while opens and len(w) > i and w[-1].endswith(")"):
+        w[-1], opens = w[-1][:-1], opens - 1
+        if not w[-1]:
+            w.pop()
+    return w
+
+
 def reads_input(w, depth=0):
     """Whether a pipeline head with the words w reads the pipe into it on: a shell that reads its commands from stdin, tee,
     a bare cat, or an eval whose text has such a head (past three levels any eval)."""
+    words = list(w)
     i = cmd_start(w)
+    w = subshell_end(words, w, i)
     p = os.path.basename(w[i]) if i < len(w) else ""
     if p == "eval":
-        sub = split_cmd(" ".join(w[i + 1:]))
+        sub = split_cmd(" ".join(eval_words(w, i)))
         return depth >= 3 or any(reads_input(part_words(sub[j])[0], depth + 1) for j in heads(sub))
     return p == "tee" or p == "cat" and len(w) == i + 1 or p in SHELLS and shell_reads_stdin(w, i) == (None, True)
 
@@ -2018,7 +2046,7 @@ def eval_text(parts, k, w, i, depth=0):
     """The text the eval of part k runs; when a pipe feeds it, what the pipe carries (piped_text) is echoed into the first
     head of the text that reads its input: `echo env | eval sh` runs as `echo env | sh`. One head: a shell, tee and a bare
     cat read their input to its end."""
-    text = " ".join(w[i + 1:])
+    text = " ".join(eval_words(w, i))
     t = piped_text(parts, k - 2, depth + 1) if k >= 2 and parts[k - 1] == "|" else None
     if t is None:
         return text
@@ -2060,6 +2088,7 @@ def shell_text(parts, k, words):
     or what is piped (piped_text) into a shell that reads its commands from stdin; None when it is no such part."""
     w = list(words)
     i = cmd_start(w)
+    w = subshell_end(words, w, i)
     prog = os.path.basename(w[i]) if i < len(w) else ""
     if prog == "eval":
         return eval_text(parts, k, w, i)
