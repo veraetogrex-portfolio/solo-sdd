@@ -2203,13 +2203,13 @@ def shell_segments(t):
     """The simple commands of t as the shell splits them: [(words as (start, end) spans, separator after, start)], or None when
     the quoting cannot be read (an open quote, a trailing backslash, an unclosed substitution). A redirection's fd and
     target are no words: `env A.B=1 2>&1 > /tmp/x` has the words env and A.B=1."""
-    segs, words, start, j, n, redir, begin = [], [], None, 0, len(t), False, 0
+    segs, words, start, j, n, redir, begin, op = [], [], None, 0, len(t), False, 0, -1
     while j < n:
         c, nxt = t[j], t[j + 1:j + 2]
         sep = None
-        if c == "|" and re.search(r">&?$", t[max(0, j - 2):j]):
-            pass  # `>|`, `>>|`, `&>|`, `>&|`: the clobber redirection, no pipe
-        elif c in "\n;()|" or c == "&" and not (j and t[j - 1] in "<>") and nxt != ">":
+        if c in "|&" and op == j:
+            pass  # right after a redirection operator the scanner read (not an escaped `\>`): `>|`, `>>|`, `&>|`, `>&|`
+        elif c in "\n;()|" or c == "&" and nxt != ">":
             sep = t[j:j + 2] if t[j:j + 2] in ("||", "&&", ";;", "|&") else c
         if sep or c in " \t" or c in "<>" and nxt != "(":
             if start is not None:
@@ -2223,6 +2223,8 @@ def shell_segments(t):
                 segs.append((words, sep, begin))  # an empty one keeps the separator: `(grep x f) | sh`
                 words, begin = [], j + len(sep)
             j += len(sep) if sep else 2 if c in "<>" and nxt == "&" else 1  # `>&` and `<&` are one operator: `>& 2`
+            if c in "<>":
+                op = j
             continue
         if start is None:
             start = j
