@@ -2627,6 +2627,30 @@ def gh_merge_words(w):
     return pos[:2] == ["pr", "merge"] or pos[:1] == ["api"] and any(MERGE_API.search(x) for x in pos[1:])
 
 
+def shell_words(seg):
+    """The words of seg split at unquoted whitespace, with their quotes and backslashes kept."""
+    out, cur, q, i = [], [], None, 0
+    while i < len(seg):
+        c = seg[i]
+        if c == "\\" and q != "'":
+            cur.append(seg[i:i + 2])
+            i += 2
+            continue
+        if q:
+            q = None if c == q else q
+        elif c in "'\"":
+            q = c
+        elif c.isspace():
+            if cur:
+                out.append("".join(cur))
+                cur = []
+            i += 1
+            continue
+        cur.append(c)
+        i += 1
+    return out + (["".join(cur)] if cur else [])
+
+
 REDIR_WORD = re.compile(r"\d*(?:&>>|&>|>>|>&|>\||<&|<>|<<<|<<|>|<)-?")  # an operator alone: its target is the next word
 
 
@@ -2638,16 +2662,15 @@ def gh_merges(cmd, depth=0, subs=None, match=gh_merge_words):
     if depth < 3 and any(gh_merges(command_text(x), depth + 1, match=match) for x in (substituted(cmd) if subs is None else subs)):  # its heredocs and messages are text too
         return True
     for part in split_cmd(cmd)[::2]:
-        raw = split_words(part)
-        # a redirection (>/dev/null, 2>&1, `> out` with its target) is not a word of the command, wherever it stands; a
-        # word with whitespace is a quoted string (a -c or eval text, read again below), never a redirection
+        # a redirection (>/dev/null, 2>&1, `> out` with its target) is not a word of the command, wherever it stands; it is
+        # told by its unquoted operator, so the words are read with their quotes first and unquoted after
         kept, skip = [], False
-        for y in raw:
-            if skip or REDIR_WORD.match(y) and not re.search(r"\s", y):
+        for y in shell_words(part):
+            if skip or REDIR_WORD.match(y):
                 skip = not skip and bool(REDIR_WORD.fullmatch(y))
                 continue
             kept.append(y)
-        raw = kept
+        raw = [x for y in kept for x in split_words(y)]
         w = [os.path.basename(x) if os.path.basename(x) in WRAPPERS else x for x in (re.split(r"[<>)&]", y, 1)[0] for y in raw)]
         # an assignment with a quoted value holding spaces (FOO='a b') is unquoted here, cmd_start would take it for the program
         w = ["A=x" if re.fullmatch(r"[A-Za-z_]\w*=[\s\S]*", x) else x for x in w]

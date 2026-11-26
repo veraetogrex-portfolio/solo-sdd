@@ -2432,7 +2432,8 @@ class DirectMerge(HookCase):
         assert merge_denied("FOO='a b' gh pr merge 5 --squash"), "an assignment with a quoted value is not the program"
         assert merge_denied('git commit -m msg -m "$(gh pr merge 5)"'), "a substitution in a message runs"
         for c in ("( gh pr merge 5 )", "{ gh pr merge 5; }", "! gh pr merge 5", ">/dev/null gh pr merge 5", "2>&1 gh pr merge 5",
-                  'bash -c ">x; gh pr merge 5"', "eval '>x; gh pr merge 5'", 'bash -c ">/dev/null gh pr merge 5"'):
+                  'bash -c ">x; gh pr merge 5"', "eval '>x; gh pr merge 5'", 'bash -c ">/dev/null gh pr merge 5"',
+                  "eval '>x;gh' pr merge 5", ">'my out.log' gh pr merge 5", "gh api -H '>' -X PUT repos/o/r/pulls/5/merge"):
             assert merge_denied(c), "a group, a negation or a redirection before the program: " + c
 
     def test_direct_merge_refused_in_a_process_tree_no_tree(self):
@@ -2513,7 +2514,8 @@ HISTORY_REFUSED = ("git push --force", "git push -f origin x", "git push -fu ori
                    "( git reset --hard )", ">/dev/null git push -f", "2>&1 git push -f", "> out.log git reset --hard",
                    "git --attr-source HEAD push -f", "git --config-env x.y=HOME push -f",
                    'bash -c ">x; git push -f"', "eval '>x; git reset --hard'", 'bash -c ">/dev/null git push -f"',
-                   "sh -c '2>&1 git reset --hard'",
+                   "sh -c '2>&1 git reset --hard'", "bash -c '>x;git push -f'", "eval '>x;git' push -f", "eval '2>&1;git' reset --hard",
+                   ">'my out.log' git push -f", "2>'a b' git reset --hard", '>"/tmp/my log" git push -f',
                    # A hidden run
                    'bash -c "git push -f"', "eval git push --force", "echo $(git push -f)",
                    # The hard forms
@@ -2526,6 +2528,7 @@ HISTORY_PASSING = ("git push origin main", "git push -u origin x", "git push --d
                    # Text about a forced push
                    'git commit -m "never git push --force"', 'rg -- "push --force" docs', "echo 'git reset --hard'",
                    "cat > note.md <<'EOF'\ngit push --force\nEOF", 'git commit -m "x" -m "git reset --hard is refused"',
+                   "echo '>x; git push -f'", "git status > 'my out.log'",
                    # Other resets
                    "git reset", "git reset --soft HEAD~1", "git reset -- file.py", "git reset -- --hard", "git reset --mixed HEAD")
 # Requirement: Known bypasses of the history guard. An accident guard, not a boundary: these pass today.
