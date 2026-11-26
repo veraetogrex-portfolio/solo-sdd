@@ -21,9 +21,24 @@ Step 4 needs the layout, a prod action after merge: before it the hook from the 
 
 <!-- Filled during apply: date, what was run, what was observed. -->
 
+- 2026-11-27, branch `change/fix-pipe-walk-compound` at ed062ac (main 4ec331e merged): `python3 tests/stands/pipe-walk-compound.py` printed `pipe-walk-compound: 33 of 33 checks passed` (steps 1-3: the thirteen forms pass the base hook 17c3c00 and are refused by the branch with their reasons; the seven passing forms pass).
+- Real shells (2026-11-26/27, line counts only, from script files): each of the eleven dump forms prints the 93-line environment in zsh, bash and dash; `echo env | (true); sh` prints nothing of the pipe.
+- Tests: the new rows of task 1.1 failed on the base code (six tests, each on a new row) and pass on the branch; `test_environment_dumps_refused_compound_property` fails when the whole-text rule is cut out (a mutation run by hand and reverted, after each rework); `tests/run.py --jobs 5 --tier slow`: files 40, failed 0 (243.4 s, 246.7 s, 243.4 s, 245.1 s, 235.5 s, 236.2 s after each rework); lint without output; `scripts/sync_blocks.py --check` exit 0.
+- Replay: every string literal of the base's `tests/*.py` and `tests/stands/*.py` (13,700 at 4ec331e) gives the same `env_dump`, `env_read`, `archive_runs` and `gh_merges` verdicts on the base and the branch.
+- Independent acceptance: rounds 1-5 and the extra round, `Important` 4, 5, 3, 3, 3, 3; after the extra round 3 stay open (Not Verified).
+- Step 4 not run: the change is not merged, so nothing is laid out.
+
 ## Not Verified
 
 <!-- Filled during apply: what stayed unproven and why. Write: nothing - if all proven. -->
+
+- Open after the extra review round (2026-11-27), each `Important`, so the change is not archived:
+  1. `STDIN_FROM_FILE` misses the other names of fd 0 and lets them exempt a shell that reads the pipe: `echo env | (true; sh < /dev/stdin)` (its `\s*` backtracks past the lookahead), a quoted `"/dev/stdin"`, `/dev/fd/0`, `/proc/self/fd/0`, `{fd}<x`, `3<&0 <x <&3`, also with `cat .env`.
+  2. A heredoc or here-string shell in a piped compound (`(cd app && bash <<'EOF' … EOF) | tail -3; grep -c '^KEY=.' .env`, `( bash <<<make ) | tail -3; …`) now counts the whole command and refuses allowed uses that pass on the base: the shell reads the heredoc, not the pipe.
+  3. `eval_text`'s compound feed reaches only a head that opens a compound itself, so a case or compound one level further down passes: `echo env | eval "sh -c 'case x in x) sh;; esac'"`, `echo env | sh -c "sh -c 'case x in x) sh;; esac'"`, `echo env | sh -c "eval 'true; (true; sh)'"`, also with `cat .env`.
+  - Pre-existing, not counted: `(echo env; true 2>/dev/null) | sh` (a `)` glued to a redirection target is read into the target).
+- Reconsider the approach: six rounds each closed the given findings and opened new ones in the reader the rework had just written (a nesting walk, then a bracket and case reader, then a redirection regex). Every new hole sat in a second reader beside the walk's own; the next attempt reads the stdin question only through `part_words`' own redirection parse (which already knows each operator and target) and feeds a piped `-c`/`eval` text to the first head for which `runs_stdin` or `case_reads` holds, or narrows the change to the eleven named forms with the round-2 rule and moves the rest to changes of their own.
+- Step 4 (the Bash tool after `sync.py push`): not run, the change is not merged.
 
 ## Decisions Without Owner
 
