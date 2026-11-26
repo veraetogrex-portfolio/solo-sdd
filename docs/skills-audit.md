@@ -243,7 +243,7 @@ not run: 0; leaked: 0; unreadable: 0; not made: 0
 | Order | 3. Inventory | gate (code) |  | the `stop` hook returns the agent on uncommitted edits; `solo-sdd check --point ship` holds a gate FAIL |
 | Order | 4. Secrets | gate (code) |  | the guard refuses `git add` of `.env` and secret files |
 | Order | 5. Commits | method |  |  |
-| Order | 6. Push | gate (text) | hook: yes | a Bash guard refusing `git push --force` and `-f` |
+| Order | 6. Push | gate (code) |  | the history guard of `guard` refuses a forced push (`--force`, `-f`, `--force-with-lease`, a `+` refspec) and `git reset --hard` |
 | Order | 7. PR | gate (code) |  | the merge guard sends merges through `sdd-pr.py`, whose gates hold |
 | Order | 8. Sync | method |  |  |
 | Order | 9. Check | gate (text) | hook: no | the agent's own comparison; the open PR gate of `stop` covers part of it |
@@ -384,7 +384,6 @@ The `hook: yes` rows above, for the owner to plan as changes.
 | `plan-input` | Order | 9. Save | a write hook could refuse writing an input file inside a git repository or over an existing file |
 | `project-init` | Order | 6. CLAUDE.md | a `stop` check for a project with AGENTS.md whose CLAUDE.md has no `@AGENTS.md` line |
 | `review-principles` | Order | 5. REVIEW.md | a write hook could refuse a `REVIEW.md` edit that drops a rule line of the file before it |
-| `ship` | Order | 6. Push | a Bash guard refusing `git push --force` and `-f` |
 | `spec-analyze` | What to read | 0. Legacy tree | a write guard refusing change edits in a project with `openspec/` and no `solo-sdd/` |
 | `spec-analyze` | Passes | 2. The change frame | `solo-sdd validate` could check Out of Scope, archived Depends On and Impact paths as it checks the task count |
 | `spec-analyze` | Passes | 7b. Overlap with open changes | `solo-sdd validate --all` could report two open changes modifying one requirement without Depends On |

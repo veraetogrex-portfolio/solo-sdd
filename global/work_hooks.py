@@ -1440,10 +1440,14 @@ def runs_text(parts, k):
 def strip_heredocs(cmd):
     lines, out, i, q = cmd.split("\n"), [], 0, None
     while i < len(lines):
-        line = lines[i]
+        pieces = [lines[i]]
         i += 1
-        while not q and re.search(r"(?<!\\)(?:\\\\)*\\$", line) and i < len(lines):
-            line, i = line[:-1] + lines[i], i + 1  # a `\` continuation is the same command, the body starts after it
+        # a `\` continuation is the same command, the body starts after it; every joined piece ended in an odd run of
+        # backslashes, one removed, so the parity of the last piece's run alone decides (a linear join)
+        while not q and i < len(lines) and (len(pieces[-1]) - len(pieces[-1].rstrip("\\"))) % 2:
+            pieces[-1], i = pieces[-1][:-1], i + 1
+            pieces.append(lines[i - 1])
+        line = "".join(pieces)
         out.append(line)
         if q:  # continuation of a quoted line: no heredoc here
             q = quote_end(line, q)
@@ -1485,11 +1489,11 @@ GIT_GLOBAL_VALUED = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--e
 MESSAGE_OPTS = {"git": ("commit", "tag"), "gh": ("pr", "issue")}
 
 
-def git_sub(w, i):
+def git_sub(w, i, valued=GIT_GLOBAL_VALUED):
     """Index of the git subcommand after the program word i, past the global options."""
     j = i + 1
     while j < len(w) and w[j].startswith("-"):
-        j += 2 if w[j] in GIT_GLOBAL_VALUED else 1
+        j += 2 if w[j] in valued else 1
     return j
 
 
@@ -2697,32 +2701,75 @@ def gh_merge_words(w):
     return pos[:2] == ["pr", "merge"] or pos[:1] == ["api"] and any(MERGE_API.search(x) for x in pos[1:])
 
 
-def gh_merges(cmd, depth=0, subs=None):
+def shell_words(seg):
+    """The words of seg split at unquoted space, tab and newline, with their quotes and backslashes kept; a $(…) or `…`
+    stays inside its word, its parentheses counted as substituted counts them."""
+    out, cur, q, depth, i = [], [], None, 0, 0
+    while i < len(seg):
+        c = seg[i]
+        if c == "\\" and q != "'":
+            cur.append(seg[i:i + 2])
+            i += 2
+            continue
+        if depth and q != "`":
+            depth += {"(": 1, ")": -1}.get(c, 0)
+        elif q:
+            q = None if c == q else q
+            if c == "$" and q == '"' and seg[i + 1:i + 2] == "(":
+                depth, c, i = 1, "$(", i + 1
+        elif c in "'\"`":
+            q = c
+        elif c == "$" and seg[i + 1:i + 2] == "(":
+            depth, c, i = 1, "$(", i + 1
+        elif c in " \t\n":
+            if cur:
+                out.append("".join(cur))
+                cur = []
+            i += 1
+            continue
+        cur.append(c)
+        i += 1
+    return out + (["".join(cur)] if cur else [])
+
+
+REDIR_WORD = re.compile(r"\d*(?:&>>|&>|>>|>&|>\||<&|<>|<<<|<<|>|<)-?")  # an operator alone: its target is the next word
+
+
+def gh_merges(cmd, depth=0, subs=None, match=gh_merge_words):
     """A gh pr merge or gh api …/pulls/<n>/merge run, read as archive_runs reads an archive: the program word after
     wrappers and assignments; substitutions (each a command list again), eval and a shell's -c string are parsed again;
-    an argument of another program is not a run. subs: the substitutions to read instead of those of cmd."""
-    if depth < 3 and any(gh_merges(command_text(x), depth + 1) for x in (substituted(cmd) if subs is None else subs)):  # its heredocs and messages are text too
+    an argument of another program is not a run. subs: the substitutions to read instead of those of cmd. match: the
+    test of one command's words (the merge guard's by default)."""
+    if depth < 3 and any(gh_merges(command_text(x), depth + 1, match=match) for x in (substituted(cmd) if subs is None else subs)):  # its heredocs and messages are text too
         return True
     for part in split_cmd(cmd)[::2]:
-        raw = split_words(part)
+        # a redirection (>/dev/null, 2>&1, `> out` with its target) is not a word of the command, wherever it stands; it is
+        # told by its unquoted operator, so the words are read with their quotes first and unquoted after
+        kept, skip = [], False
+        for y in shell_words(part):
+            if skip or REDIR_WORD.match(y):
+                skip = not skip and bool(REDIR_WORD.fullmatch(y))
+                continue
+            kept.append(y)
+        raw = [x for y in kept for x in split_words(y)]
         w = [os.path.basename(x) if os.path.basename(x) in WRAPPERS else x for x in (re.split(r"[<>)&]", y, 1)[0] for y in raw)]
         # an assignment with a quoted value holding spaces (FOO='a b') is unquoted here, cmd_start would take it for the program
         w = ["A=x" if re.fullmatch(r"[A-Za-z_]\w*=[\s\S]*", x) else x for x in w]
         i = cmd_start(w)
         prog = os.path.basename(w[i]) if i < len(w) else ""
         if depth < 3 and prog == "eval":
-            if gh_merges(" ".join(eval_words(raw, i)), depth + 1):
+            if gh_merges(" ".join(eval_words(raw, i)), depth + 1, match=match):
                 return True
         elif depth < 3 and prog in SHELLS:
             c = next((k for k in range(i + 1, len(w)) if re.fullmatch(r"-\w*c\w*", w[k])), None)
-            if c is not None and c + 1 < len(w) and gh_merges(raw[c + 1], depth + 1):
+            if c is not None and c + 1 < len(w) and gh_merges(raw[c + 1], depth + 1, match=match):
                 return True
-        elif gh_merge_words(w):
+        elif match(w[i:]):  # cmd_start has already stripped a leading ( { ! in place: the match reads from the program
             return True
     return False
 
 
-def gh_merges_unquoted(cmd):
+def gh_merges_unquoted(cmd, match=gh_merge_words):
     """For a form whose quotes this reader cannot follow (UNREADABLE): every stretch between shell separators, quotes
     ignored, is read as a command, so a gh merge hidden by a moved quote boundary is found; a message or comment that
     does not start a stretch with gh is still text. Words are read as gh_merges reads them: no backslash, a wrapper by
@@ -2730,7 +2777,7 @@ def gh_merges_unquoted(cmd):
     def word(x):
         x = x.replace("\\", "").strip("'\"")
         return os.path.basename(x) if os.path.basename(x) in WRAPPERS else x
-    return any(gh_merge_words([word(x) for x in seg.split()]) for seg in re.split(r"&&|\|\||[;&|\n()`]|\$\(", cmd))
+    return any(match([word(x) for x in seg.split()]) for seg in re.split(r"&&|\|\||[;&|\n()`]|\$\(", cmd))
 
 
 def guard_merge(text, cwd, raw):
@@ -2742,6 +2789,71 @@ def guard_merge(text, cwd, raw):
     root = git_root(cwd)
     if root and os.path.isdir(os.path.join(root, "solo-sdd")):
         deny(MERGE_RULE)
+
+
+# git's own option names (`git push -h`, `git reset -h`); a test checks them against the git on PATH
+PUSH_FORCE_OPTS = ("--force", "--force-with-lease", "--force-if-includes")
+PUSH_VALUE_OPTS = ("--repo", "--receive-pack", "--exec", "--push-option", "--recurse-submodules")
+RESET_HARD_OPT = "--hard"
+HISTORY_RULE = ("A forced push and a hard reset are refused: the global rules (section 13) say \"No `--force` and no "
+                "`git reset --hard`\". Instead of a forced push, make a new commit and push it normally; instead of a hard "
+                "reset, keep the work with `git stash` or drop one file's edits with `git restore <path>`.")
+
+
+def long_prefix(a, names):
+    """a (before `=`) is a long option of `names` or a prefix of one, as git's parse-options reads `--force-w`; an
+    ambiguous prefix git refuses anyway counts too."""
+    name = a.split("=", 1)[0]
+    return len(name) > 2 and any(n.startswith(name) for n in names)
+
+
+def push_forced(args):
+    """The arguments of git push force an update: a force option (also in a short cluster before the value letter -o),
+    or a refspec starting with +, also after --."""
+    k = 0
+    while k < len(args):
+        a = args[k]
+        k += 1
+        if a == "--":
+            return any(x.startswith("+") for x in args[k:])
+        if a.startswith("--"):
+            if long_prefix(a, PUSH_FORCE_OPTS):
+                return True
+            k += "=" not in a and long_prefix(a, PUSH_VALUE_OPTS)  # its value is the next word
+        elif a.startswith("-") and len(a) > 1:
+            for n, ch in enumerate(a[1:]):
+                if ch == "o":  # the rest is its value, or the next word is
+                    k += n == len(a) - 2
+                    break
+                if ch == "f":
+                    return True
+        elif a.startswith("+"):
+            return True
+    return False
+
+
+def git_history_words(w):
+    """The words of one command, quotes removed, run git push with a force or git reset with --hard (before --)."""
+    i = cmd_start(w)
+    if i >= len(w) or os.path.basename(w[i]) != "git":
+        return False
+    j = git_sub(w, i, GIT_GLOBAL_VALUED | {"--attr-source", "--config-env"})  # git 2.54 reads their value as the next word
+    sub, args = w[j:j + 1], w[j + 1:]
+    if sub == ["push"]:
+        return push_forced(args)
+    return sub == ["reset"] and any(long_prefix(a, (RESET_HARD_OPT,)) for a in (args[:args.index("--")] if "--" in args else args))
+
+
+def git_history_runs(text, raw):
+    """A forced push or a hard reset run, read as guard_merge reads a merge (Forced push refused, Hard reset refused)."""
+    return gh_merges(text, subs=substituted(strip_heredocs(raw)), match=git_history_words) or bool(
+        UNREADABLE.search(text) and gh_merges_unquoted(text, git_history_words))
+
+
+def guard_history(text, raw):
+    """In any project: an accident guard by the plain forms, not a boundary; branch protection is the boundary for a push."""
+    if git_history_runs(text, raw):
+        deny(HISTORY_RULE)
 
 
 STATUS_FIELDS = ("STATUS", "CHANGE", "BRANCH", "WORKTREE", "COMMIT", "ARCHIVE", "VALIDATE", "TESTS", "LIVE",
@@ -2917,6 +3029,7 @@ def cmd_guard(inp):
         guard_models_bash(text, cmd)
         guard_worktree(cmd, cwd)
         guard_merge(text, cwd, cmd)
+        guard_history(text, cmd)
         guard_archive(sid, text, cwd, inp)
         note_claim_cmd(inp, cmd)
     elif tool == "Agent":
