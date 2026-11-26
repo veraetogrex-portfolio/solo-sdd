@@ -2151,16 +2151,172 @@ def env_dump(cmd, depth=0):
     return None
 
 
+ENV_FLAGS = {"-i", "-", "--ignore-environment"}
+
+
+def nested(t, i):
+    """Index after the $(…), <(…), >(…), ${…} or `…` that starts at i, read with its own quotes; None when unclosed."""
+    if t[i] == "`":
+        j = i + 1
+        while j < len(t) and t[j] != "`":
+            j += 2 if t[j] == "\\" else 1
+        return j + 1 if j < len(t) else None
+    opn, close = ("{", "}") if t[i + 1] == "{" else ("(", ")")
+    depth, j = 1, i + 2
+    while j < len(t):
+        c = t[j]
+        if c == "\\":
+            j += 2
+        elif c == "'":
+            j = t.find("'", j + 1) + 1 or None
+        elif c == '"':
+            j = dquoted(t, j)
+        elif c == "`" or c in "$<>" and t[j + 1:j + 2] == "(" or c == "$" and t[j + 1:j + 2] == "{":
+            j = nested(t, j)
+        else:
+            depth += (c == opn) - (c == close)
+            j += 1
+            if not depth:
+                return j
+        if j is None:
+            return None
+    return None
+
+
+def dquoted(t, i):
+    """Index after the double-quoted string that starts at i; None when unclosed."""
+    j = i + 1
+    while j is not None and j < len(t):
+        c = t[j]
+        if c == '"':
+            return j + 1
+        if c == "\\":
+            j += 2
+        elif c == "`" or c == "$" and t[j + 1:j + 2] in ("(", "{"):
+            j = nested(t, j)
+        else:
+            j += 1
+    return None
+
+
+def shell_segments(t):
+    """The simple commands of t as the shell splits them: [(words as (start, end) spans, separator after, start)], or None when
+    the quoting cannot be read (an open quote, a trailing backslash, an unclosed substitution). A redirection's fd and
+    target are no words: `env A.B=1 2>&1 > /tmp/x` has the words env and A.B=1."""
+    segs, words, start, j, n, redir, begin, op = [], [], None, 0, len(t), False, 0, -1
+    while j < n:
+        c, nxt = t[j], t[j + 1:j + 2]
+        sep = None
+        if c in "|&" and op == j:
+            pass  # right after a redirection operator the scanner read (not an escaped `\>`): `>|`, `>>|`, `&>|`, `>&|`
+        elif c in "\n;()|" or c == "&" and nxt != ">":
+            sep = t[j:j + 2] if t[j:j + 2] in ("||", "&&", ";;", "|&") else c
+        if sep or c in " \t" or c in "<>" and nxt != "(":
+            if start is not None:
+                if redir or c in "<>" and re.fullmatch(r"\d+|&|\{\w+\}", t[start:j]):  # a target, an fd: `2>`, `&>`, `{fd}>`
+                    redir = False
+                else:
+                    words.append((start, j))
+                start = None
+            redir = c in "<>" or redir and not sep
+            if sep:
+                segs.append((words, sep, begin))  # an empty one keeps the separator: `(grep x f) | sh`
+                words, begin = [], j + len(sep)
+            j += len(sep) if sep else 2 if c in "<>" and nxt == "&" else 1  # `>&` and `<&` are one operator: `>& 2`
+            if c in "<>":
+                op = j
+            continue
+        if start is None:
+            start = j
+        if c == "\\":
+            j = j + 2 if j + 1 < n else None
+        elif c == "'":
+            j = t.find("'", j + 1) + 1 or None
+        elif c == '"':
+            j = dquoted(t, j)
+        elif c == "`" or c in "$<>" and nxt == "(" or c == "$" and nxt == "{":
+            j = nested(t, j)
+        else:
+            j += 1
+        if j is None:
+            return None
+    if start is not None and not redir:
+        words.append((start, n))
+    return segs + [(words, "", begin)] if words else segs
+
+
+def one_quote(x):
+    """The word is one single- or double-quoted string."""
+    end = x.find("'", 1) + 1 if x[:1] == "'" else dquoted(x, 0) if x[:1] == '"' else None
+    return end == len(x)
+
+
+def dump_text(raw):
+    """raw with the spans the shell reads as text replaced by a space: a whole quoted argument of grep or rg and an env
+    that runs a program that is no dump word (requirement Environment dumps refused); raw itself where this reading may
+    differ from the shell's: a #, an UNCUT form, a heredoc, case, an open quote, a trailing backslash."""
+    if "#" in raw or UNCUT.search(raw) or HEREDOC.search(raw) or re.search(r"\bcase\b", raw):
+        return raw
+    try:
+        segs = shell_segments(raw)
+    except RecursionError:
+        return raw
+    if segs is None:
+        return raw
+    subst = lambda x: substitution(x) or "${" in x
+    dump = lambda x: subst(x) or DUMP_WORDS.search(flat(x)) or re.search(r"[*?\[]", x)  # a glob may expand to a dump word
+    # output that may reach a program running it (a pipe into anything but a bare text reader, >(…)) keeps every search counted
+    readers = TEXT_SINKS - {"python", "python3", "node"}
+    piped = ">(" in raw or any(segs[k - 1][1] in ("|", "|&") and os.path.basename(flat(raw[slice(*segs[k][0][0])]) if segs[k][0] else "")
+                               not in readers for k in range(1, len(segs)))
+    cuts = []
+    # a redirection before the program word (zsh `>!`, `>&!` included) may hide its grammar: that segment is not cut
+    redirected = lambda begin, end: re.search(r"[<>]", raw[begin:end])
+    for k, (spans, _, begin) in enumerate(segs):
+        w = [raw[s:e] for s, e in spans]
+        f = [flat(x) for x in w]
+        e = next((i for i, x in enumerate(f) if os.path.basename(x) == "env"), None)
+        # an option before the program (`sudo -u grep`, `exec -a grep`) may take the next word as its value: no cut
+        if e is not None and cmd_start(f[:e]) == e and not any(x.startswith("-") for x in f[:e]):
+            j, p = e + 1, len(w)  # an env that cannot be read leaves the whole segment counted
+            while j < len(w) and not dump(w[j]):
+                if f[j] in ENV_FLAGS or "=" in f[j] and not f[j].startswith("-"):  # env takes any word with = as an assignment
+                    j += 1
+                elif f[j] in ENV_VALUED and j + 1 < len(w) and not dump(w[j + 1]):
+                    j += 2
+                elif not f[j].startswith("-") and not redirected(begin, spans[j][1]):
+                    cuts += spans[e:j + 1]
+                    p = j
+                    break
+                else:
+                    break
+        else:
+            p = cmd_start(list(f))
+            if any(x.startswith("-") for x in f[:p]) or p < len(f) and redirected(begin, spans[p][1]):
+                continue
+        prog = os.path.basename(f[p]) if p < len(f) else ""
+        if piped or prog not in ("grep", "rg") or prog == "rg" and any(x.startswith(("--pre", "--hostname-bin")) for x in f[p + 1:]):
+            continue
+        cuts += [spans[i] for i in range(p + 1, len(w)) if one_quote(w[i]) and not subst(w[i])]
+    out, last = [], 0
+    for s, e in sorted(cuts):
+        out += [raw[last:s], " "]
+        last = e
+    return "".join(out) + raw[last:]
+
+
 def guard_secrets_bash(cmd, cwd, raw=None):
     """cmd is the command without text (command_text), raw the whole. A guard against the agent's accidental reads, not a
     boundary (docs/hooks.md lists known bypasses): the parser and its exemptions apply only when the command outside its
-    text-reader heredoc bodies is plain; otherwise any .env name or dump word in the whole raw command counts."""
+    text-reader heredoc bodies is plain; otherwise any .env name in the whole raw command counts, and any dump word outside
+    the text spans of dump_text."""
     raw = cmd if raw is None else raw
     readable = plain(strip_heredocs(raw))
     for m in re.finditer(r"(?i)\b(?:echo|printf)\b([^;&|\n]*)", cmd):
         if any(map(secret_var, re.findall(r"\$\{?(?!#)([A-Za-z_]\w*)", m.group(1)))):
             deny("The command prints a secret variable. Check that it exists without printing it: test -n \"$NAME\" && echo set.")
-    if env_dump(cmd) or not readable and (DUMP_WORDS.search(raw) or DUMP_WORDS.search(flat(raw))):
+    text = raw if readable else dump_text(raw)
+    if env_dump(cmd) or not readable and (DUMP_WORDS.search(text) or DUMP_WORDS.search(flat(text))):
         deny("The command prints the whole environment or a secret. Ask for a specific non-secret variable.")
     for m in re.finditer(r"(?<![>\d])>\s*(" + ENV_FILE + ")", cmd):
         p = os.path.join(cwd, os.path.expanduser(m.group(1)))

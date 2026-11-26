@@ -23,6 +23,10 @@ As a guard against accidental dumps, not a boundary, `guard` SHALL refuse a Bash
 - **WHEN** the agent runs `echo "$(date)"; sed 's/.*/env/e' f` or `echo "$(date)"; awk 'BEGIN{"env" | getline x; print x}' /dev/null`
 - **THEN** each command is refused
 
+#### Scenario: Shell forms the exemption cannot read
+- **WHEN** the agent runs `echo ${X:-"a b"}; grep "x env" f`, `echo "$(date)"; grep "env x`, `echo "$(date)"; grep "a\\" ; env ; "x"`, `echo "$(date)"; grep x f # it's`, a newline, `printenv; echo 'y'`, or `echo "$(true "; grep "; env; true "x")"`
+- **THEN** each command is refused: a `#`, a form of `UNCUT`, a heredoc or `case` anywhere in the command, an open quote or a trailing backslash leaves the whole command counted, and the inside of `$(…)`, `${…}` and a backquote is read with its own quotes and never cut; `echo "$(date)"; grep "x` passes, as it holds no dump word
+
 #### Scenario: A wrapper option with a value
 - **WHEN** the agent runs `env -u X printenv`, `env -C /tmp printenv`, `env -P /usr/bin printenv`, `/usr/bin/env -u X printenv`, `timeout 5 env -u X printenv`, `sudo -u root printenv`, `sudo -u root env`, `sudo -u root printenv GITHUB_TOKEN`, `env -u X sh -c env`, `sudo -u root sh -c printenv`, `caffeinate -t 5 printenv`, `exec -a NAME printenv` or `npx -p x printenv`
 - **THEN** each command is refused, and `env -u HOME python3 -V`, `env -C /tmp ls`, `env -u X sh -c ls`, `sudo -u root ls`, `caffeinate -t 5 ls`, `npx -p x eslint .` and `env -u X printenv HOME` pass
