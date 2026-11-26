@@ -2476,7 +2476,7 @@ class BrowserSigns(unittest.TestCase):
 # ---------- Worktree add: home and session folder outside the temporary roots, so ~ and relative paths are not temporary ----------
 
 WT_HOME = WT_ENV = None
-PLAIN = "git worktree add [-b <name> | -B <name> | --detach | -f] <path> [<commit>]"
+PLAIN = "git worktree add [-q | --quiet] [-b <name> | -B <name> | --detach | -f] <path> [<commit>]"
 
 
 def wt_reason(c, cwd=None):
@@ -2501,11 +2501,14 @@ def quoted(word, how, at):
 
 
 def worktree_property(decide):
-    """For any quoting of `worktree` and `add` and a path outside the temporary roots, decide(cmd) refuses."""
+    """For any quoting of `worktree` and `add`, a path outside the temporary roots and no, a -q or a --quiet option
+    before or after it, decide(cmd) refuses."""
     @settings(max_examples=40, deadline=None)
-    @given(QUOTINGS, QUOTINGS, st.integers(0, 50), st.integers(0, 50), outside_paths())
-    def prop(qw, qa, aw, aa, path):
-        c = "git %s %s %s" % (quoted("worktree", qw, aw), quoted("add", qa, aa), path)
+    @given(QUOTINGS, QUOTINGS, st.integers(0, 50), st.integers(0, 50), outside_paths(), st.sampled_from(["", "-q", "--quiet"]),
+           st.booleans())
+    def prop(qw, qa, aw, aa, path, quiet, after):
+        words = [path, quiet] if after else [quiet, path]
+        c = "git %s %s %s" % (quoted("worktree", qw, aw), quoted("add", qa, aa), " ".join(x for x in words if x))
         assert decide(c), c
     prop()
 
@@ -2549,6 +2552,16 @@ class WorktreeWords(HookCase):
     def test_worktree_add_by_shell_words_the_plain_form(self):
         for c in ('git worktree add "${TMPDIR:-/tmp}/wt-x"', "git worktree add -b feat /tmp/wt-y main"):
             assert not wt_reason(c), (c, wt_reason(c))
+
+    def test_worktree_add_by_shell_words_the_quiet_option(self):
+        for c in ('git worktree add -q "$TMPDIR/wt-x" -b x main', 'git worktree add -q -b x "$TMPDIR/wt-x" main',
+                  "git worktree add --quiet /tmp/wt-q", "git worktree add /tmp/wt-q -q"):
+            assert not wt_reason(c), (c, wt_reason(c))
+
+    def test_worktree_add_by_shell_words_the_quiet_option_with_a_variable_path(self):
+        for c in ('git worktree add -q "$W" x', "git worktree add -qb x /tmp/wt", "git worktree add -q ~/code/wt",
+                  "git worktree add -q ../wt", "git worktree add -q /tmp/../Users/wt", "git worktree add -q --lock /tmp/wt"):
+            assert PLAIN in wt_reason(c), c
 
     def test_worktree_add_by_shell_words_text_is_not_a_command(self):
         for c in ('git commit -m "docs: explain git worktree add"', "echo 'git worktree add /tmp/x'",

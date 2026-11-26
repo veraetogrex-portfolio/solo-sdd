@@ -12,7 +12,7 @@ import tempfile
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 PY = "/usr/bin/python3"
-PLAIN = "git worktree add [-b <name> | -B <name> | --detach | -f] <path> [<commit>]"
+PLAIN = "git worktree add [-q | --quiet] [-b <name> | -B <name> | --detach | -f] <path> [<commit>]"
 checks = []
 
 
@@ -49,6 +49,12 @@ try:
         ('export TMPDIR=~/Code && git worktree add "${TMPDIR:-/tmp}/wt"', home, False),
         ("ln -s ~/Code /tmp/lnk && git worktree add /tmp/lnk/wt", home, False),
         ("cd ~/Code && git worktree add wt", "/private/tmp", False),
+        ('git worktree add -q "$TMPDIR/wt-x" -b x main', home, True),
+        ('git worktree add -q -b x "$TMPDIR/wt-x" main', home, True),
+        ("git worktree add --quiet /tmp/wt-q", home, True),
+        ("git worktree add /tmp/wt-q -q", home, True),
+        ('git worktree add -q "$W" x', home, False),
+        ("git worktree add -qb x /tmp/wt", home, False),
     ]
     for cmd, cwd, passes in cases:
         why = reason(cmd, cwd)
