@@ -199,7 +199,7 @@ The hooks SHALL cut no commit message and no search pattern on a line that holds
 - **THEN** the command is refused: `=(` anywhere on the line stops the cut, an array assignment included, and a test pins it
 
 ### Requirement: Worktree add by shell words
-`guard` SHALL, as a guard against an accidental worktree placement, not a security boundary, read each command by its words after heredoc and quote removal: a git command with `worktree add`, a variable or an alias as subcommand passes only as `git worktree add [-b <name> | -B <name> | --detach | -f] <path> [<commit>]`, no `git -C`, `-c` or wrapper, a path literal or after `~`, `$HOME`, `$TMPDIR` or `${TMPDIR:-/tmp}`, under a temporary root; other forms SHALL be refused naming the plain form.
+`guard` SHALL, as a guard against a misplaced worktree, not a security boundary, read each command by its words after heredoc and quote removal: a git command with `worktree add`, a variable or an alias as subcommand passes only as `git worktree add [-q | --quiet] [-b <name> | -B <name> | --detach | -f] <path> [<commit>]`, no `git -C`, `-c` or wrapper, a path literal or after `~`, `$HOME`, `$TMPDIR` or `${TMPDIR:-/tmp}`, under a temporary root; other forms SHALL be refused naming the plain form.
 
 #### Scenario: A quoted subcommand
 - **WHEN** the agent runs `git worktree "add" ~/wt`, `git "worktree" add ~/wt` or `git worktree ad\d ~/wt`
@@ -228,6 +228,14 @@ The hooks SHALL cut no commit message and no search pattern on a line that holds
 #### Scenario: Text is not a command
 - **WHEN** the agent runs `git commit -m "docs: explain git worktree add"` or `echo 'git worktree add /tmp/x'`
 - **THEN** the command passes
+
+#### Scenario: The quiet option
+- **WHEN** the agent runs `git worktree add -q "$TMPDIR/wt-x" -b x main`, `git worktree add -q -b x "$TMPDIR/wt-x" main`, `git worktree add --quiet /tmp/wt-q` or `git worktree add /tmp/wt-q -q`
+- **THEN** the command passes
+
+#### Scenario: The quiet option with a variable path
+- **WHEN** the agent runs `git worktree add -q "$W" x` or `git worktree add -qb x /tmp/wt`
+- **THEN** the command is refused, the reason names the plain form with `[-q | --quiet]`
 
 ### Requirement: Worktree path line state
 `guard` SHALL refuse a plain `git worktree add` whose path an earlier command of the same line can move: a `$TMPDIR` or `${TMPDIR:-/tmp}` prefix after an assignment or `export` of `TMPDIR`, any path after an `ln`, a relative path after a `cd`, `pushd` or `popd`.
