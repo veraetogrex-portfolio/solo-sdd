@@ -1920,6 +1920,29 @@ class ArchiveRunners(HookCase):
                   "sudo -u root bash -c 'solo-sdd archive add-words'", "env -u X eval 'solo-sdd archive add-words'"):
             archive_refused(c)
 
+    def test_archive_run_behind_runners_and_options_valued_options_of_other_wrappers(self):
+        for c in ("caffeinate -t 5 solo-sdd archive add-words", "caffeinate -w 1 solo-sdd archive add-words",
+                  "exec -a NAME solo-sdd archive add-words", "npx -p x solo-sdd archive add-words",
+                  "time -o /tmp/x solo-sdd archive add-words", "/usr/bin/time -f %e solo-sdd archive add-words",
+                  "(sudo -u root solo-sdd archive add-words)", "(env -u X solo-sdd archive add-words)",
+                  "sudo -Hu root solo-sdd archive add-words", "env -iu X solo-sdd archive add-words"):
+            archive_refused(c)
+        assert wh.archive_runs("caffeinate -t 5 solo-sdd archive x") == ["x"]
+        for c in ("sudo" + " -H" * 20_000 + " -u root solo-sdd archive x", "sudo -" + "H" * 20_000 + " -u root solo-sdd archive x"):
+            t = time.monotonic()
+            assert wh.archive_runs(c) == ["x"], c[:40]
+            assert time.monotonic() - t < 1, c[:40]
+        for c in ("sudo -Hu", "(sudo -u", "(", "exec -a", "caffeinate -t", "sudo -u 'root"):
+            assert wh.archive_runs(c) == [], c
+
+    def test_archive_run_behind_runners_and_options_an_option_value_is_not_the_program(self):
+        for c in ("npx -p solo-sdd archive add-words", "npx --package solo-sdd archive add-words",
+                  "sudo -Hu solo-sdd archive add-words"):
+            assert archive5([EDIT5], cmd=c) is None, "not an archive run: " + c
+            assert run("guard", {"session_id": "S60", "cwd": R6, "tool_name": "Bash", "tool_input": {"command": c}}) is None, c
+        for c in ("npx -p solo-sdd solo-sdd archive add-words", "uvx --from solo-sdd archive add-words"):
+            archive_refused(c)
+
     def test_archive_run_behind_runners_and_options_end_of_options_before_the_c_string(self):
         archive_refused("bash -c -- 'solo-sdd archive add-words'")
 
@@ -1999,7 +2022,8 @@ class SecretFiles(HookCase):
                   "echo ${X:- #}; cat .env", "echo \"$(echo \" #\"; cat .env)\"", "ls # it's\necho \\;#; cat .env",
                   "printf $'KEY=1\\n' >> .env", "echo ${X:-\"}\" #}; cat .env", "echo \"$(echo \")\" \" #\"; cat .env)\"",
                   "echo ${X:-(a) #}; cat .env", "cat .e\\nv # x", "cat .e\"\"nv", "cat x # cat <<EOF\ncat .env\nEOF",
-                  "echo $'a\\'\ncat <<EOF\n'; cat .env\nEOF", "cat .e\\\nnv # c", "cat .e\\\nnv ${X:-}"):
+                  "echo $'a\\'\ncat <<EOF\n'; cat .env\nEOF", "cat .e\\\nnv # c", "cat .e\\\nnv ${X:-}",
+                  "eval echo cat .env | sh"):
             assert bash(c), c
 
     def test_secret_file_reads_in_bash_allowed_uses(self):
@@ -2041,12 +2065,18 @@ class SecretFiles(HookCase):
                   "sudo env env", "timeout 5 env env", 'env "env"', "env -- env", "env -uX env", "env --unset=X env",
                   "printf x | env env", "env -S env", 'echo "$(date)"; env "$(xargs printenv)"/env ls',
                   'echo "$(date)"; env `xargs printenv`/env ls', 'echo "$(date)"; env ${X}/env ls', 'echo "$(date)"; env $X/env ls',
-                  'echo "$(date)"; env "${HOME}"/env ls', 'echo "$(date)"; env /u*/bin/env ls'):
+                  'echo "$(date)"; env "${HOME}"/env ls', 'echo "$(date)"; env /u*/bin/env ls',
+                  "eval echo env | sh", "eval echo printenv | bash", "eval 'echo env' | sh", "eval echo env | tee | sh",
+                  "eval 'echo env; true' | sh", "eval eval eval eval echo env | sh", "echo env | eval sh",
+                  "echo env | eval 'true; sh'", "echo env | eval 'cat | sh'", "printf env | eval eval sh",
+                  "echo env | eval 'eval true; sh'", "echo env | eval eval eval eval sh", "echo env | eval cat | sh",
+                  "echo env | eval tee | sh", "eval echo env | eval sh", "echo env | eval cat | eval cat | eval cat | eval cat | sh"):
             assert bash(c), c
         for c in ("set -e", "set -euo pipefail", "set -- a b", "export PATH=/x:$PATH", "export -n FOO", "declare -p HOME",
                   "env -u ELECTRON_RUN_AS_NODE npm test", "printenv HOME", "env FOO=1 make", "echo set", "env env ls",
                   "env -i env HOME=/x true", "env env printenv HOME", 'echo "$(date)"; env e""nv ls',
-                  'echo "$(date)"; env /usr/bin/env ls'):
+                  'echo "$(date)"; env /usr/bin/env ls', "eval echo hi | sh", "echo ls | eval sh", "echo ok | eval cat",
+                  "echo env | eval true", "eval \"echo 'env\" | sh"):
             assert not bash(c), c
 
     def test_environment_dumps_refused_a_dump_word_in_a_search_pattern(self):
@@ -2100,6 +2130,14 @@ class SecretFiles(HookCase):
             t = time.monotonic()  # the new reader; the hook's older readers of the same text are not timed here
             wh.dump_text(c)
             assert time.monotonic() - t < 1, c[:60]
+        # eval in a pipe: long eval runs, many segments, a long chain of pipes through eval, and broken eval texts
+        for c, want in (("eval " * 10_000 + "echo env | sh", True), ("echo env | eval '" + "sh -c ls; " * 5_000 + "'", False),
+                        ("echo env | " + "eval cat | " * 500 + "sh", True), ("echo env | eval 'sh \\'", True),
+                        ("echo env | eval", False)):
+            assert bash(c) == want, (c[:60], want)
+            t = time.monotonic()
+            wh.env_dump(c)
+            assert time.monotonic() - t < 1, c[:60]
         c = " ".join(["env"] * big)
         assert bash(c), "100,000 env words"
         t = time.monotonic()
@@ -2121,7 +2159,6 @@ class SecretFiles(HookCase):
                   "npx -p x eslint .", "time -o /tmp/x ls", "env -u X printenv HOME", "sudo -u", "(sudo -u root ls)",
                   "sudo -Hu root ls", "sudo -uroot ls"):
             assert not bash(c), c
-        assert wh.archive_runs("caffeinate -t 5 solo-sdd archive x") == []  # the archive guard's reading, not changed here
         c = "env" + " -u X" * 20_000 + " printenv"
         assert bash(c), "20,000 valued options"
         t = time.monotonic()

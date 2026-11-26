@@ -1617,32 +1617,34 @@ SHELLS = ("sh", "bash", "zsh", "dash", "ksh")
 SUDO_VALUED = {"-u", "--user", "-g", "--group", "-U", "--other-user", "-C", "--close-from", "-D", "--chdir", "-h", "--host",
                "-p", "--prompt", "-r", "--role", "-t", "--type", "-T", "--command-timeout", "-R", "--chroot"}
 PY_VALUED = {"-W", "-X"}
+ENV_VALUED = {"-u", "--unset", "-C", "--chdir", "-P"}
+# the valued options archive_runs and env_dump skip with their values
+WRAPPER_VALUED = {"sudo": SUDO_VALUED, "env": ENV_VALUED, "caffeinate": {"-t", "-w"}, "exec": {"-a"}, "npx": {"-p", "--package"},
+                  "time": {"-o", "-f"}}
 
 
-def wrapper_values_cut(w, valued=None, glued=False):
+def wrapper_values_cut(w):
     """The words with the values of the wrappers' valued options read as options: `sudo -u root x` as `sudo -u - x`
-    (replaced, not dropped, so an index still points at the same raw word). valued maps a wrapper's name (a path's base
-    name: /usr/bin/env is env) to its valued options; by default sudo's and env's. With glued (env_dump) a wrapper word is
-    also read without a subshell's `(`, and a short option cluster takes a value when its first valued letter is its last
-    (`sudo -Hu root`; `-uroot` holds its value); archive_runs keeps the plain reading."""
-    valued = valued or {"sudo": SUDO_VALUED, "env": ENV_VALUED}
+    (replaced, not dropped, so an index still points at the same raw word). A wrapper is known by its base name
+    (/usr/bin/env is env), also in a subshell (`(sudo`), and a short option cluster takes a value when its first valued
+    letter is its last (`sudo -Hu root`; `-uroot` holds its value)."""
     out, opts = list(w), None
     for j, x in enumerate(w):
-        name = os.path.basename(x.lstrip("({!") if glued else x)
-        if opts is not None and j and out[j - 1] != "-" and takes_value(w[j - 1], opts, glued):
+        name = os.path.basename(x.lstrip("({!"))
+        if opts is not None and j and out[j - 1] != "-" and takes_value(w[j - 1], opts):
             out[j] = "-"
-        elif name in valued:
-            opts = valued[name]
+        elif name in WRAPPER_VALUED:
+            opts = WRAPPER_VALUED[name]
         elif not x.startswith("-"):
             opts = None
     return out
 
 
-def takes_value(o, opts, glued):
-    """o takes the next word as its value: a valued option, or with glued a short cluster whose first valued letter is its last."""
+def takes_value(o, opts):
+    """o takes the next word as its value: a valued option, or a short cluster whose first valued letter is its last."""
     if o in opts:
         return True
-    if not glued or not re.fullmatch(r"-[A-Za-z]{2,}", o):
+    if not re.fullmatch(r"-[A-Za-z]{2,}", o):
         return False
     return next(k for k in range(1, len(o) + 1) if k == len(o) or "-" + o[k] in opts) == len(o) - 1
 
@@ -1996,29 +1998,77 @@ def shell_reads_stdin(w, i):
     return None, s or j >= len(w)
 
 
+def heads(parts):
+    """The indices of the parts that start a pipeline: the first and each one after a separator other than `|`."""
+    return [j for j in range(0, len(parts), 2) if j == 0 or parts[j - 1] != "|"]
+
+
+def reads_input(w, depth=0):
+    """Whether a pipeline head with the words w reads the pipe into it on: a shell that reads its commands from stdin, tee,
+    a bare cat, or an eval whose text has such a head (past three levels any eval)."""
+    i = cmd_start(w)
+    p = os.path.basename(w[i]) if i < len(w) else ""
+    if p == "eval":
+        sub = split_cmd(" ".join(w[i + 1:]))
+        return depth >= 3 or any(reads_input(part_words(sub[j])[0], depth + 1) for j in heads(sub))
+    return p == "tee" or p == "cat" and len(w) == i + 1 or p in SHELLS and shell_reads_stdin(w, i) == (None, True)
+
+
+def eval_text(parts, k, w, i, depth=0):
+    """The text the eval of part k runs; when a pipe feeds it, what the pipe carries (piped_text) is echoed into the first
+    head of the text that reads its input: `echo env | eval sh` runs as `echo env | sh`. One head: a shell, tee and a bare
+    cat read their input to its end."""
+    text = " ".join(w[i + 1:])
+    t = piped_text(parts, k - 2, depth + 1) if k >= 2 and parts[k - 1] == "|" else None
+    if t is None:
+        return text
+    sub = split_cmd(text)
+    j = next((j for j in heads(sub) if reads_input(part_words(sub[j])[0], depth)), None)
+    if j is not None:
+        sub[j] = "echo %s | %s" % (shlex.quote(t), sub[j])
+    return "".join(sub)
+
+
+def piped_text(parts, j, depth=0):
+    """What part j prints into the pipe after it: the words of echo or printf, through tee or a bare cat what reaches them,
+    for eval (eval_text) what each segment of its text that is not piped on prints; None for any other program. Past three
+    eval levels the dump words of the pipeline up to part j are what it prints, one a line."""
+    while True:
+        pw = part_words(parts[j])[0]
+        pi = cmd_start(pw)
+        p = os.path.basename(pw[pi]) if pi < len(pw) else ""
+        if p in ("echo", "printf"):
+            return " ".join(pw[pi + 1:])
+        if p == "eval" and depth >= 3:
+            s = j
+            while s >= 2 and parts[s - 1] == "|":
+                s -= 2
+            # ponytail: scans the pipeline again for each such eval, quadratic in the length of a chain of pipes through eval
+            return "\n".join(DUMP_WORDS.findall(flat("\n".join(parts[s:j + 1:2])))) or None
+        if p == "eval":
+            sub = split_cmd(eval_text(parts, j, pw, pi, depth))
+            texts = [t for t in (piped_text(sub, x, depth + 1) for x in range(0, len(sub), 2) if sub[x + 1:x + 2] != ["|"])
+                     if t is not None]
+            return "\n".join(texts) if texts else None
+        if p != "tee" and not (p == "cat" and len(pw) == pi + 1) or j < 2 or parts[j - 1] != "|":
+            return None
+        j -= 2
+
+
 def shell_text(parts, k, words):
-    """The command text that part k hands to a shell: eval's words, a shell's -c string, or the words of echo/printf piped
-    (also through tee or a bare cat) into a shell that reads its commands from stdin; None when it is no such part."""
+    """The command text that part k hands to a shell: eval's text with the pipe into it (eval_text), a shell's -c string,
+    or what is piped (piped_text) into a shell that reads its commands from stdin; None when it is no such part."""
     w = list(words)
     i = cmd_start(w)
     prog = os.path.basename(w[i]) if i < len(w) else ""
     if prog == "eval":
-        return " ".join(w[i + 1:])
+        return eval_text(parts, k, w, i)
     if prog not in SHELLS:
         return None
     text, stdin = shell_reads_stdin(w, i)
     if text is not None or not stdin:
         return text
-    while k >= 2 and parts[k - 1] == "|":
-        pw = part_words(parts[k - 2])[0]
-        pi = cmd_start(pw)
-        p = os.path.basename(pw[pi]) if pi < len(pw) else ""
-        if p in ("echo", "printf"):
-            return " ".join(pw[pi + 1:])
-        if p != "tee" and not (p == "cat" and len(pw) == pi + 1):
-            return None
-        k -= 2
-    return None
+    return piped_text(parts, k - 2) if k >= 2 and parts[k - 1] == "|" else None
 
 
 def names_only(prog, rest):
@@ -2115,12 +2165,6 @@ def env_read(cmd, depth=0):
     return False
 
 
-ENV_VALUED = {"-u", "--unset", "-C", "--chdir", "-P"}
-# the valued options env_dump skips with their values; archive_runs keeps reading only sudo's and env's
-DUMP_VALUED = {"sudo": SUDO_VALUED, "env": ENV_VALUED, "caffeinate": {"-t", "-w"}, "exec": {"-a"}, "npx": {"-p", "--package"},
-               "time": {"-o", "-f"}}
-
-
 def env_alone(rest):
     """env followed only by its options and assignments: it prints the environment."""
     j = 0
@@ -2143,7 +2187,7 @@ def env_dump(cmd, depth=0):
             return d
     parts = split_cmd(cmd)
     for k in range(0, len(parts), 2):
-        raw = wrapper_values_cut(part_words(parts[k])[0], DUMP_VALUED, glued=True)  # `env -u X printenv`: X is no program
+        raw = wrapper_values_cut(part_words(parts[k])[0])  # `env -u X printenv`: X is no program
         inner = shell_text(parts, k, raw)
         if inner is not None:
             if depth >= 3:  # past the depth any dump word of the handed-on text counts
