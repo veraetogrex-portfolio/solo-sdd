@@ -76,7 +76,7 @@ the share is the total divided by `n` and rounded up to a cent.
 | Check | `/spec-audit` code against the spec, `/ui-check` an interface against the mockup, `/copy-check` product texts, `/debug-profile` a failing service or bug, `/agent-quality` an AI agent's answers |
 | Deliver | `/ship` commit, push, pull request, merge |
 | Status | `/work-status` five lines on the state, `/context-resume` the context after a pause, `/evidence-research` a choice on checked facts |
-| Manual | `/relay` another agent's report, `/blockers` blockers into changes, `/report` a summary for a period, `/health` the project's integrations, `/changes` a table of change states, `/next-up` what waits for work, as a queue, `/review-principles` the owner's review rules into `REVIEW.md` |
+| Manual | `/relay` another agent's report, `/blockers` blockers into changes, `/report` a summary for a period, `/health` the project's integrations, `/changes` a table of change states, `/next-up` what waits for work, as a queue, `/review-principles` the owner's review rules into `REVIEW.md`, `/plan-input` the owner's decisions into a planning input with its launch steps |
 
 A long skill keeps the order of its steps in `SKILL.md` and the body of a long step in a step file next to it (`skills/<name>/<step>.md`), which the step's line says to read each time the step starts: after compaction Claude Code re-attaches only the first 5,000 tokens of a skill, and a test keeps every `SKILL.md` within 16,000 bytes.
 

@@ -21,6 +21,7 @@
     "changes": ["other", "cursor", "codex", "claude"],
     "next-up": ["other", "cursor", "codex", "claude"],
     "review-principles": ["other", "cursor", "codex", "claude"],
+    "plan-input": ["other", "cursor", "codex", "claude"],
     "codex-orchestration": ["other", "cursor", "claude"],
     "spec-dispatch": ["claude"]
   },

@@ -1,0 +1,2 @@
+{"type": "user", "message": {"role": "user", "content": "make an input for spec-plan from the review"}}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "tool_use", "id": "toolu_01", "name": "Read", "input": {"file_path": "/home/you/solo-sdd/tests/stands/plan-input/expected-input.md"}}]}}
