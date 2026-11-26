@@ -1,7 +1,9 @@
+# plan-input Specification
+
 ## Purpose
 The owner's decisions from a review, a research or a discussion reach `/spec-plan` as one self-contained input file per target repository, checked against that repository, with the steps that start it in the right folder.
 
-## ADDED Requirements
+## Requirements
 
 ### Requirement: Only decided items in the input
 `plan-input` SHALL write one Markdown input per target repository in which an item goes into a letter section (`A`, `B`, ...) only with the owner's decision quoted with its date, holding `Facts`, `Where`, `What` and `Check`; an item without a decision SHALL go under `Not decided`, one line each, unless `Already done` or `Already planned` applies.
