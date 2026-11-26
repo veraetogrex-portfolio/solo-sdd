@@ -790,6 +790,77 @@ class Hooks(unittest.TestCase):
         self.assertEqual(inproc(self.home, "uninstall")[0], 0)
         self.assertEqual(json.loads(self.get()), {"hooks": {"PreToolUse": [mine]}, "permissions": {"deny": ["Bash(kill *)", "Read(x)"]}})
 
+    # Requirement: Guard entry fails closed
+    def work_hooks(self):
+        """(event, hook) of every work_hooks.py hook in the settings file."""
+        s = json.loads(self.get())
+        return [(e, h) for e, groups in s["hooks"].items() for g in groups for h in g["hooks"] if "work_hooks.py" in h["command"]]
+
+    def guard_hooks(self):
+        return [h for e, h in self.work_hooks() if e == "PreToolUse" and h["command"].endswith('"$f" guard')]
+
+    def test_guard_entry_fails_closed_a_fresh_home(self):
+        os.rmdir(os.path.dirname(self.settings))
+        self.assertEqual(inproc(self.home, "install", "--hooks")[0], 0)
+        guard = self.guard_hooks()
+        self.assertEqual(len(guard), 1)
+        self.assertEqual((guard[0]["onFailure"], guard[0]["timeout"]), ("block", 10))
+        self.assertIn('/usr/bin/python3 -c "" >/dev/null 2>&1 || exit 0; exec ', guard[0]["command"])
+        others = [h["command"].rsplit(" ", 1)[1] for e, h in self.work_hooks() if h not in guard]
+        self.assertEqual(set(others), {"context", "subagent-context", "beat", "claims", "stop", "end"})
+        self.assertEqual([h for e, h in self.work_hooks() if h not in guard and "onFailure" in h], [])
+
+    def test_guard_entry_fails_closed_an_earlier_install(self):
+        self.assertEqual(inproc(self.home, "install", "--hooks")[0], 0)
+        s = json.loads(self.get())
+        for g in s["hooks"]["PreToolUse"]:
+            for h in g["hooks"]:
+                h.pop("onFailure", None) if h["command"].endswith('"$f" guard') else None
+        earlier = json.dumps(s, indent=2).replace('/usr/bin/python3 -c \\"\\" >/dev/null 2>&1 || exit 0; ', "")
+        self.assertNotIn('python3 -c', earlier)
+        os.remove(self.state_file)  # the file an earlier solo-sdd wrote, without this version's record
+        self.put(earlier)
+        baks = len(self.baks())
+        self.assertEqual(inproc(self.home, "install", "--hooks")[0], 0)
+        guard = self.guard_hooks()
+        self.assertEqual(len(guard), 1)
+        self.assertEqual(guard[0]["onFailure"], "block")
+        self.assertEqual(len(self.baks()), baks + 1)
+        self.assertEqual(inproc(self.home, "uninstall")[0], 0)
+        self.assertEqual(json.loads(self.get()), json.loads(earlier), "uninstall removes the new entry and puts the earlier file back")
+
+    def guard_command(self, script=None, python=None):
+        """The guard entry's command run through sh -c with a Read of README.md on stdin: (exit code, stdout)."""
+        self.assertEqual(inproc(self.home, "install", "--hooks")[0], 0)
+        command = self.guard_hooks()[0]["command"]
+        if python:
+            command = command.replace("/usr/bin/python3", python)
+        hook = os.path.join(self.home, ".claude", "hooks", "work_hooks.py")
+        if script is not None:
+            os.makedirs(os.path.dirname(hook), exist_ok=True)
+            self.put(script, hook)
+        inp = json.dumps({"session_id": "S1", "cwd": self.home, "tool_name": "Read", "tool_input": {"file_path": "README.md"}})
+        p = subprocess.run(["sh", "-c", command], input=inp, capture_output=True, text=True, timeout=60,
+                           env={"HOME": self.home, "PATH": "/usr/bin:/bin"})
+        return p.returncode, p.stdout
+
+    def test_guard_entry_fails_closed_a_guard_that_cannot_start(self):
+        with open(os.path.join(REPO, "global", "work_hooks.py")) as f:
+            broken = f.read() + "\n)(\n"
+        code, _ = self.guard_command(broken)
+        self.assertNotIn(code, (0, 2))
+
+    def test_guard_entry_fails_closed_no_script_or_no_interpreter(self):
+        with open(os.path.join(REPO, "global", "work_hooks.py")) as f:
+            script = f.read()
+        stub = os.path.join(self.tmp, "stub-python3")
+        self.put("#!/bin/sh\nexit 1\n", stub)
+        os.chmod(stub, 0o755)
+        for label, kw in (("no script", {}), ("no interpreter", {"script": script, "python": os.path.join(self.tmp, "missing", "python3")}),
+                          ("the macOS stub", {"script": script, "python": stub})):
+            with self.subTest(label):
+                self.assertEqual(self.guard_command(**kw), (0, ""))
+
     def test_process_guard_connected_later_copy_of_a_rule_stays(self):
         self.assertEqual(inproc(self.home, "install", "--hooks")[0], 0)
         s = json.loads(self.get())
@@ -1737,15 +1808,18 @@ class UninstallProperty(unittest.TestCase):
         from solo_sdd import hooks
         need = hooks._need()
         group = st.fixed_dictionaries({"hooks": st.just([{"type": "command", "command": "echo mine"}])})
-        old_ours = {"hooks": [{"type": "command", "command": "old work_hooks.py beat"}]}
+        old_beat = {"hooks": [{"type": "command", "command": "old work_hooks.py beat"}]}
+        old_guard = {"matcher": "Bash|Read|Grep|Write|Edit|MultiEdit|NotebookEdit|Agent|EnterWorktree|SubagentHandback|AskUserQuestion",
+                     "hooks": [{"type": "command", "timeout": 10, "command":
+                                'f="$HOME/.claude/hooks/work_hooks.py"; [ -f "$f" ] || exit 0; exec /usr/bin/python3 "$f" guard'}]}
         ev = st.sampled_from(["Stop", "PreToolUse", "SessionStart", "PostToolUse", "Custom"])
 
         def events(e):
             exact = need.get(e, [])
             return st.one_of(
-                st.just([]), st.lists(group, max_size=2), st.lists(st.just(old_ours), min_size=1, max_size=2),
+                st.just([]), st.lists(group, max_size=2), st.lists(st.sampled_from([old_beat, old_guard]), min_size=1, max_size=2),
                 st.builds(lambda a, b, c: a + b + c, st.lists(group, max_size=1), st.just(list(exact)), st.lists(group, max_size=1)),
-                st.builds(lambda a, b: a + [old_ours] + b, st.lists(group, max_size=1), st.lists(group, max_size=1)))
+                st.builds(lambda a, o, b: a + [o] + b, st.lists(group, max_size=1), st.sampled_from([old_beat, old_guard]), st.lists(group, max_size=1)))
 
         hook = st.dictionaries(ev, st.none(), max_size=3).flatmap(
             lambda d: st.fixed_dictionaries({e: events(e) for e in d}))
