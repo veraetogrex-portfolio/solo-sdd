@@ -2006,7 +2006,8 @@ class ArchiveRunners(HookCase):
     def test_known_limit_an_argument_of_a_runner_started_program_reads_as_an_archive_run(self):
         """Not a requirement: pins a known false refusal kept over a missed run (proposal Out of Scope of archive-run-words);
         a fix of the limit inverts this test."""
-        for c in ("npx prettier solo-sdd archive add-words", "uv run pytest solo-sdd archive add-words"):
+        for c in ("npx prettier solo-sdd archive add-words", "uv run pytest solo-sdd archive add-words",
+                  "npx prettier -c 'solo-sdd archive add-words'"):
             assert archive5([EDIT5], cmd=c), "known false refusal: " + c
 
     def test_archive_run_behind_runners_and_options_a_runner_that_starts_python(self):
@@ -2041,6 +2042,56 @@ class ArchiveRunners(HookCase):
             assert run("guard", {"session_id": "S60", "cwd": R6, "tool_name": "Bash", "tool_input": {"command": c}}) is None, c
         for c in ("npx -p solo-sdd solo-sdd archive add-words", "uvx --from solo-sdd archive add-words"):
             archive_refused(c)
+
+    def test_archive_run_behind_runners_and_options_gnu_times_long_options(self):
+        for c in ("time --output /tmp/x solo-sdd archive add-words", "/usr/bin/time --format %e solo-sdd archive add-words",
+                  "time --output=/tmp/x solo-sdd archive add-words"):
+            archive_refused(c)
+
+    def test_archive_run_in_a_command_string_of_an_option_env_splits_the_string(self):
+        for c in ("env -S 'solo-sdd archive add-words'", "env --split-string 'solo-sdd archive add-words'",
+                  "env -iS 'solo-sdd archive add-words'", "env -S 'solo-sdd archive' add-words",
+                  "uv run env -S 'solo-sdd archive add-words'",
+                  "env -S '' solo-sdd archive add-words", "env -S 'bash -c' 'solo-sdd archive add-words'"):
+            archive_refused(c)
+
+    def test_archive_run_in_a_command_string_of_an_option_a_joined_env_string(self):
+        for c in ("env -S'solo-sdd archive add-words'", "env --split-string='solo-sdd archive add-words'",
+                  "env -S '-i solo-sdd archive add-words'"):
+            assert wh.archive_runs(c) == ["add-words"], c
+            for r in (archive5([EDIT5], cmd=c), run("guard", {"session_id": "S60", "cwd": R6, "tool_name": "Bash",
+                                                             "tool_input": {"command": c}})["hookSpecificOutput"]["permissionDecisionReason"]):
+                assert r and "prints the whole environment" in r, (c, r)
+
+    def test_archive_run_in_a_command_string_of_an_option_npx_runs_the_string(self):
+        for c in ("npx -c 'solo-sdd archive add-words'", "npx --call 'solo-sdd archive add-words'",
+                  "npx --call='solo-sdd archive add-words'", "sudo -u root npx -c 'bash -c \"solo-sdd archive add-words\"'",
+                  "npx -yc 'solo-sdd archive add-words'", "npm exec -c 'solo-sdd archive add-words'",
+                  "npm x --call 'solo-sdd archive add-words'", "npx -c 'echo hi' -c 'solo-sdd archive add-words'",
+                  "npx -c '' -c 'solo-sdd archive add-words'", "npm exec -p x -c 'solo-sdd archive add-words'",
+                  "npm exec --prefix /tmp -c 'solo-sdd archive add-words'", "npx --prefix /tmp -c 'solo-sdd archive add-words'",
+                  "npm --prefix /tmp exec -c 'solo-sdd archive add-words'", "npm -y exec -c 'solo-sdd archive add-words'",
+                  "npm exec -a -c 'solo-sdd archive add-words'", "npx -c>/dev/null 'solo-sdd archive add-words'",
+                  "npm exec -a --call>log 'solo-sdd archive add-words'"):
+            archive_refused(c)
+
+    def test_archive_run_in_a_command_string_of_an_option_a_string_that_runs_no_archive(self):
+        for c in ("env -S 'solo-sdd validate --all'", "npx -c 'echo solo-sdd archive add-words'",
+                  "env -u S 'solo-sdd archive add-words'", "npx -c'solo-sdd archive add-words'",
+                  "env -S -i 'solo-sdd archive add-words'", "npm exec -- prettier -c 'solo-sdd archive add-words'",
+                  "echo env -S 'solo-sdd archive add-words'"):
+            assert archive5([EDIT5], cmd=c) is None, "not an archive run: " + c
+            assert run("guard", {"session_id": "S60", "cwd": R6, "tool_name": "Bash", "tool_input": {"command": c}}) is None, c
+
+    def test_archive_run_in_a_command_string_of_an_option_broken_and_deep_strings(self):
+        for c in ("env -S 'solo-sdd archive add-words", "env -S", "npx -c", "npx --call=",
+                  "eval eval eval eval env -S 'solo-sdd archive add-words'"):
+            assert wh.archive_runs(c) == [], c
+        for c, want in (("env -" + "i" * 20_000 + "S 'solo-sdd archive add-words'", ["add-words"]), ("env" + " -S -x" * 3000, []),
+                        ("npx" + " -c 'echo'" * 3000 + " -c 'solo-sdd archive add-words'", ["add-words"])):
+            t = time.monotonic()
+            assert wh.archive_runs(c) == want, c[:40]
+            assert time.monotonic() - t < 1, c[:40]
 
     def test_archive_run_behind_runners_and_options_end_of_options_before_the_c_string(self):
         archive_refused("bash -c -- 'solo-sdd archive add-words'")
@@ -2266,10 +2317,10 @@ class SecretFiles(HookCase):
                   "sudo -u root env -u X printenv", "sudo -g wheel printenv", "env -u X bash -c env", "env --unset X printenv",
                   "env --chdir /tmp printenv", "sudo --user root printenv", "env -u", "(env -u X printenv)",
                   "(sudo -u root printenv)", "x=1; (sudo -u root printenv)", "sudo -Hu root printenv", "sudo -iu root printenv",
-                  "env -iu X printenv", "sudo -uroot printenv"):
+                  "env -iu X printenv", "sudo -uroot printenv", "time --output /tmp/x printenv", "/usr/bin/time --format %e printenv"):
             assert bash(c), c
         for c in ("env -u HOME python3 -V", "env -C /tmp ls", "env -u X sh -c ls", "sudo -u root ls", "caffeinate -t 5 ls",
-                  "npx -p x eslint .", "time -o /tmp/x ls", "env -u X printenv HOME", "sudo -u", "(sudo -u root ls)",
+                  "npx -p x eslint .", "time -o /tmp/x ls", "time --output /tmp/x ls", "env -u X printenv HOME", "sudo -u", "(sudo -u root ls)",
                   "sudo -Hu root ls", "sudo -uroot ls"):
             assert not bash(c), c
         c = "env" + " -u X" * 20_000 + " printenv"

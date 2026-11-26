@@ -59,8 +59,8 @@ As a guard against accidental dumps, not a boundary, `guard` SHALL refuse a Bash
 - **THEN** each command is refused: a `#`, a form of `UNCUT`, a heredoc or `case` anywhere in the command, an open quote or a trailing backslash leaves the whole command counted, and the inside of `$(…)`, `${…}` and a backquote is read with its own quotes and never cut; `echo "$(date)"; grep "x` passes, as it holds no dump word
 
 #### Scenario: A wrapper option with a value
-- **WHEN** the agent runs `env -u X printenv`, `env -C /tmp printenv`, `env -P /usr/bin printenv`, `/usr/bin/env -u X printenv`, `timeout 5 env -u X printenv`, `sudo -u root printenv`, `sudo -u root env`, `sudo -u root printenv GITHUB_TOKEN`, `env -u X sh -c env`, `sudo -u root sh -c printenv`, `caffeinate -t 5 printenv`, `caffeinate -w 1 printenv`, `exec -a NAME printenv`, `npx -p x printenv`, `npx --package x printenv`, `time -o /tmp/x printenv` or `/usr/bin/time -f %e printenv`
-- **THEN** each command is refused, and `env -u HOME python3 -V`, `env -C /tmp ls`, `env -u X sh -c ls`, `sudo -u root ls`, `caffeinate -t 5 ls`, `npx -p x eslint .`, `time -o /tmp/x ls` and `env -u X printenv HOME` pass
+- **WHEN** the agent runs `env -u X printenv`, `env -C /tmp printenv`, `env -P /usr/bin printenv`, `/usr/bin/env -u X printenv`, `timeout 5 env -u X printenv`, `sudo -u root printenv`, `sudo -u root env`, `sudo -u root printenv GITHUB_TOKEN`, `env -u X sh -c env`, `sudo -u root sh -c printenv`, `caffeinate -t 5 printenv`, `caffeinate -w 1 printenv`, `exec -a NAME printenv`, `npx -p x printenv`, `npx --package x printenv`, `time -o /tmp/x printenv`, `/usr/bin/time -f %e printenv`, `time --output /tmp/x printenv` or `/usr/bin/time --format %e printenv`
+- **THEN** each command is refused, and `env -u HOME python3 -V`, `env -C /tmp ls`, `env -u X sh -c ls`, `sudo -u root ls`, `caffeinate -t 5 ls`, `npx -p x eslint .`, `time -o /tmp/x ls`, `time --output /tmp/x ls` and `env -u X printenv HOME` pass
 
 #### Scenario: A dump nested past the parsed depth
 - **WHEN** the agent runs `eval eval eval eval env` or `eval eval eval eval printenv`

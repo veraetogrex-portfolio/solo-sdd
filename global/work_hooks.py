@@ -1630,7 +1630,10 @@ PY_VALUED = {"-W", "-X"}
 ENV_VALUED = {"-u", "--unset", "-C", "--chdir", "-P"}
 # the valued options archive_runs and env_dump skip with their values
 WRAPPER_VALUED = {"sudo": SUDO_VALUED, "env": ENV_VALUED, "caffeinate": {"-t", "-w"}, "exec": {"-a"}, "npx": {"-p", "--package"},
-                  "time": {"-o", "-f"}}
+                  "time": {"-o", "-f", "--output", "--format"}}
+# the options whose value the wrapper runs as a command (npx's also for npm exec and npm x); only archive_runs reads them
+# (env -S is a known env guard bypass)
+CMD_VALUED = {"env": {"-S", "--split-string"}, "npx": {"-c", "--call"}}
 
 
 def wrapper_values_cut(w):
@@ -1647,6 +1650,45 @@ def wrapper_values_cut(w):
             opts = WRAPPER_VALUED[name]
         elif not x.startswith("-"):
             opts = None
+    return out
+
+
+def command_values(raw, cut):
+    """The commands CMD_VALUED options of the wrappers in cut (wrapper_values_cut of raw) hand on. env: the first `-S 'x y' z`
+    as `env x y 'z'` (env reads the split words as its own arguments, so `-S '-i x'` and `-S '' x` count; the words after it
+    keep their quoting), also joined (`-S'x'`, `--split-string=x`) and at the end of a short cluster read as getopt does
+    (`-iS 'x'`); the rest of the command is in that string, so the scan stays linear. npx, and npm with exec or x: every
+    `-c`/`--call` value up to `--`, npm's options standing anywhere (`npm --prefix p exec -c x`; the last one wins in npm),
+    also `--call=x` and a short cluster ending in `c` (`-yc x`; npm reads no joined `-c…`). Known limit, kept over a
+    missed run: an argument `-c` of a program npx starts reads as npx's (`npx prettier -c 'x'`)."""
+    out, name, npm_exec = [], None, bool({"exec", "x"} & set(cut))
+    for j, x in enumerate(cut):
+        base = os.path.basename(x.lstrip("({!"))
+        if base in CMD_VALUED or base == "npm" and npm_exec:
+            name = "env" if base == "env" else "npx"
+            continue
+        if name == "npx":  # npm's own option words: the shell builtin exec's `-a` value cut does not apply to `npm exec -a`;
+            x = re.split(r"[<>)&]", raw[j], 1)[0]  # a word still ends at a glued redirection, as in archive_runs
+        if x == "--" or name == "env" and not x.startswith("-"):
+            name = None
+        if name is None or not x.startswith("-"):
+            continue
+        opts, value, nxt = CMD_VALUED[name], None, j + 2
+        word = raw[j + 1] if j + 1 < len(raw) else None
+        if x.startswith("--"):
+            if x.partition("=")[0] in opts:
+                value, nxt = (raw[j].partition("=")[2], j + 1) if "=" in x else (word, j + 2)
+        elif x in opts or name == "npx" and re.fullmatch(r"-[A-Za-z]+c", x):
+            value = word
+        elif name == "env":
+            stop = opts | WRAPPER_VALUED["env"]
+            k = next((k for k in range(1, len(x)) if "-" + x[k] in stop), None)
+            if k is not None and "-" + x[k] in opts:
+                value, nxt = (raw[j][k + 1:], j + 1) if x[k + 1:] else (word, j + 2)
+        if value is not None and name == "env":
+            return out + ["env %s %s" % (value, shlex.join(raw[nxt:]))]
+        if value:
+            out.append(value)
     return out
 
 
@@ -1692,6 +1734,14 @@ def archive_runs(cmd, depth=0):
         w = [os.path.basename(x) if os.path.basename(x) in WRAPPERS else x for x in (re.split(r"[<>)&]", y, 1)[0] for y in raw)]
         w = wrapper_values_cut(w)
         i = cmd_start(w)
+        # after a runner (npx is also a wrapper, so it may be before i) every later word is tried as the program: an option
+        # value may carry its name (uvx --from solo-sdd solo-sdd archive x), and the runner may start a wrapper or another
+        # runner (uv run env A=1 solo-sdd archive x). Known limit, kept over a missed run: an argument of another program
+        # the runner starts reads as a run (npx prettier solo-sdd archive x is refused)
+        r = next((k for k in range(min(i + 1, len(w))) if os.path.basename(w[k]).split("@")[0] in RUNNERS), None)
+        if depth < 3:  # env -S 'solo-sdd archive x', npx -c '…': the string is a command again, read with the same reach
+            for s in command_values(raw, w if r is not None else w[:i + 1]):
+                found += archive_runs(s, depth + 1)
         if i >= len(w):
             continue
         prog = os.path.basename(w[i])
@@ -1705,11 +1755,6 @@ def archive_runs(cmd, depth=0):
             if c is not None and c + 1 < len(w):
                 found += archive_runs(raw[c + 1], depth + 1)  # the -c string uncut: it is a command again
             continue
-        # after a runner (npx is also a wrapper, so it may be before i) every later word is tried as the program: an option
-        # value may carry its name (uvx --from solo-sdd solo-sdd archive x), and the runner may start a wrapper or another
-        # runner (uv run env A=1 solo-sdd archive x). Known limit, kept over a missed run: an argument of another program
-        # the runner starts reads as a run (npx prettier solo-sdd archive x is refused)
-        r = next((k for k in range(i + 1) if os.path.basename(w[k]).split("@")[0] in RUNNERS), None)
         names = [archive_name(w, k) for k in range(r + 1, len(w))] if r is not None else [archive_name(w, i)]
         found += [n for n in names if n][:1]
     return found
