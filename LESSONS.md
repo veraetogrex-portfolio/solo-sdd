@@ -95,6 +95,8 @@ A check of a command's printed output finds a line by its prefix, not by its pos
 
 A stand that grades a judgement call expects one answer only for an input where every correct reading gives it; otherwise it grades what all correct answers share.
 
+The stand's input reaches the measured agent once: no second copy of it lies within the agent's reach (its saved transcripts, an earlier stand, another session's scratchpad), or a run that finds that copy answers rightly and fails the grade; and no prompt line states the fact the run measures ("the review is in the message, with no file" told the agent what to conclude). A gate before such a run greps the reach by the host's own layout (links followed, the shell's own `grep` options) and counts only files of the material's kind (`fix-plan-input-misses`, 2026-11-26: six review rounds reworded the chat runs' Live Scenario).
+
 A grader of a free-form model answer (a map line, a list) reads it by the form the skill prescribes: the label with its note and colon, the items under it bounded by the label's own indent, a status decided by an item's own label or its parent's, never by a bare word anywhere in it. A form outside that grammar gives no items and fails the answer; it never passes one (`waiting-readers`, 2026-11-22: five review rounds widened and narrowed a Blockers reader that had started from a bare `startswith`).
 
 ### deployment-gates
