@@ -3,7 +3,9 @@
 
 Source of the requirements: analysis of sessions 2026-09-16..2026-10-15 (repeated "read agents md",
 "continue", "archive", "who will merge", "status?", secrets, expensive models).
-Any internal error lets the action through (fail-open) and is written to hook-state/errors.log.
+Any internal error lets the action through (fail-open) and is written to hook-state/errors.log, except in the
+secret checks of `guard` (guard_env_write, guard_env_read, guard_secrets_bash), the input they are built from and
+input `guard` cannot read: those secret checks fail closed and refuse the call.
 """
 import datetime
 import fnmatch
@@ -2749,24 +2751,65 @@ def guard_question(ti, cwd):
         deny("The question window is not in %s. Rewrite the questions and options in %s." % (lang, lang))
 
 
+def fail_closed(name, fn, *args):
+    """fn(*args) of a secret check or of the input it is built from; an exception is logged and refuses the call."""
+    try:
+        return fn(*args)
+    except Exception as e:
+        log_error("guard " + name, e)
+        deny("The guard hook could not finish its `%s` check, so the call is refused (the secret checks fail closed); "
+             "the error is in ~/.claude/hook-state/errors.log." % name)
+
+
+WRITE_TOOLS = ("Write", "Edit", "MultiEdit", "NotebookEdit")
+SECRET_TOOLS = WRITE_TOOLS + ("Read", "Grep", "Bash")  # the tools a secret check reads; their unreadable input fails closed
+
+
+def guard_input(inp):
+    """(tool, tool_input, session id, cwd) of a PreToolUse input. Raises on input that is not an object and, for a tool
+    of SECRET_TOOLS, on a `tool_input` that is not an object or a `cwd` that is not a string (absent or null is absent)."""
+    if not isinstance(inp, dict):
+        raise TypeError("the input is not a JSON object")
+    tool, ti, cwd = inp.get("tool_name"), inp.get("tool_input"), inp.get("cwd")
+    if tool in SECRET_TOOLS:
+        if not isinstance(ti, (dict, type(None))):
+            raise TypeError("tool_input is not an object")
+        if not isinstance(cwd, (str, type(None))):
+            raise TypeError("cwd is not a string")
+    return tool, ti or {}, inp.get("session_id", ""), os.path.realpath(cwd or os.getcwd())
+
+
+def text_field(ti, *keys):
+    """The first non-empty of the string fields `keys` of a tool input, else ""; a present field that is not a string raises."""
+    values = [ti.get(k) for k in keys if ti.get(k) is not None]
+    bad = [v for v in values if not isinstance(v, str)]
+    if bad:
+        raise TypeError("%s is not a string: %s" % ("/".join(keys), type(bad[0]).__name__))
+    return next((v for v in values if v), "")
+
+
 def cmd_guard(inp):
-    tool, ti = inp.get("tool_name"), inp.get("tool_input") or {}
-    sid, cwd = inp.get("session_id", ""), os.path.realpath(inp.get("cwd") or os.getcwd())
-    if tool in ("Write", "Edit", "MultiEdit", "NotebookEdit"):
-        path = ti.get("file_path") or ti.get("notebook_path")
+    tool = inp.get("tool_name") if isinstance(inp, dict) else None
+    if tool in SECRET_TOOLS or not isinstance(inp, dict):
+        tool, ti, sid, cwd = fail_closed("guard input", guard_input, inp)
+    else:
+        tool, ti, sid, cwd = guard_input(inp)
+    if tool in WRITE_TOOLS:
+        path = fail_closed("guard_env_write", text_field, ti, "file_path", "notebook_path")
         if not path:
             return
-        path = os.path.join(cwd, os.path.expanduser(path))
-        guard_env_write(tool, path, cwd)
+        path = fail_closed("guard_env_write", lambda p: os.path.join(cwd, os.path.expanduser(p)), path)
+        fail_closed("guard_env_write", guard_env_write, tool, path, cwd)
         guard_override_write(tool, ti, path)
         guard_scope(sid, cwd, path)
         guard_claim(sid, path, tool, ti)
     elif tool in ("Read", "Grep"):
-        guard_env_read(ti, cwd)
+        fail_closed("guard_env_read", text_field, ti, "file_path")
+        fail_closed("guard_env_read", guard_env_read, ti, cwd)
     elif tool == "Bash":
-        cmd = ti.get("command") or ""
-        text = command_text(cmd)
-        guard_secrets_bash(text, cwd, cmd)
+        cmd = fail_closed("guard_secrets_bash", text_field, ti, "command")
+        text = fail_closed("guard_secrets_bash", command_text, cmd)
+        fail_closed("guard_secrets_bash", guard_secrets_bash, text, cwd, cmd)
         guard_override_bash(cmd)
         guard_models_bash(text, cmd)
         guard_worktree(cmd, cwd)
@@ -3185,7 +3228,7 @@ def cmd_status(inp):
 def main():
     cmd = sys.argv[1] if len(sys.argv) > 1 else ""
     try:
-        inp = json.load(sys.stdin)
+        inp = fail_closed("guard input", json.load, sys.stdin) if cmd == "guard" else json.load(sys.stdin)
         {"context": cmd_context, "subagent-context": cmd_subagent_context, "guard": cmd_guard, "stop": cmd_stop, "beat": cmd_beat,
          "end": cmd_end, "status": cmd_status, "claims": cmd_claims}[cmd](inp)
     except SystemExit:
