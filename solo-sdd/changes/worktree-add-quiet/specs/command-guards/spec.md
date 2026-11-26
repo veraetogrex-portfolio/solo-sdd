@@ -32,7 +32,7 @@
 - **THEN** the command passes
 
 #### Scenario: The quiet option
-- **WHEN** the agent runs `git worktree add -q "$TMPDIR/wt-x" -b x main`, `git worktree add -q -b x "$TMPDIR/wt-x" main` or `git worktree add --quiet /tmp/wt-q`
+- **WHEN** the agent runs `git worktree add -q "$TMPDIR/wt-x" -b x main`, `git worktree add -q -b x "$TMPDIR/wt-x" main`, `git worktree add --quiet /tmp/wt-q` or `git worktree add /tmp/wt-q -q`
 - **THEN** the command passes
 
 #### Scenario: The quiet option with a variable path

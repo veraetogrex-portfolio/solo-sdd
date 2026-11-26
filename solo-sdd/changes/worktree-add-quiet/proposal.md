@@ -6,7 +6,7 @@ The `guard` hook refuses `git worktree add -q …` with "git worktree add refuse
 
 ## What Changes
 
-- The plain form of `git worktree add` takes `-q` and `--quiet` anywhere among its options: `git worktree add [-q | --quiet] [-b <name> | -B <name> | --detach | -f] <path> [<commit>]`; the refusal text (`WT_PLAIN`) and the plain form in `docs/hooks.md` name the same form.
+- The plain form of `git worktree add` takes `-q` and `--quiet` anywhere among its options: `git worktree add [-q | --quiet] [-b <name> | -B <name> | --detach | -f] <path> [<commit>]`; the refusal text (`WT_PLAIN`) and the plain form in `docs/hooks.md` name the same form, and the launch step of `skills/spec-dispatch/SKILL.md` no longer lists `-q` among the refused forms.
 - Every other check of the plain form stays: a path with a variable other than the allowed prefixes, an unknown option, a clustered option and a path outside the temporary folder are still refused.
 
 ## Capabilities
@@ -22,6 +22,7 @@ The `guard` hook refuses `git worktree add -q …` with "git worktree add refuse
 - `tests/test_work_hooks.py`
 - `docs/hooks.md`
 - `tests/stands/worktree-guard-words.py`
+- `skills/spec-dispatch/SKILL.md`
 
 ## Out of Scope
 

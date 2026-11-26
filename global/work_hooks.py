@@ -2382,7 +2382,7 @@ def codex_worktree_cli(cmd):
     return None
 
 
-WT_PLAIN = ("Only the plain form passes: git worktree add [-b <name> | -B <name> | --detach | -f] <path> [<commit>], "
+WT_PLAIN = ("Only the plain form passes: git worktree add [-q | --quiet] [-b <name> | -B <name> | --detach | -f] <path> [<commit>], "
             "a command of its own, the path literal or after ~, $HOME, $TMPDIR or ${TMPDIR:-/tmp}, under a temporary folder")
 WT_PREFIX = re.compile(r"(~|\$HOME|\$TMPDIR|\$\{TMPDIR:-/tmp\})(?=/|$)")
 
@@ -2423,7 +2423,7 @@ def wt_plain_problem(w, earlier, cwd):
     while j < len(w):
         if w[j] in ("-b", "-B") and j + 1 < len(w):
             j += 2
-        elif w[j] in ("--detach", "-f"):
+        elif w[j] in ("--detach", "-f", "-q", "--quiet"):
             j += 1
         elif w[j].startswith("-"):
             return "option %s" % w[j]
