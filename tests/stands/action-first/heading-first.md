@@ -1,0 +1,5 @@
+# What to work on in the catalog
+
+- Raise the price of the 5 most used items — about +$1,200 a month
+- Drop the 4 unused items — 4 fewer listings
+- Refresh the 6 stale items — no stale listings

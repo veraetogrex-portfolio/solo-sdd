@@ -1,0 +1,4 @@
+- Raise the price of the 5 most used items — about +$1,200 a month
+  - Atlas 2, Beacon 3, Cinder 1, Delta 2, Ember 3
+- Drop the 4 unused items — 4 fewer listings
+- Refresh the 6 stale items — no stale listings

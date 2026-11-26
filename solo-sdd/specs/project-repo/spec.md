@@ -1,10 +1,12 @@
+# project-repo Specification
+
 ## Purpose
 A request that names a project on this computer is worked in that project's own repository, with its rules, so that edits land under its git and nothing is left in a copy.
 
-## ADDED Requirements
+## Requirements
 
 ### Requirement: Work in the named project's repository
-Item 1 of section 0 of the global rules SHALL hold that a request naming a project on this computer is worked in that project's repository, which then takes the place of the current folder for items 1-3: its rules are read there, it is edited and run from there, and its sources are not copied into the session folder; a session that cannot write there SHALL name the access it needs and copy nothing.
+Item 1 of section 0 of the global rules SHALL hold that a request naming a project on this computer is worked in that project's repository, which then takes the place of the current folder for items 1-3: its rules are read there, it is edited and run from there, and its sources are not copied into the session folder; a current folder already in a worktree or clone of it stays; a session that cannot write there SHALL name the access it needs and copy nothing.
 
 #### Scenario: A fix asked from an empty folder
 - **WHEN** an agent with the global rules runs in an empty session folder and is asked to fix a file of a fixture project that lies under `~/Code`
@@ -19,10 +21,10 @@ Item 1 of section 0 of the global rules SHALL hold that a request naming a proje
 - **THEN** `git -C <fixture project> log` has a new commit with the edit and `git -C <fixture project> status --porcelain` prints nothing
 
 ### Requirement: Project lookup
-The project SHALL be a git repository at any depth under the projects folder the owner's rules name (by default `~/Code`), worktrees skipped, whose folder name equals or starts with the name in the request; an equal name wins, else the latest commit, and the report names the others; with no match the work stays in the current folder and the report says so.
+The project SHALL be a git repository at any depth under the projects folder the owner's rules name (by default `~/Code`), worktrees skipped, whose folder name equals or starts with the project name the request uses, both case-folded with spaces, `-` and `_` taken as one; an equal name wins over a prefix, and among several the latest commit wins, and the report names the others; with no match the work stays in the current folder and the report says so.
 
 #### Scenario: Two matching folders
-- **WHEN** `~/Code` holds `x/zz-greeter-bot` and `zz-greeter-bot-old` and the request names "the zz-greeter-bot"
+- **WHEN** `~/Code` holds `x/zz-greeter-bot` and `zz-greeter-bot-old` and the request names "the zz greeter bot"
 - **THEN** the edit is in `x/zz-greeter-bot`, `zz-greeter-bot-old` is unchanged, and the report names `zz-greeter-bot-old`
 
 ### Requirement: Experiment copy carried back
