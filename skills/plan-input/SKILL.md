@@ -10,7 +10,7 @@ The result is one Markdown file that `/spec-plan` reads without this chat, and t
 ## Order
 
 1. **Target.** Name the repository the items change: the files the items name, `solo-sdd status` (its `source:` line for shared rules and skills). One input file per target repository. An item that changes a deployed copy (`~/.claude/...`, `~/.codex/...`, `~/.agents/...`) is written against its source in the repository.
-2. **Process tree.** The target is not a git repository (`git -C <target> rev-parse --show-toplevel` fails) or has no `solo-sdd/` tree: stop here, before any item check. Write no input; the reply says which of the two is missing and names the target's absolute path, with no section counts. `/spec-plan` and `/spec-dispatch` do nothing there.
+2. **Process tree.** The target is not a git repository (`git -C <target> rev-parse --show-toplevel` fails) or has no `solo-sdd/` tree: stop here, before any item check, also when a `docs/` folder or the material lies in it. Write no input and create no file or folder; the reply says which of the two is missing and names the target's absolute path, with no section counts. `/spec-plan` and `/spec-dispatch` do nothing there.
 3. **Sections.** Every item stands under exactly one section, the first that applies, in this order:
    1. `Already done`: a commit closes it (step 4), with its short hash.
    2. `Already planned`: an open change covers it (step 4), with the change id.
@@ -31,6 +31,8 @@ The result is one Markdown file that `/spec-plan` reads without this chat, and t
 7. **Slicing hint.** Which items go into one change, which are light path candidates (`light`), which depend on another. `/spec-plan` may refine it.
 8. **Nothing to plan.** No item got a letter section (also with no items at all): write no input. The reply says there is nothing to plan, counts each section and lists every item in one line under its section with its reason (the hash, the change id, the missing path or line, the failed command).
 9. **Save**, never inside the target repository (a material folder inside it does not count): in the folder the owner names; else next to the material's file (the review's folder, the research folder); else in `~/Documents/plan-input/`, created when missing. Name: `<YYYY-MM-DD> input for spec-plan - <stem>.md`, where the stem is the material file's name without its extension, or `chat` when the decisions came in the chat with no file. A taken name gets `-2`, `-3` before `.md`; an existing file is never overwritten. The text is in the owner's language, the `What` lines in the repository's.
+
+   An earlier input of the same material is never the answer to a new request: write a new file with the next free suffix, without reading or checking the earlier one's content. A review pasted in the chat whose file lies within reach outside the target is the material's file: save next to it with its stem, not as `chat`.
 10. **Launch lines** at the top of the file and at the top of the reply:
    1. Open a new Claude Code (or Codex) session in the folder `<absolute path of the target repository>`.
    2. Type `/spec-plan "<absolute path of the input file>"`.
@@ -74,7 +76,10 @@ Suggested slicing: <A+B together, C, D (light), ...>
 | "The line number is from the review, good enough" | Re-check with `grep -nF`; the source moves between the review and the plan |
 | "`solo-sdd list` failed, so there are no open changes" | A failed call is not an empty answer: `check could not run: <command>` |
 | "Same name as this morning's input, I will update it" | A new file with `-2`; the earlier input stays as it was |
+| "This input is already in the folder, I will check it and report it" | A new request gets a new `-2` file; the earlier one is not read |
+| "No git, but it has a `docs/` folder, so I will save there" | Outside git means stop: no input, no folder, the git reason |
+| "The input path is the main news, it goes first" | The reply opens with launch line 1; the path comes after the three launch lines |
 
 ## Report
 
-The launch lines first (when an input was written), then 2-4 plain lines: the path of the input file, the target repository, how many items got a letter section and how many went under `Already done`, `Already planned`, `Not checked` and `Not decided`. With nothing to plan or a target without a process tree, the reply of step 8 or step 2 instead.
+When an input was written, the reply's first line is launch line 1: the three launch lines are its opening plain lines, before any path or heading. Then 2-4 plain lines: the path of the input file, the target repository, how many items got a letter section and how many went under `Already done`, `Already planned`, `Not checked` and `Not decided`. With nothing to plan or a target without a process tree, the reply of step 8 or step 2 instead.
