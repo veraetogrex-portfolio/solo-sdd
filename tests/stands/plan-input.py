@@ -44,8 +44,8 @@ KEYS = {"A": r"TIMEOUT", "F": r"clear\W+(?:the\W+)?cache|cache\s*=", "B": r"log\
         "C": r"retr\w*\W+once|once\W+on\W+timeout", "G": r"legacy\.py", "D": r"async", "E": r"worker\.py"}
 NAMED = ("already done", "already planned", "not checked", "not decided")
 LETTER = re.compile(r"[A-Z](?:[.):]|\s+[-–—]|\s*$)")
-NUM = r"(\d+|zero|no|one|two|three|four|five)"
-WORDS = {"zero": 0, "no": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5}
+NUM = r"(\d+|zero|one|two|three|four|five|six|seven)"  # not "no": "planned, no input written" is no count
+WORDS = {"zero": 0, "six": 6, "seven": 7, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5}
 APP = "TIMEOUT = 30\nCACHE = {}\n\n\ndef fetch(url):\n    return url\n"
 RETRY = "\n\ndef retry(call):\n    try:\n        return call()\n    except TimeoutError:\n        return call()\n"
 REVIEW = """# Weekly review, 2026-11-20
@@ -339,7 +339,7 @@ def short(full, text):
 
 def names_path(path, text):
     """The text names the path itself, printed or resolved, not a path under it."""
-    return any(re.search(re.escape(t) + r"(?![\w/-])", text) for t in forms(path))
+    return any(re.search(re.escape(t) + r"(?:/(?![\w-]|\.\w)|(?![\w/-]))", text) for t in forms(path))
 
 
 def launch(text, target, inp):
@@ -439,9 +439,14 @@ def grade_nothing(stand, reply):
 
 def grade_unchecked(stand, reply):
     stand = stand_of(stand)
-    text = " ".join(lines(read_text(reply)))
+    raw = read_text(reply)
+    text = " ".join(lines(raw))
+    c = counts(raw)
+    # in locked/ no item is done and the planned check cannot run: the six decided items are not checked, D not decided
     print("no input: %s" % yes(no_input(stand)))
-    print("check named: %s" % yes(re.search(r"check could not run:?\s*solo-sdd list", text, re.I)))
+    print("check named: %s" % yes(re.search(r"check could not run:?\s*solo-sdd list", text, re.I)
+                                  and re.search(r"nothing\s+(?:left\s+)?to\s+plan", text, re.I)
+                                  and c["not checked"] == {6} and c["not decided"] == {1}))
 
 
 def grade_chat(stand, reply):
@@ -527,7 +532,7 @@ def selftest():
                            stdin=subprocess.DEVNULL, timeout=120)
         check("solo-sdd list --json fails in locked/", p.returncode != 0)
         notes = pathlib.Path(paths["notes"])
-        name ="2026-11-23 input for spec-plan - review.md"
+        name = "2026-11-23 input for spec-plan - review.md"
         nine = ["outside target: yes", "launch lines: yes", "plan line: yes", "decided items: yes",
                 "already done: yes", "already planned: yes", "not checked: yes", "not decided: yes",
                 "report counts: yes"]
@@ -554,7 +559,7 @@ def selftest():
         reply = (REFS / "expected-reply.md").read_text(encoding="utf-8")
         launch_line = "1. Open a new Claude Code (or Codex) session in the folder `{target}`.\n"
         for label, text, rep, want in (
-                ("no quoted decision", ref.replace('decision: "yes, all", ', ""), reply, "decided items: no"),
+                ("no quoted decision", ref.replace('decision: "yes, all", ', "").replace('- Decision: "yes, all", 2026-11-21.\n', ""), reply, "decided items: no"),
                 ("the two hashes swapped", ref.replace("{hash-c}", "{tmp}").replace("{hash-g}", "{hash-c}")
                  .replace("{tmp}", "{hash-g}"), reply, "already done: no"),
                 ("an item named in the slicing hint", ref.replace("Suggested slicing: A and B as two light changes.",
@@ -564,7 +569,9 @@ def selftest():
                     "Source: the weekly review", "Source: {target}/docs/review.md, the weekly review"), reply,
                  "launch lines: no"),
                 ("conflicting counts", ref, reply.replace("2 already done", "2 already done, 3 done"),
-                 "report counts: no")):
+                 "report counts: no"),
+                ("the target with a trailing slash", ref.replace("folder `{target}`", "folder `{target}/`"),
+                 reply.replace("folder `{target}`", "folder `{target}/`"), "launch lines: yes")):
             (notes / name).write_text(text, encoding="utf-8")
             (scratch / "reply.md").write_text(rep, encoding="utf-8")
             grades(label, ["--grade", stand, scratch / "reply.md", notes], [want])
@@ -602,6 +609,10 @@ def selftest():
                                     ("a subfolder named", "`%s/app.py`: no `solo-sdd/` tree.\n" % plain, plain)):
             (scratch / "refusal.md").write_text(text, encoding="utf-8")
             grades(label, ["--grade-refusal", stand, scratch / "refusal.md", folder], ["reason named: no"])
+        (scratch / "refusal.md").write_text("Nothing planned, no input written: `%s/` has no `solo-sdd/` tree.\n"
+                                            % plain, encoding="utf-8")
+        grades("a refusal with a trailing slash and \"no input\"", ["--grade-refusal", stand, scratch / "refusal.md",
+                                                                     plain], ["reason named: yes"])
         bare = paths["bare"]
         (scratch / "refusal.md").write_text("Stopped: `%s` is not a git repository.\n" % bare, encoding="utf-8")
         grades("a refusal for a folder without git", ["--grade-refusal", stand, scratch / "refusal.md", bare],
@@ -615,13 +626,21 @@ def selftest():
         (scratch / "bare-nothing.md").write_text(nothing.replace(hash_c, "the commit"), encoding="utf-8")
         grades("a nothing-to-plan reply without the hash", ["--grade-nothing", stand, scratch / "bare-nothing.md"],
                ["nothing to plan: no"])
-        (scratch / "unchecked.md").write_text("Nothing to plan.\n\n- Not checked: 5 (check could not run: "
-                                              "`solo-sdd list --json`)\n", encoding="utf-8")
+        (scratch / "unchecked.md").write_text("Nothing to plan.\n\n- Not checked: 6 (A, F, B, C, G: check could not "
+                                              "run: `solo-sdd list --json`; E: `worker.py` is missing)\n"
+                                              "- Not decided: 1 (D)\n", encoding="utf-8")
         grades("a reply naming the failed check", ["--grade-unchecked", stand, scratch / "unchecked.md"],
                ["no input: yes", "check named: yes"])
         (scratch / "unchecked.md").write_text("Nothing to plan: no open changes.\n", encoding="utf-8")
         grades("a failed call taken for an empty answer", ["--grade-unchecked", stand, scratch / "unchecked.md"],
                ["check named: no"])
+        (scratch / "unchecked.md").write_text("Nothing to plan.\n\n- Not checked: 1 (B: check could not run: "
+                                              "solo-sdd list --json)\n- Not decided: 5 (A, F, C, G, E)\n",
+                                              encoding="utf-8")
+        grades("decided items left as not decided", ["--grade-unchecked", stand, scratch / "unchecked.md"],
+               ["check named: no"])
+        (scratch / "unchecked.md").write_text("Nothing to plan.\n\n- Not checked: 6 (check could not run: "
+                                              "solo-sdd list --json)\n- Not decided: 1 (D)\n", encoding="utf-8")
         chat = pathlib.Path(paths["home"]) / "Documents/plan-input"
         chat.mkdir(parents=True)
         (chat / "2026-11-23 input for spec-plan - chat.md").write_text("x\n", encoding="utf-8")

@@ -14,12 +14,14 @@ The document is self-contained: the changes are planned from it. Source: the wee
 Suggested slicing: A and B as two light changes.
 
 ## A. Raise TIMEOUT to 60 (decision: "yes, all", 2026-11-21)
+- Decision: "yes, all", 2026-11-21.
 - Facts: 2026-11-18, the review: the line is too short for the slow API.
 - Where: `app.py:1`, `TIMEOUT = 30`.
 - What: `TIMEOUT = 60`.
 - Check: a test that reads `app.TIMEOUT` and gets 60.
 
 ## B. Clear CACHE on start (decision: "yes, all", 2026-11-21)
+- Decision: "yes, all", 2026-11-21.
 - Facts: 2026-11-18, the review: entries survive a restart.
 - Where: `app.py:2`, `CACHE = {}`.
 - What: a `start()` function that calls `CACHE.clear()`.
