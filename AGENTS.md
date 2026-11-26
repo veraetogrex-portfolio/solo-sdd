@@ -95,7 +95,7 @@ Before "done": the `Tests` row, the lint from the table without output, `python3
 
 ## Lessons
 
-- A stand runs exactly what it means to test: real inputs through the host, model runs as subagents of its own session (never `claude -p`) told where their answer goes, a base commit pinned by hash, reads on a condition, every imported module copied, no grading or golden answer in reach. ([full text](LESSONS.md#stand-runs-what-it-tests))
+- A stand runs exactly what it means to test: real inputs through the host, model runs as subagents of its own session (never `claude -p`) the rules they measure in the prompt, a base commit pinned by hash, reads on a condition, every imported module copied, no grading or golden answer in reach. ([full text](LESSONS.md#stand-runs-what-it-tests))
 - Environment detection looks only inside the passed home and PATH, a check of what another process will find runs in that process's own launch form, and a test fixture pins every git and interpreter default it relies on. ([full text](LESSONS.md#environment-facts))
 - A claim about a tool's behaviour, a record of edited files or of affected tests, or a new test counted as run, is written only after checking it here against the tool on the realistic form of its input, the source or the suite runner's output. ([full text](LESSONS.md#probe-before-claim))
 - An unnamed "our product" means solo-sdd itself; the owner's other products are neither the subject nor a source of facts unless named. ([full text](LESSONS.md#unnamed-product))
