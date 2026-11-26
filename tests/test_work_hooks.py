@@ -2121,7 +2121,7 @@ OTHER_WORDS = ["MONKEY", "KEYBOARD", "TOKENIZER", "SECRETARY", "PASSWORDLESS", "
 
 # Requirement: Environment dumps refused. The compound commands a pipe feeds (X: the command in it) and the readers of the pipe
 COMPOUNDS = ["(true; X)", "(cd /tmp && X)", "(true || X)", "(true & X)", "{ true; X; }", "if true; then X; fi",
-             "while false; do :; done; X", "until false; do X; done", "select x in a; do X; done", "for i in 1; do X; done",
+             "while true; do X; break; done", "until false; do X; done", "select x in a; do X; done", "for i in 1; do X; done",
              "! (true; X)", "(true && (X))"]
 READERS = ["sh", "sh -s", "sh>out", "sh 2>/dev/null", "eval sh", "eval -- sh", "sh -c sh", "sh -c 'cat | sh'", "/bin/sh", '"sh"',
            "exec sh", "command sh"]
@@ -2183,7 +2183,9 @@ class SecretFiles(HookCase):
                   "echo ${X:-(a) #}; cat .env", "cat .e\\nv # x", "cat .e\"\"nv", "cat x # cat <<EOF\ncat .env\nEOF",
                   "echo $'a\\'\ncat <<EOF\n'; cat .env\nEOF", "cat .e\\\nnv # c", "cat .e\\\nnv ${X:-}",
                   "eval echo cat .env | sh", "echo cat .env |& sh", "echo cat .env | (true; sh)", "echo cat .env | sh>out",
-                  "(cat <.env)", "case x in x) cat .env;; esac"):
+                  "(cat <.env)", "case x in x) cat .env;; esac", "(cat) < .env", "(cat)<.env | wc -l", "(sort)<.env",
+                  "(cd /tmp; cat) < .env", "(while read l; do echo $l; done) < .env", "cat !(x) .env", "cat @(a) .env",
+                  "cat *(N) .env", "cat *(N) <.env", "echo cat .env | case x in x) sh;; esac"):
             assert bash(c), c
 
     def test_secret_file_reads_in_bash_allowed_uses(self):
@@ -2198,7 +2200,8 @@ class SecretFiles(HookCase):
                   "grep -ci --max-count 1 KEY .env", "cp -n .env.example .env", "test -f .env || cp .env.example .env",
                   "echo x 1>>.env", "ls -la .env 2>&1", "echo 'cat .env' | wc -l",
                   "echo ${#API_KEY}", "echo $# # it's", "git commit -m 'fix #12'", "grep -v '^#' x # don't",
-                  "cat > notes.md <<'EOF'\n# Setup\nCopy .env.example to .env, then run env.\nEOF"):
+                  "cat > notes.md <<'EOF'\n# Setup\nCopy .env.example to .env, then run env.\nEOF",
+                  "case \"$1\" in a) echo hi;; esac; test -f .env && echo y", "case x in x) true;; esac; echo 'API_KEY=' >> .env"):
             assert not bash(c), c
 
     def test_secret_file_reads_in_bash_not_plain_forms(self):
@@ -2239,7 +2242,9 @@ class SecretFiles(HookCase):
                   "echo env | (true; sh)", "echo env | (cd /tmp && sh)", "echo env | if true; then sh; fi",
                   "echo env | case x in x) sh;; esac", "echo env | sh -c sh", "echo env | sh>out", "echo env | (sh)>out",
                   "echo env | (sh)2>/dev/null", "echo env | (cat) | sh", "echo env | (eval cat) | sh", "case x in x) env;; esac",
-                  "echo env | (true); sh", "case x in x) grep env f;; esac", "echo env | (true; cat) | sh",
+                  "case x in x) grep env f;; esac", "echo env | (true; cat) | sh", "echo env | (cat; true) | sh",
+                  "echo env | { cat; } | sh", "echo env | if true; then cat; fi | sh", "{ echo env; } | sh", "(echo env; true) | sh",
+                  "for i in 1; do echo env; done | sh", "echo env | (case x in x) sh;; esac)",
                   "echo env | sh -c cat | sh", "echo env | sh&>out", "echo env | sh -c \"eval 'sh -c sh'\"",
                   "echo env | sh -c \"sh -c 'sh -c \\\"sh -c \\\\\\\"sh -c sh\\\\\\\"\\\"'\"",
                   'echo "$(case x in x) env;; esac)"', "echo $(case x in x) env;; esac)", 'y=$(case x in x) env;; esac); echo "$y"'):
@@ -2251,7 +2256,8 @@ class SecretFiles(HookCase):
                   "echo env | eval true", "eval \"echo 'env\" | sh", "echo ls |& sh", "echo ls |\nsh", "eval -- ls",
                   "echo ls | eval -- sh", "echo ls | (sh)", 'echo "$(date)"; grep "env" f |& cat',
                   "echo ls | (true; sh)", "echo ls | sh -c sh", "echo ls | sh>out", "echo ls | (cat) | sh", "case x in x) ls;; esac",
-                  "echo env | (true; sh ')')", "echo env | (cat) > out"):
+                  "echo env | (true; sh ')')", "echo env | (cat) > out", "echo env | (true); sh", "echo env | (cat; true) > out",
+                  "echo ls | (cat; true) | sh", "{ echo ls; } | sh", "echo env | ( true ) | sh"):
             assert not bash(c), c
         # every pipe form into every shell form: what a dump word prints is refused, ls passes
         for p, sh, w in itertools.product(("| ", "|& ", "|\n", "| \n\n "), ("sh", "bash -s", "(sh)", "( sh )", "( (sh) )", "( (sh))",
@@ -2334,7 +2340,10 @@ class SecretFiles(HookCase):
                         ("sh; " * 10_000, False), ("echo env | (" + "true; " * 5_000 + "sh)", True),
                         ("echo ls | (" + "sh; " * 10_000 + ")", False), ("echo env" + " | ( true )" * 3_000 + " | sh", False),
                         ("echo env | " + "( " * 3_000 + "true; sh" + ")" * 3_000, True), ("echo ls | sh" + ")" * 20_000, False),
-                        ("echo env | (true; sh", True), ("echo env | sh>", True)):
+                        ("echo env | (true; sh", True), ("echo env | sh>", True),
+                        ("echo ls" + " | (true; cat)" * 3_000 + " | sh", False), ("echo env" + " | (true; cat)" * 3_000 + " | sh", True),
+                        ("{ echo ls; }" + " | (true; cat)" * 3_000 + " | sh", False),
+                        ("echo ls | (" + "sh -c 'sh; sh'; " * 4_000 + ")", False), ("(echo ls; true) | sh; " * 2_000, False)):
             assert bash(c) == want, (c[:60], want)
             t = time.monotonic()
             wh.env_dump(c)
