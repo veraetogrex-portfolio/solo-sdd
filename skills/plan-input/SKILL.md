@@ -20,7 +20,7 @@ The result is one Markdown file that `/spec-plan` reads without this chat, and t
 4. **Done or planned.** Check every item, decided or not, against the target repository:
    - Done: a commit of `git -C <target> log` changes the item's named file and its subject or diff carries the item's edit (`git log --oneline -- <file>`, `git show <hash>`). A commit whose message only mentions the item's words does not close it. A file a commit deleted while closing the item counts as done, not as missing.
    - Planned: take the ids from `solo-sdd list --json` in the target (it prints ids and counts, no text), then read `solo-sdd/changes/<id>/proposal.md` and `tasks.md` of each; a change whose text names the item's file and edit covers it.
-5. **Checks of a decided item.** Every named file exists in the target; a quoted line is still there as a fixed string (`grep -nF -- '<line>' <file>`). A failure puts the item under `Not checked` with its reason: `no file named`, the missing path, `line not found: <line>`, or `check could not run: <command>` when a `git`, `grep` or `solo-sdd` call exits with an error or is missing. A failed call is never taken for an empty answer: an item whose done or planned check could not run is not planned.
+5. **Checks of a decided item.** Every named file exists in the target; a quoted line is still there as a fixed string (`grep -nF -- '<line>' <file>`). A failure puts the item under `Not checked` with its reason: `no file named`, the missing path, `line not found: <line>`, or `check could not run: <command>` when a `git` or `solo-sdd` call exits other than 0, `grep` exits 2 or more (1 is only no match), or a command is missing. A failed call is never taken for an empty answer: an item whose done or planned check could not run is not planned.
 6. **Each letter section:**
    - `Decision`: the owner's words quoted verbatim, with the date.
    - `Facts`: date, session id (last 6 characters) or chat link, a quote of at most 15 words, counts. Only what was observed; a guess is marked as one.
@@ -52,6 +52,7 @@ The document is self-contained: the changes are planned from it. Source: <the re
 Suggested slicing: <A+B together, C, D (light), ...>
 
 ## A. <title> (decision: "<owner's words>", <date>)
+- Decision: "<owner's words>", <date>
 - Facts: ...
 - Where: ...
 - What: ...

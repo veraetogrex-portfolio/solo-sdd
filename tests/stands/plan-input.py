@@ -119,10 +119,10 @@ def base():
 
 
 def prompt(skill, target, review, extra=""):
-    return ("The skill you follow, whole:\n\n" + skill + "\n\nThe target repository is `%s`, the review is `%s`.%s\n\n"
-            "Do not read anything under `tests/stands/plan-input` or a `plan-input-skill` change folder of the "
-            "solo-sdd repository.\n\nThe owner's message: make an input for spec-plan from the review\n"
-            % (target, review, extra))
+    where = "the review is `%s`" % review if review else "the review is in the owner's message, with no file"
+    return ("The skill you follow, whole:\n\n" + skill + "\n\nThe target repository is `%s`, %s.%s\n\n"
+            "Do not read anything of the solo-sdd repository: the skill is above.\n\n"
+            "The owner's message: make an input for spec-plan from the review\n" % (target, where, extra))
 
 
 def prepare():
@@ -153,6 +153,19 @@ def prepare():
         git(target, "commit", "-qam", SUBJECT_C, check=True)
         git(target, "rm", "-q", "legacy.py", check=True)
         git(target, "commit", "-qm", SUBJECT_G, check=True)
+        locked = tmp / "locked"
+        locked.mkdir()
+        git(locked, "init", "-q", check=True)
+        p = subprocess.run([sys.executable, "-m", "solo_sdd", "init", "--yes"], cwd=locked, env=env,
+                           capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=120)
+        if p.returncode:
+            raise RuntimeError("solo-sdd init: " + (p.stdout + p.stderr).strip())
+        (locked / "app.py").write_text(APP, encoding="utf-8")
+        (locked / "solo-sdd/changes").mkdir(exist_ok=True)
+        (locked / "solo-sdd/changes/.keep").write_text("", encoding="utf-8")
+        git(locked, "add", "-A", check=True)
+        git(locked, "commit", "-qm", "start", check=True)
+        (tmp / "home").mkdir()
         for name, use_git in (("plain", True), ("bare", False)):
             (tmp / name).mkdir()
             (tmp / name / "app.py").write_text(APP, encoding="utf-8")
@@ -170,18 +183,22 @@ def prepare():
                 ("inside", target, target / "docs/review.md", " Save inputs in `%s`." % (tmp / "inputs")),
                 ("plain-prompt", tmp / "plain", tmp / "notes/review.md", ""),
                 ("bare-prompt", tmp / "bare", tmp / "notes/review.md", ""),
-                ("allout-prompt", target, tmp / "allout/review.md", "")):
+                ("allout-prompt", target, tmp / "allout/review.md", ""),
+                ("locked-prompt", locked, tmp / "notes/review.md", ""),
+                ("chat-prompt", target, None, " For this task `~` is `%s`.\n\nThe review:\n\n%s" % (tmp / "home", REVIEW))):
             (tmp / (name + ".md")).write_text(prompt(skill, tgt, review, extra), encoding="utf-8")
         files = walk(tmp) + [LIST]
         (tmp / LIST).write_text("".join(f + "\n" for f in sorted(files)), encoding="utf-8")
+        (locked / "solo-sdd/changes").chmod(0)
     except BaseException:
+        unlock(tmp)
         shutil.rmtree(tmp, ignore_errors=True)
         raise
     finally:
         shutil.rmtree(home, ignore_errors=True)
-    for name in ("target", "plain", "bare", "notes", "inputs", "allout"):
+    for name in ("target", "plain", "bare", "notes", "inputs", "allout", "locked", "home"):
         print("%s: %s" % (name, tmp / name))
-    for name in ("prompt", "inside", "plain-prompt", "bare-prompt", "allout-prompt"):
+    for name in ("prompt", "inside", "plain-prompt", "bare-prompt", "allout-prompt", "locked-prompt", "chat-prompt"):
         print("%s: %s" % (name, tmp / (name + ".md")))
 
 
@@ -192,8 +209,16 @@ def stand_of(folder):
     return p
 
 
+def unlock(tmp):
+    """Give back the read bit `prepare` took from `locked/solo-sdd/changes`, so the folder can be read and removed."""
+    changes = pathlib.Path(tmp) / "locked/solo-sdd/changes"
+    if changes.is_dir() and not changes.is_symlink():
+        changes.chmod(0o755)
+
+
 def clean(folder):
     p = stand_of(folder)
+    unlock(p)
     shutil.rmtree(p)
     print("removed %s" % p)
 
@@ -287,12 +312,14 @@ def items_of(kind, head, body):
 
 def counts(text):
     """{label: set of numbers} the text gives for each section."""
-    flat = " ".join(lines(text)).casefold()
     out = {}
     for label in ("done", "planned", "not checked", "not decided"):
         pre = r"(?:already\s+)?" if label in ("done", "planned") else ""
-        got = re.findall(NUM + r"\s+(?:items?\s+)?(?:(?:are|were|is)\s+)?" + pre + re.escape(label) + r"\b", flat)
-        got += re.findall(r"\b" + pre + re.escape(label) + r"\b\s*(?:items?)?[\s:|(\-–—=]*" + NUM, flat)
+        got = []
+        for line in lines(text):  # line by line: "planned: 0" and "Not checked: 1" on two lines are not "0 not checked"
+            line = line.casefold()
+            got += re.findall(NUM + r"\s+(?:items?\s+)?(?:(?:are|were|is)\s+)?" + pre + re.escape(label) + r"\b", line)
+            got += re.findall(r"\b" + pre + re.escape(label) + r"\b\s*(?:items?)?[\s:|(\-–—=]*" + NUM, line)
         out[label] = {int(n) if n.isdigit() else WORDS[n] for n in got}
     return out
 
@@ -306,29 +333,44 @@ def fill(text, target, inp, hashes):
             .replace("{hash-c}", hashes["C"][:7]).replace("{hash-g}", hashes["G"][:7]))
 
 
+def short(full, text):
+    return any(re.search(r"\b" + full[:n] + r"\b", text) for n in range(7, 41))
+
+
+def names_path(path, text):
+    """The text names the path itself, printed or resolved, not a path under it."""
+    return any(re.search(re.escape(t) + r"(?![\w/-])", text) for t in forms(path))
+
+
 def launch(text, target, inp):
     head = "\n".join(lines(text)[:10])
-    return (any(t in head for t in forms(target)) and "/spec-dispatch" in head
+    return (names_path(target, head) and "/spec-dispatch" in head
             and any(re.search(r"/spec-plan\s+\"?" + re.escape(f) + "\"?", head) for f in forms(inp)))
 
 
-def grade(stand, reply, folder):
-    stand = stand_of(stand)
-    target = stand / "target"
-    inp = new_md(stand, folder)
+def commit_hashes(target):
     hashes = {}
     for key, subject in (("C", SUBJECT_C), ("G", SUBJECT_G)):
         h = git(target, "log", "--format=%H", "--fixed-strings", "--grep=" + subject)
         if not h or not h.split():
             fail("no commit %r in %s" % (subject, target))
         hashes[key] = h.split()[0]
+    return hashes
+
+
+def grade(stand, reply, folder):
+    stand = stand_of(stand)
+    target = stand / "target"
+    inp = new_md(stand, folder)
+    hashes = commit_hashes(target)
     reply_text = fill(read_text(reply), target, inp, hashes)
     text = fill(read_text(inp), target, inp, hashes)
     secs = sections(text)
     where = {k: [] for k in KEYS}
     for kind, head, body in secs:
-        for k in items_of(kind, head, body):
-            where[k].append(kind)
+        if kind != "other":  # the title, launch lines, source and slicing hint place no item
+            for k in items_of(kind, head, body):
+                where[k].append(kind)
     letters = [(head, body) for kind, head, body in secs if kind == "letter"]
     first_letter = next((i for i, raw in enumerate(text.splitlines()) if re.match(r"\s*#+\s", raw)
                          and LETTER.match(norm(raw))), None)
@@ -339,12 +381,15 @@ def grade(stand, reply, folder):
         return where[key] and set(where[key]) == {kind}
 
     def hashed(key):
-        body = named.get("already done", "")
-        return any(re.search(r"\b" + hashes[key][:n] + r"\b", body) for n in range(7, 41))
+        """Every line of `Already done` that names the item holds its own commit's short hash, not the other's."""
+        rows = [l for l in named.get("already done", "").splitlines() if has(key, l)]
+        other = hashes["G" if key == "C" else "C"]
+        return bool(rows) and all(short(hashes[key], l) and not short(other, l) for l in rows)
 
     decided = (len(letters) == 2 and sorted(k for k in KEYS if "letter" in where[k]) == ["A", "F"]
                and all("2026-11-21" in head + body and all(re.search(r"(?m)^" + f + r"\s*:", body)
                                                            for f in ("Facts", "Where", "What", "Check"))
+                       and re.search(r"yes,\s*all", head + body, re.I)
                        for head, body in letters))
     c = counts(reply_text)
     print("outside target: %s" % yes(not new_files(stand, "target")))
@@ -356,21 +401,28 @@ def grade(stand, reply, folder):
     print("already planned: %s" % yes(only("B", "already planned") and "log-retries" in named.get("already planned", "")))
     print("not checked: %s" % yes(only("E", "not checked")))
     print("not decided: %s" % yes("not decided" in where["D"] and "letter" not in where["D"]))
-    print("report counts: %s" % yes(2 in c["done"] and 1 in c["planned"] and 1 in c["not checked"]
-                                    and 1 in c["not decided"]))
+    print("report counts: %s" % yes(c["done"] == {2} and c["planned"] <= {1, 2} and 1 in c["planned"]
+                                    and c["not checked"] == {1} and c["not decided"] == {1}))
 
 
 def no_input(stand):
     return not [f for f in new_files(stand) if f.endswith(".md")]
 
 
+NOT_GIT = re.compile(r"\b(?:not|isn't|no)\s+(?:a\s+|inside\s+a\s+)?git\b|\bwithout\s+git\b", re.I)
+NO_TREE = re.compile(r"\b(?:no|without|missing|lacks|has\s+no)\s+(?:a\s+)?solo-sdd/?|solo-sdd/?\s+(?:tree\s+)?"
+                     r"(?:is\s+)?(?:missing|absent|not\s+found)", re.I)
+
+
 def grade_refusal(stand, reply, target):
     stand = stand_of(stand)
     text = read_text(reply)
     flat = " ".join(lines(text))
+    target = pathlib.Path(target)
+    is_git = git(target, "rev-parse", "--show-toplevel") is not None
+    reason = (NO_TREE.search(flat) and not NOT_GIT.search(flat)) if is_git else NOT_GIT.search(flat)
     print("no input: %s" % yes(no_input(stand)))
-    print("reason named: %s" % yes((re.search(r"solo-sdd/?", flat) or re.search(r"\bgit\b", flat, re.I))
-                                   and any(t in flat for t in forms(pathlib.Path(target)))))
+    print("reason named: %s" % yes(reason and names_path(target, flat) and not any(counts(text).values())))
 
 
 def grade_nothing(stand, reply):
@@ -378,9 +430,29 @@ def grade_nothing(stand, reply):
     text = read_text(reply)
     c = counts(text)
     print("no input: %s" % yes(no_input(stand)))
+    hashes = commit_hashes(stand / "target")
     print("nothing to plan: %s" % yes(re.search(r"nothing\s+(?:left\s+)?to\s+plan", " ".join(lines(text)), re.I)
-                                      and 1 in c["done"] and 1 in c["not checked"] and 1 in c["not decided"]
-                                      and "worker.py" in text))
+                                      and c["done"] == {1} and c["not checked"] == {1} and c["not decided"] == {1}
+                                      and short(hashes["C"], text) and "worker.py" in text
+                                      and re.search(KEYS["D"], text, re.I)))
+
+
+def grade_unchecked(stand, reply):
+    stand = stand_of(stand)
+    text = " ".join(lines(read_text(reply)))
+    print("no input: %s" % yes(no_input(stand)))
+    print("check named: %s" % yes(re.search(r"check could not run:?\s*solo-sdd list", text, re.I)))
+
+
+def grade_chat(stand, reply):
+    stand = stand_of(stand)
+    read_text(reply)
+    new = [f for f in new_files(stand) if f.endswith(".md")]
+    home = stand / "home"
+    ok = (len(new) == 1 and not (stand / new[0]).is_symlink()
+          and re.fullmatch(r"home/Documents/plan-input/\d{4}-\d{2}-\d{2} input for spec-plan - chat\.md", new[0])
+          and (home / "Documents/plan-input").is_dir())
+    print("chat input: %s" % yes(ok))
 
 
 def tool_inputs(node):
@@ -395,6 +467,14 @@ def tool_inputs(node):
             yield from tool_inputs(v)
 
 
+REACH = ("tests/stands", "plan-input-skill", "expected-input", "expected-reply", "wrong-input", "wrong-transcript")
+
+
+def reached(text):
+    """A tool input that names the solo-sdd repository, its stands or a reference: the grading is in reach."""
+    return any(r in text for r in REACH) or any(f in text for f in forms(REPO))
+
+
 def grade_confined(transcript):
     text = read_text(transcript, 20 * MB)
     bad = False
@@ -405,7 +485,7 @@ def grade_confined(transcript):
             record = json.loads(line)
         except ValueError:
             fail("%s line %d is not one whole JSON record" % (transcript, n))
-        bad = bad or any("tests/stands/plan-input" in t or "plan-input-skill" in t for t in tool_inputs(record))
+        bad = bad or any(reached(t) for t in tool_inputs(record))
     print("grading out of reach: %s" % yes(not bad))
 
 
@@ -442,8 +522,12 @@ def selftest():
     stand = pathlib.Path(paths["target"]).parent
     scratch = pathlib.Path(tempfile.mkdtemp(prefix="plan-input-self."))
     try:
+        p = subprocess.run([sys.executable, "-m", "solo_sdd", "list", "--json"], cwd=paths["locked"],
+                           env=dict(os.environ, PYTHONPATH=str(REPO)), capture_output=True, text=True,
+                           stdin=subprocess.DEVNULL, timeout=120)
+        check("solo-sdd list --json fails in locked/", p.returncode != 0)
         notes = pathlib.Path(paths["notes"])
-        name = "2026-11-23 input for spec-plan - review.md"
+        name ="2026-11-23 input for spec-plan - review.md"
         nine = ["outside target: yes", "launch lines: yes", "plan line: yes", "decided items: yes",
                 "already done: yes", "already planned: yes", "not checked: yes", "not decided: yes",
                 "report counts: yes"]
@@ -466,6 +550,24 @@ def selftest():
         grades("a file written in the target", ["--grade", stand, REFS / "expected-reply.md", notes],
                ["outside target: no"])
         (pathlib.Path(paths["target"]) / "plan.md").unlink()
+        ref = (REFS / "expected-input.md").read_text(encoding="utf-8")
+        reply = (REFS / "expected-reply.md").read_text(encoding="utf-8")
+        launch_line = "1. Open a new Claude Code (or Codex) session in the folder `{target}`.\n"
+        for label, text, rep, want in (
+                ("no quoted decision", ref.replace('decision: "yes, all", ', ""), reply, "decided items: no"),
+                ("the two hashes swapped", ref.replace("{hash-c}", "{tmp}").replace("{hash-g}", "{hash-c}")
+                 .replace("{tmp}", "{hash-g}"), reply, "already done: no"),
+                ("an item named in the slicing hint", ref.replace("Suggested slicing: A and B as two light changes.",
+                 "Suggested slicing: A and B as two light changes; legacy.py is already gone."), reply,
+                 "already done: yes"),
+                ("the folder line only as a source path", ref.replace(launch_line, "").replace(
+                    "Source: the weekly review", "Source: {target}/docs/review.md, the weekly review"), reply,
+                 "launch lines: no"),
+                ("conflicting counts", ref, reply.replace("2 already done", "2 already done, 3 done"),
+                 "report counts: no")):
+            (notes / name).write_text(text, encoding="utf-8")
+            (scratch / "reply.md").write_text(rep, encoding="utf-8")
+            grades(label, ["--grade", stand, scratch / "reply.md", notes], [want])
         for label, data in (("an empty reply", b"  \n"), ("a non-UTF-8 reply", b"\xff\xfe bad"),
                             ("an over 1 MB reply", b"a" * (MB + 1))):
             (scratch / "reply.md").write_bytes(data)
@@ -480,6 +582,11 @@ def selftest():
         (scratch / "change.jsonl").write_text(json.dumps(ok) + "\n" + json.dumps(rec) + "\n", encoding="utf-8")
         grades("a transcript reading the change folder", ["--grade-confined", scratch / "change.jsonl"],
                ["grading out of reach: no"])
+        for label, inp in (("a Grep of the repository", {"pattern": "Already done", "path": str(REPO)}),
+                           ("a Glob of a reference name", {"pattern": "**/expected-input.md", "path": "/"})):
+            hit = {"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Grep", "input": inp}]}}
+            (scratch / "reach.jsonl").write_text(json.dumps(hit) + "\n", encoding="utf-8")
+            grades(label, ["--grade-confined", scratch / "reach.jsonl"], ["grading out of reach: no"])
         (scratch / "ok.jsonl").write_text(json.dumps(ok) + "\n", encoding="utf-8")
         grades("a confined transcript", ["--grade-confined", scratch / "ok.jsonl"], ["grading out of reach: yes"])
         (scratch / "cut.jsonl").write_text(json.dumps(ok) + "\n" + json.dumps(rec)[:40] + "\n", encoding="utf-8")
@@ -489,11 +596,40 @@ def selftest():
                                             encoding="utf-8")
         grades("a refusal reply", ["--grade-refusal", stand, scratch / "refusal.md", plain],
                ["no input: yes", "reason named: yes"])
-        (scratch / "nothing.md").write_text(
-            "Nothing to plan.\n\n- Already done: 1 (C, abc1234)\n- Already planned: 0\n"
-            "- Not checked: 1 (E: `worker.py` is missing)\n- Not decided: 1 (D)\n", encoding="utf-8")
+        for label, text, folder in (("the wrong reason", "`%s` is not a git repository.\n" % plain, plain),
+                                    ("a refusal with counts", "`%s` has no `solo-sdd/` tree. Already done: 1.\n" % plain,
+                                     plain),
+                                    ("a subfolder named", "`%s/app.py`: no `solo-sdd/` tree.\n" % plain, plain)):
+            (scratch / "refusal.md").write_text(text, encoding="utf-8")
+            grades(label, ["--grade-refusal", stand, scratch / "refusal.md", folder], ["reason named: no"])
+        bare = paths["bare"]
+        (scratch / "refusal.md").write_text("Stopped: `%s` is not a git repository.\n" % bare, encoding="utf-8")
+        grades("a refusal for a folder without git", ["--grade-refusal", stand, scratch / "refusal.md", bare],
+               ["no input: yes", "reason named: yes"])
+        hash_c = git(paths["target"], "log", "--format=%h", "--fixed-strings", "--grep=" + SUBJECT_C).split()[0]
+        nothing = ("Nothing to plan.\n\n- Already done: 1 (C, retry once on timeout, %s)\n- Already planned: 0\n"
+                   "- Not checked: 1 (E: `worker.py` is missing)\n- Not decided: 1 (D, switch to async)\n" % hash_c)
+        (scratch / "nothing.md").write_text(nothing, encoding="utf-8")
         grades("a nothing-to-plan reply", ["--grade-nothing", stand, scratch / "nothing.md"],
                ["no input: yes", "nothing to plan: yes"])
+        (scratch / "bare-nothing.md").write_text(nothing.replace(hash_c, "the commit"), encoding="utf-8")
+        grades("a nothing-to-plan reply without the hash", ["--grade-nothing", stand, scratch / "bare-nothing.md"],
+               ["nothing to plan: no"])
+        (scratch / "unchecked.md").write_text("Nothing to plan.\n\n- Not checked: 5 (check could not run: "
+                                              "`solo-sdd list --json`)\n", encoding="utf-8")
+        grades("a reply naming the failed check", ["--grade-unchecked", stand, scratch / "unchecked.md"],
+               ["no input: yes", "check named: yes"])
+        (scratch / "unchecked.md").write_text("Nothing to plan: no open changes.\n", encoding="utf-8")
+        grades("a failed call taken for an empty answer", ["--grade-unchecked", stand, scratch / "unchecked.md"],
+               ["check named: no"])
+        chat = pathlib.Path(paths["home"]) / "Documents/plan-input"
+        chat.mkdir(parents=True)
+        (chat / "2026-11-23 input for spec-plan - chat.md").write_text("x\n", encoding="utf-8")
+        grades("an input from the chat", ["--grade-chat", stand, scratch / "unchecked.md"], ["chat input: yes"])
+        (chat / "2026-11-23 input for spec-plan - chat.md").rename(chat / "2026-11-23 input for spec-plan.md")
+        grades("a chat input with another name", ["--grade-chat", stand, scratch / "unchecked.md"],
+               ["chat input: no"])
+        shutil.rmtree(pathlib.Path(paths["home"]) / "Documents")
         (pathlib.Path(paths["inputs"]) / "x.md").write_text("x\n", encoding="utf-8")
         grades("an input written anyway", ["--grade-nothing", stand, scratch / "nothing.md"], ["no input: no"])
         refused("a wrong argument", ["--grade", stand])
@@ -526,8 +662,13 @@ if __name__ == "__main__":
         grade_refusal(*args[1:])
     elif len(args) == 3 and args[0] == "--grade-nothing":
         grade_nothing(*args[1:])
+    elif len(args) == 3 and args[0] == "--grade-unchecked":
+        grade_unchecked(*args[1:])
+    elif len(args) == 3 and args[0] == "--grade-chat":
+        grade_chat(*args[1:])
     elif len(args) == 2 and args[0] == "--grade-confined":
         grade_confined(args[1])
     else:
         fail("usage: plan-input.py prepare | clean <folder> | selftest | --grade <stand> <reply> <input folder> | "
-             "--grade-refusal <stand> <reply> <target> | --grade-nothing <stand> <reply> | --grade-confined <transcript>")
+             "--grade-refusal <stand> <reply> <target> | --grade-nothing <stand> <reply> | --grade-unchecked <stand> <reply> | "
+             "--grade-chat <stand> <reply> | --grade-confined <transcript>")
