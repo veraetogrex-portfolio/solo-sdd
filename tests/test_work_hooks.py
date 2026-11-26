@@ -2431,7 +2431,8 @@ class DirectMerge(HookCase):
         assert merge_denied("gh api -X PUT 'repos/o/r/pulls/5/merge?merge_method=squash'"), "a query string after the endpoint"
         assert merge_denied("FOO='a b' gh pr merge 5 --squash"), "an assignment with a quoted value is not the program"
         assert merge_denied('git commit -m msg -m "$(gh pr merge 5)"'), "a substitution in a message runs"
-        for c in ("( gh pr merge 5 )", "{ gh pr merge 5; }", "! gh pr merge 5", ">/dev/null gh pr merge 5", "2>&1 gh pr merge 5"):
+        for c in ("( gh pr merge 5 )", "{ gh pr merge 5; }", "! gh pr merge 5", ">/dev/null gh pr merge 5", "2>&1 gh pr merge 5",
+                  'bash -c ">x; gh pr merge 5"', "eval '>x; gh pr merge 5'", 'bash -c ">/dev/null gh pr merge 5"'):
             assert merge_denied(c), "a group, a negation or a redirection before the program: " + c
 
     def test_direct_merge_refused_in_a_process_tree_no_tree(self):
@@ -2511,6 +2512,8 @@ HISTORY_REFUSED = ("git push --force", "git push -f origin x", "git push -fu ori
                    "( git push -f )", "{ git push -f; }", "cd /tmp && { git push -f origin x; }", "! git push -f", "time ( git push -f )",
                    "( git reset --hard )", ">/dev/null git push -f", "2>&1 git push -f", "> out.log git reset --hard",
                    "git --attr-source HEAD push -f", "git --config-env x.y=HOME push -f",
+                   'bash -c ">x; git push -f"', "eval '>x; git reset --hard'", 'bash -c ">/dev/null git push -f"',
+                   "sh -c '2>&1 git reset --hard'",
                    # A hidden run
                    'bash -c "git push -f"', "eval git push --force", "echo $(git push -f)",
                    # The hard forms

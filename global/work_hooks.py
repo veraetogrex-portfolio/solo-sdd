@@ -2639,10 +2639,11 @@ def gh_merges(cmd, depth=0, subs=None, match=gh_merge_words):
         return True
     for part in split_cmd(cmd)[::2]:
         raw = split_words(part)
-        # a redirection (>/dev/null, 2>&1, `> out` with its target) is not a word of the command, wherever it stands
+        # a redirection (>/dev/null, 2>&1, `> out` with its target) is not a word of the command, wherever it stands; a
+        # word with whitespace is a quoted string (a -c or eval text, read again below), never a redirection
         kept, skip = [], False
         for y in raw:
-            if skip or REDIR_WORD.match(y):
+            if skip or REDIR_WORD.match(y) and not re.search(r"\s", y):
                 skip = not skip and bool(REDIR_WORD.fullmatch(y))
                 continue
             kept.append(y)
