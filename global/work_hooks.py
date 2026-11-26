@@ -2200,27 +2200,29 @@ def dquoted(t, i):
 
 
 def shell_segments(t):
-    """The simple commands of t as the shell splits them: [(words as (start, end) spans, separator after)], or None when
+    """The simple commands of t as the shell splits them: [(words as (start, end) spans, separator after, start)], or None when
     the quoting cannot be read (an open quote, a trailing backslash, an unclosed substitution). A redirection's fd and
     target are no words: `env A.B=1 2>&1 > /tmp/x` has the words env and A.B=1."""
-    segs, words, start, j, n, redir = [], [], None, 0, len(t), False
+    segs, words, start, j, n, redir, begin = [], [], None, 0, len(t), False, 0
     while j < n:
         c, nxt = t[j], t[j + 1:j + 2]
         sep = None
-        if c in "\n;()|" or c == "&" and not (j and t[j - 1] in "<>") and nxt != ">":
+        if c == "|" and re.search(r">&?$", t[max(0, j - 2):j]):
+            pass  # `>|`, `>>|`, `&>|`, `>&|`: the clobber redirection, no pipe
+        elif c in "\n;()|" or c == "&" and not (j and t[j - 1] in "<>") and nxt != ">":
             sep = t[j:j + 2] if t[j:j + 2] in ("||", "&&", ";;", "|&") else c
         if sep or c in " \t" or c in "<>" and nxt != "(":
             if start is not None:
-                if redir or c in "<>" and re.fullmatch(r"\d+|&", t[start:j]):
+                if redir or c in "<>" and re.fullmatch(r"\d+|&|\{\w+\}", t[start:j]):  # a target, an fd: `2>`, `&>`, `{fd}>`
                     redir = False
                 else:
                     words.append((start, j))
                 start = None
             redir = c in "<>" or redir and not sep
             if sep:
-                segs.append((words, sep))  # an empty one keeps the separator: `(grep x f) | sh`
-                words = []
-            j += len(sep) if sep else 1
+                segs.append((words, sep, begin))  # an empty one keeps the separator: `(grep x f) | sh`
+                words, begin = [], j + len(sep)
+            j += len(sep) if sep else 2 if c in "<>" and nxt == "&" else 1  # `>&` and `<&` are one operator: `>& 2`
             continue
         if start is None:
             start = j
@@ -2238,7 +2240,7 @@ def shell_segments(t):
             return None
     if start is not None and not redir:
         words.append((start, n))
-    return segs + [(words, "")] if words else segs
+    return segs + [(words, "", begin)] if words else segs
 
 
 def one_quote(x):
@@ -2266,7 +2268,9 @@ def dump_text(raw):
     piped = ">(" in raw or any(segs[k - 1][1] in ("|", "|&") and os.path.basename(flat(raw[slice(*segs[k][0][0])]) if segs[k][0] else "")
                                not in readers for k in range(1, len(segs)))
     cuts = []
-    for k, (spans, _) in enumerate(segs):
+    # a redirection before the program word (zsh `>!`, `>&!` included) may hide its grammar: that segment is not cut
+    redirected = lambda begin, end: re.search(r"[<>]", raw[begin:end])
+    for k, (spans, _, begin) in enumerate(segs):
         w = [raw[s:e] for s, e in spans]
         f = [flat(x) for x in w]
         e = next((i for i, x in enumerate(f) if os.path.basename(x) == "env"), None)
@@ -2278,7 +2282,7 @@ def dump_text(raw):
                     j += 1
                 elif f[j] in ENV_VALUED and j + 1 < len(w) and not dump(w[j + 1]):
                     j += 2
-                elif not f[j].startswith("-"):
+                elif not f[j].startswith("-") and not redirected(begin, spans[j][1]):
                     cuts += spans[e:j + 1]
                     p = j
                     break
@@ -2286,7 +2290,7 @@ def dump_text(raw):
                     break
         else:
             p = cmd_start(list(f))
-            if any(x.startswith("-") for x in f[:p]):
+            if any(x.startswith("-") for x in f[:p]) or p < len(f) and redirected(begin, spans[p][1]):
                 continue
         prog = os.path.basename(f[p]) if p < len(f) else ""
         if piped or prog not in ("grep", "rg") or prog == "rg" and any(x.startswith(("--pre", "--hostname-bin")) for x in f[p + 1:]):
