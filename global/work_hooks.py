@@ -2110,7 +2110,7 @@ def eval_text(parts, k, text, depth=0):
         return text
     sub = split_cmd(text)
     j = next((j for j in heads(sub) if reads_input(part_words(sub[j])[0], depth)), None)
-    if j is None and any(runs_stdin(sub, x) for x in range(0, len(sub), 2)):  # `echo env | sh -c 'true; (true; sh)'`: the
+    if j is None and (any(runs_stdin(sub, x) for x in range(0, len(sub), 2)) or case_reads(sub)):  # `echo env | sh -c 'true; (true; sh)'`: the
         j = next((j for j in heads(sub) if opens(words_of(sub[j]))), None)  # compound's commands read the text's stdin
     if j is not None:
         sub[j] = "echo %s | %s" % (shlex.quote(t), sub[j])
@@ -2231,54 +2231,68 @@ def opens(w):
     return any(x[:1] == "(" or x in COMPOUND for x in w)
 
 
+STDIN_FROM_FILE = re.compile(r"(?:^|[^\d<>&])0?<(?![<&(])\s*(?!/dev/stdin\b)")  # `sh < x`, `0<x`; not <&0, 2<x, <<, <(
+
+
 def runs_stdin(parts, k, depth=0):
-    """Part k runs a program that reads commands from its stdin: a shell without a script or with -s and no input redirection,
-    or an eval or a shell's -c string whose text has such a part (past three levels any). The part is read as the walk reads
-    a command (part_words, wrapper_values_cut, cmd_start, handed_text) with its closing brackets cut from its end; in a case
-    item the program may also follow the pattern's `)`."""
-    raw = wrapper_values_cut(part_words(parts[k])[0])
+    """Part k runs a program that reads commands from its stdin: a shell without a script or with -s whose stdin is not
+    redirected from a file, or an eval or a shell's -c string whose text has such a part (past three levels any). The part is
+    read as the walk reads a command (part_words, wrapper_values_cut, cmd_start, handed_text) with its unquoted closing
+    brackets, and an fd glued after one, cut from its end."""
+    w = wrapper_values_cut(part_words(parts[k])[0])
     # only the unquoted ones: a quoted or escaped `')'` is a script
-    closes = len(re.findall(r"[)}]", re.sub(r"\\.|'[^']*'|\"(?:\\.|[^\"\\])*\"", "", parts[k])))
-    item = first_word(parts[k]) == "case" or k >= 4 and parts[k - 3:k] == [";", "", ";"]
-    starts = [0] + ([next((j + 1 for j, x in enumerate(raw) if x.endswith(")")), len(raw))] if item else [])
-    for start in starts:
-        w, budget = list(raw[start:]), closes
-        while w and budget:  # `( true; sh )`, `(sh)2>/dev/null`: a closing bracket and the fd glued after it are no argument
-            m = re.search(r"[)}]\d*$", w[-1])
-            if not m:
+    budget = len(re.findall(r"[)}]", re.sub(r"\\.|'[^']*'|\"(?:\\.|[^\"\\])*\"", "", parts[k])))
+    while w and budget:  # `( true; sh )`, `(sh)2>/dev/null`: a closing bracket and the fd glued after it are no argument
+        x, end = w[-1], len(w[-1])
+        while budget:
+            e = end
+            while e and x[e - 1].isdigit():
+                e -= 1
+            if not e or x[e - 1] not in ")}":
                 break
-            w[-1], budget = w[-1][:m.start()], budget - 1
-            if not w[-1]:
-                w.pop()
-        i = cmd_start(w, extra=("coproc",))
-        p = os.path.basename(w[i]) if i < len(w) else ""
-        text = handed_text(w, i)
-        if text is not None:
-            sub = split_cmd(text)
-            if depth >= 3 or any(runs_stdin(sub, j, depth + 1) for j in range(0, len(sub), 2)):
-                return True
-        elif p in SHELLS and shell_reads_stdin(w, i)[1] and not re.search(r"(?<![<>])<(?!\()", protect_quoted(parts[k])):
-            return True
-    return False
+            end, budget = e - 1, budget - 1
+        if end:
+            w[-1] = x[:end]
+            break
+        w.pop()
+    i = cmd_start(w, extra=("coproc",))
+    p = os.path.basename(w[i]) if i < len(w) else ""
+    text = handed_text(w, i)
+    if text is not None:
+        sub = split_cmd(text)
+        return depth >= 3 or any(runs_stdin(sub, j, depth + 1) for j in range(0, len(sub), 2)) or case_reads(sub)
+    return p in SHELLS and shell_reads_stdin(w, i)[1] and not STDIN_FROM_FILE.search(protect_quoted(parts[k]))
+
+
+def case_span(parts):
+    """The parts of a case's span, from the first part that runs case to the last one holding esac (to the end without one)."""
+    runs = [k for k in range(0, len(parts), 2) if first_word(parts[k]) == "case"]
+    if not runs:
+        return []
+    last = max([k for k in range(runs[0], len(parts), 2) if "esac" in words_of(parts[k])] or [len(parts) - 1])
+    return parts[runs[0]:last + 1]
+
+
+def case_reads(parts):
+    """A word of a case's span names a shell or eval: in its items the program follows a pattern's `)`, after `;;`, `;&`,
+    `;;&` or a newline, so any such word counts as a reader."""
+    return any(os.path.basename(y) in SHELLS + ("eval",)
+               for x in case_span(parts)[::2] for z in split_words(x) for y in re.split(r"[()|;&]", z))
 
 
 def unread(parts):
     """The text of parts the pipe walk does not read, so every name in it counts: all of it when a pipe meets a compound
     command (a part after `|` with a word starting with `(` or an opening keyword, or a part before `|` with a word ending
-    in `)` or a closing keyword) and a part runs a program that reads commands from its stdin (runs_stdin), as a compound's
-    commands share its stdin and output; and from the first part that runs case to the last esac, as a pattern's `)` and
-    `|` hide the program after it. '' else."""
+    in `)` or a closing keyword) and a part runs a program that reads commands from its stdin (runs_stdin), or a word of a
+    case's span names a shell or eval, as a compound's commands share its stdin and output; and the span of a case, from the
+    first part that runs case to the last esac, as a pattern's `)` and `|` hide the program after it. '' else."""
     words = [words_of(parts[k]) for k in range(0, len(parts), 2)]
     ends = lambda w: any(re.search(r"\)\d*$", x) and not x.endswith("()") or x in COMPOUND_END for x in w)
     piped = any(parts[2 * n + 1:2 * n + 2] == ["|"] and (ends(w) or n + 1 < len(words) and opens(words[n + 1]))
                 for n, w in enumerate(words))
-    if piped and any(runs_stdin(parts, k) for k in range(0, len(parts), 2)):
+    if piped and (any(runs_stdin(parts, k) for k in range(0, len(parts), 2)) or case_reads(parts)):
         return "".join(parts)
-    runs = [n for n, w in enumerate(words) if first_word(parts[2 * n]) == "case"]
-    if not runs:
-        return ""
-    last = max([n for n, w in enumerate(words) if n >= runs[0] and "esac" in w] or [len(words) - 1])
-    return "".join(parts[2 * runs[0]:2 * last + 1])
+    return "".join(case_span(parts))
 
 
 def env_read(cmd, depth=0):
