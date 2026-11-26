@@ -4,7 +4,7 @@ import copy, json, os, sys, time
 from solo_sdd import layout
 
 D = "CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH"
-G = 'f="$HOME/.claude/hooks/work_hooks.py"; [ -f "$f" ] || exit 0; exec /usr/bin/python3 "$f" '
+G = 'f="$HOME/.claude/hooks/work_hooks.py"; [ -f "$f" ] || exit 0; /usr/bin/python3 -c "" >/dev/null 2>&1 || exit 0; exec /usr/bin/python3 "$f" '
 P = "The owner's merge rule (solo-sdd)"
 OLD_P = "The owner's global rules (~/.claude/CLAUDE.md, section 13)"  # the prefix of earlier versions: replaced on a run
 RULE = (P + ": Claude merges its own verified pull requests in the owner's repositories with sdd-pr.py merge or sdd-pr.py land, "
@@ -16,7 +16,7 @@ RULE = (P + ": Claude merges its own verified pull requests in the owner's repos
 STATUS = {"type": "command", "command": G + "status", "refreshInterval": 5}
 GUARD = {"matcher": "Bash|Monitor", "hooks": [{"type": "command", "command": 'exec /usr/bin/python3 "$HOME/.claude/hooks/process-guard.py"',
                                                "timeout": 5, "onFailure": "block"}]}
-DENY = ["Bash(%s *)" % n for n in ("pkill", "killall", "kill", "osascript", "launchctl", "shutdown")] + ["Read(**/.env)"]  # holds when the guard hook fails open
+DENY = ["Bash(%s *)" % n for n in ("pkill", "killall", "kill", "osascript", "launchctl", "shutdown")] + ["Read(**/.env)"]  # holds when the guard hook passes: no work_hooks.py, no interpreter, or an error outside its secret checks
 
 
 def sandbox_read(settings):
@@ -45,7 +45,7 @@ def _need():
     need = {}
     add = lambda e, g: need.setdefault(e, []).append(g)
     add("SessionStart", {"hooks": [_cmd("context", timeout=15)]})
-    add("PreToolUse", {"matcher": "Bash|Read|Grep|Write|Edit|MultiEdit|NotebookEdit|Agent|EnterWorktree|SubagentHandback|AskUserQuestion", "hooks": [_cmd("guard", timeout=10)]})
+    add("PreToolUse", {"matcher": "Bash|Read|Grep|Write|Edit|MultiEdit|NotebookEdit|Agent|EnterWorktree|SubagentHandback|AskUserQuestion", "hooks": [_cmd("guard", timeout=10, onFailure="block")]})
     add("SubagentStart", {"hooks": [_cmd("subagent-context", timeout=10)]})
     add("PreToolUse", {"matcher": "*", "hooks": [b]})
     add("PostToolUse", {"matcher": "*", "hooks": [b]})

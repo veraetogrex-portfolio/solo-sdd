@@ -3,7 +3,9 @@
 
 Source of the requirements: analysis of sessions 2026-09-16..2026-10-15 (repeated "read agents md",
 "continue", "archive", "who will merge", "status?", secrets, expensive models).
-Any internal error lets the action through (fail-open) and is written to hook-state/errors.log.
+Any internal error lets the action through (fail-open) and is written to hook-state/errors.log, except in the
+secret checks of `guard` (guard_env_write, guard_env_read, guard_secrets_bash), the input they are built from and
+input `guard` cannot read: those secret checks fail closed and refuse the call.
 """
 import datetime
 import fnmatch
@@ -1341,7 +1343,9 @@ HEREDOC = re.compile(r"(?<![<\\])<<(?!<)(-?)\s*([\"']?)([A-Za-z_]\w*)\2")
 
 
 def split_cmd(text):
-    """Splits a command into parts on ; && || | & and newline outside quotes: [part, separator, part, ...]."""
+    """Splits a command into parts on ; && || | & and newline outside quotes: [part, separator, part, ...]. `|&` is a pipe
+    (its `&` a space at the start of the next part, so every offset into the text stays), and the newlines after a pipe
+    go into the next part: the pipeline goes on, as the shell reads it."""
     out, cur, q, i, n = [], [], None, 0, len(text)
     while i < n:
         c = text[i]
@@ -1364,6 +1368,12 @@ def split_cmd(text):
             if sep:
                 out += ["".join(cur), sep]
                 cur, i = [], i + len(sep)
+                if sep == "|":
+                    if text.startswith("&", i):
+                        cur, i = [" "], i + 1
+                    while i < n and text[i] in " \t\n":
+                        cur.append(text[i])
+                        i += 1
                 continue
         cur.append(c)
         i += 1
@@ -1620,7 +1630,10 @@ PY_VALUED = {"-W", "-X"}
 ENV_VALUED = {"-u", "--unset", "-C", "--chdir", "-P"}
 # the valued options archive_runs and env_dump skip with their values
 WRAPPER_VALUED = {"sudo": SUDO_VALUED, "env": ENV_VALUED, "caffeinate": {"-t", "-w"}, "exec": {"-a"}, "npx": {"-p", "--package"},
-                  "time": {"-o", "-f"}}
+                  "time": {"-o", "-f", "--output", "--format"}}
+# the options whose value the wrapper runs as a command (npx's also for npm exec and npm x); only archive_runs reads them
+# (env -S is a known env guard bypass)
+CMD_VALUED = {"env": {"-S", "--split-string"}, "npx": {"-c", "--call"}}
 
 
 def wrapper_values_cut(w):
@@ -1637,6 +1650,45 @@ def wrapper_values_cut(w):
             opts = WRAPPER_VALUED[name]
         elif not x.startswith("-"):
             opts = None
+    return out
+
+
+def command_values(raw, cut):
+    """The commands CMD_VALUED options of the wrappers in cut (wrapper_values_cut of raw) hand on. env: the first `-S 'x y' z`
+    as `env x y 'z'` (env reads the split words as its own arguments, so `-S '-i x'` and `-S '' x` count; the words after it
+    keep their quoting), also joined (`-S'x'`, `--split-string=x`) and at the end of a short cluster read as getopt does
+    (`-iS 'x'`); the rest of the command is in that string, so the scan stays linear. npx, and npm with exec or x: every
+    `-c`/`--call` value up to `--`, npm's options standing anywhere (`npm --prefix p exec -c x`; the last one wins in npm),
+    also `--call=x` and a short cluster ending in `c` (`-yc x`; npm reads no joined `-c…`). Known limit, kept over a
+    missed run: an argument `-c` of a program npx starts reads as npx's (`npx prettier -c 'x'`)."""
+    out, name, npm_exec = [], None, bool({"exec", "x"} & set(cut))
+    for j, x in enumerate(cut):
+        base = os.path.basename(x.lstrip("({!"))
+        if base in CMD_VALUED or base == "npm" and npm_exec:
+            name = "env" if base == "env" else "npx"
+            continue
+        if name == "npx":  # npm's own option words: the shell builtin exec's `-a` value cut does not apply to `npm exec -a`;
+            x = re.split(r"[<>)&]", raw[j], 1)[0]  # a word still ends at a glued redirection, as in archive_runs
+        if x == "--" or name == "env" and not x.startswith("-"):
+            name = None
+        if name is None or not x.startswith("-"):
+            continue
+        opts, value, nxt = CMD_VALUED[name], None, j + 2
+        word = raw[j + 1] if j + 1 < len(raw) else None
+        if x.startswith("--"):
+            if x.partition("=")[0] in opts:
+                value, nxt = (raw[j].partition("=")[2], j + 1) if "=" in x else (word, j + 2)
+        elif x in opts or name == "npx" and re.fullmatch(r"-[A-Za-z]+c", x):
+            value = word
+        elif name == "env":
+            stop = opts | WRAPPER_VALUED["env"]
+            k = next((k for k in range(1, len(x)) if "-" + x[k] in stop), None)
+            if k is not None and "-" + x[k] in opts:
+                value, nxt = (raw[j][k + 1:], j + 1) if x[k + 1:] else (word, j + 2)
+        if value is not None and name == "env":
+            return out + ["env %s %s" % (value, shlex.join(raw[nxt:]))]
+        if value:
+            out.append(value)
     return out
 
 
@@ -1682,6 +1734,14 @@ def archive_runs(cmd, depth=0):
         w = [os.path.basename(x) if os.path.basename(x) in WRAPPERS else x for x in (re.split(r"[<>)&]", y, 1)[0] for y in raw)]
         w = wrapper_values_cut(w)
         i = cmd_start(w)
+        # after a runner (npx is also a wrapper, so it may be before i) every later word is tried as the program: an option
+        # value may carry its name (uvx --from solo-sdd solo-sdd archive x), and the runner may start a wrapper or another
+        # runner (uv run env A=1 solo-sdd archive x). Known limit, kept over a missed run: an argument of another program
+        # the runner starts reads as a run (npx prettier solo-sdd archive x is refused)
+        r = next((k for k in range(min(i + 1, len(w))) if os.path.basename(w[k]).split("@")[0] in RUNNERS), None)
+        if depth < 3:  # env -S 'solo-sdd archive x', npx -c '…': the string is a command again, read with the same reach
+            for s in command_values(raw, w if r is not None else w[:i + 1]):
+                found += archive_runs(s, depth + 1)
         if i >= len(w):
             continue
         prog = os.path.basename(w[i])
@@ -1695,11 +1755,6 @@ def archive_runs(cmd, depth=0):
             if c is not None and c + 1 < len(w):
                 found += archive_runs(raw[c + 1], depth + 1)  # the -c string uncut: it is a command again
             continue
-        # after a runner (npx is also a wrapper, so it may be before i) every later word is tried as the program: an option
-        # value may carry its name (uvx --from solo-sdd solo-sdd archive x), and the runner may start a wrapper or another
-        # runner (uv run env A=1 solo-sdd archive x). Known limit, kept over a missed run: an argument of another program
-        # the runner starts reads as a run (npx prettier solo-sdd archive x is refused)
-        r = next((k for k in range(i + 1) if os.path.basename(w[k]).split("@")[0] in RUNNERS), None)
         names = [archive_name(w, k) for k in range(r + 1, len(w))] if r is not None else [archive_name(w, i)]
         found += [n for n in names if n][:1]
     return found
@@ -2003,13 +2058,33 @@ def heads(parts):
     return [j for j in range(0, len(parts), 2) if j == 0 or parts[j - 1] != "|"]
 
 
+def eval_words(w, i):
+    """The words the eval at index i runs: past one `--` right after it, which ends its options."""
+    return w[i + 2:] if w[i + 1:i + 2] == ["--"] else w[i + 1:]
+
+
+def subshell_end(words, w, i):
+    """The words w (cmd_start's copy of words, program word at i) without the `)` that close the subshells opened before
+    the program word, one `)` cut from their end per `(`: `(sh)`, `( sh )` and `( (sh))` run sh alone, while a `)` inside
+    the command (a quoted value, a group in eval's text) stays."""
+    opens = sum(x[:len(x) - len(x.lstrip("({!"))].count("(") for x in words[:i + 1])
+    w = list(w)
+    while opens and len(w) > i and w[-1].endswith(")"):
+        w[-1], opens = w[-1][:-1], opens - 1
+        if not w[-1]:
+            w.pop()
+    return w
+
+
 def reads_input(w, depth=0):
     """Whether a pipeline head with the words w reads the pipe into it on: a shell that reads its commands from stdin, tee,
     a bare cat, or an eval whose text has such a head (past three levels any eval)."""
+    words = list(w)
     i = cmd_start(w)
+    w = subshell_end(words, w, i)
     p = os.path.basename(w[i]) if i < len(w) else ""
     if p == "eval":
-        sub = split_cmd(" ".join(w[i + 1:]))
+        sub = split_cmd(" ".join(eval_words(w, i)))
         return depth >= 3 or any(reads_input(part_words(sub[j])[0], depth + 1) for j in heads(sub))
     return p == "tee" or p == "cat" and len(w) == i + 1 or p in SHELLS and shell_reads_stdin(w, i) == (None, True)
 
@@ -2018,7 +2093,7 @@ def eval_text(parts, k, w, i, depth=0):
     """The text the eval of part k runs; when a pipe feeds it, what the pipe carries (piped_text) is echoed into the first
     head of the text that reads its input: `echo env | eval sh` runs as `echo env | sh`. One head: a shell, tee and a bare
     cat read their input to its end."""
-    text = " ".join(w[i + 1:])
+    text = " ".join(eval_words(w, i))
     t = piped_text(parts, k - 2, depth + 1) if k >= 2 and parts[k - 1] == "|" else None
     if t is None:
         return text
@@ -2060,6 +2135,7 @@ def shell_text(parts, k, words):
     or what is piped (piped_text) into a shell that reads its commands from stdin; None when it is no such part."""
     w = list(words)
     i = cmd_start(w)
+    w = subshell_end(words, w, i)
     prog = os.path.basename(w[i]) if i < len(w) else ""
     if prog == "eval":
         return eval_text(parts, k, w, i)
@@ -2704,24 +2780,65 @@ def guard_question(ti, cwd):
         deny("The question window is not in %s. Rewrite the questions and options in %s." % (lang, lang))
 
 
+def fail_closed(name, fn, *args):
+    """fn(*args) of a secret check or of the input it is built from; an exception is logged and refuses the call."""
+    try:
+        return fn(*args)
+    except Exception as e:
+        log_error("guard " + name, e)
+        deny("The guard hook could not finish its `%s` check, so the call is refused (the secret checks fail closed); "
+             "the error is in ~/.claude/hook-state/errors.log." % name)
+
+
+WRITE_TOOLS = ("Write", "Edit", "MultiEdit", "NotebookEdit")
+SECRET_TOOLS = WRITE_TOOLS + ("Read", "Grep", "Bash")  # the tools a secret check reads; their unreadable input fails closed
+
+
+def guard_input(inp):
+    """(tool, tool_input, session id, cwd) of a PreToolUse input. Raises on input that is not an object and, for a tool
+    of SECRET_TOOLS, on a `tool_input` that is not an object or a `cwd` that is not a string (absent or null is absent)."""
+    if not isinstance(inp, dict):
+        raise TypeError("the input is not a JSON object")
+    tool, ti, cwd = inp.get("tool_name"), inp.get("tool_input"), inp.get("cwd")
+    if tool in SECRET_TOOLS:
+        if not isinstance(ti, (dict, type(None))):
+            raise TypeError("tool_input is not an object")
+        if not isinstance(cwd, (str, type(None))):
+            raise TypeError("cwd is not a string")
+    return tool, ti or {}, inp.get("session_id", ""), os.path.realpath(cwd or os.getcwd())
+
+
+def text_field(ti, *keys):
+    """The first non-empty of the string fields `keys` of a tool input, else ""; a present field that is not a string raises."""
+    values = [ti.get(k) for k in keys if ti.get(k) is not None]
+    bad = [v for v in values if not isinstance(v, str)]
+    if bad:
+        raise TypeError("%s is not a string: %s" % ("/".join(keys), type(bad[0]).__name__))
+    return next((v for v in values if v), "")
+
+
 def cmd_guard(inp):
-    tool, ti = inp.get("tool_name"), inp.get("tool_input") or {}
-    sid, cwd = inp.get("session_id", ""), os.path.realpath(inp.get("cwd") or os.getcwd())
-    if tool in ("Write", "Edit", "MultiEdit", "NotebookEdit"):
-        path = ti.get("file_path") or ti.get("notebook_path")
+    tool = inp.get("tool_name") if isinstance(inp, dict) else None
+    if tool in SECRET_TOOLS or not isinstance(inp, dict):
+        tool, ti, sid, cwd = fail_closed("guard input", guard_input, inp)
+    else:
+        tool, ti, sid, cwd = guard_input(inp)
+    if tool in WRITE_TOOLS:
+        path = fail_closed("guard_env_write", text_field, ti, "file_path", "notebook_path")
         if not path:
             return
-        path = os.path.join(cwd, os.path.expanduser(path))
-        guard_env_write(tool, path, cwd)
+        path = fail_closed("guard_env_write", lambda p: os.path.join(cwd, os.path.expanduser(p)), path)
+        fail_closed("guard_env_write", guard_env_write, tool, path, cwd)
         guard_override_write(tool, ti, path)
         guard_scope(sid, cwd, path)
         guard_claim(sid, path, tool, ti)
     elif tool in ("Read", "Grep"):
-        guard_env_read(ti, cwd)
+        fail_closed("guard_env_read", text_field, ti, "file_path")
+        fail_closed("guard_env_read", guard_env_read, ti, cwd)
     elif tool == "Bash":
-        cmd = ti.get("command") or ""
-        text = command_text(cmd)
-        guard_secrets_bash(text, cwd, cmd)
+        cmd = fail_closed("guard_secrets_bash", text_field, ti, "command")
+        text = fail_closed("guard_secrets_bash", command_text, cmd)
+        fail_closed("guard_secrets_bash", guard_secrets_bash, text, cwd, cmd)
         guard_override_bash(cmd)
         guard_models_bash(text, cmd)
         guard_worktree(cmd, cwd)
@@ -3140,7 +3257,7 @@ def cmd_status(inp):
 def main():
     cmd = sys.argv[1] if len(sys.argv) > 1 else ""
     try:
-        inp = json.load(sys.stdin)
+        inp = fail_closed("guard input", json.load, sys.stdin) if cmd == "guard" else json.load(sys.stdin)
         {"context": cmd_context, "subagent-context": cmd_subagent_context, "guard": cmd_guard, "stop": cmd_stop, "beat": cmd_beat,
          "end": cmd_end, "status": cmd_status, "claims": cmd_claims}[cmd](inp)
     except SystemExit:

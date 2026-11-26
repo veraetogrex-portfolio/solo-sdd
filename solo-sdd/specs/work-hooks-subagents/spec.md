@@ -218,6 +218,10 @@ These direct merge forms SHALL pass `guard` as outside it, each pinned by a test
 - **WHEN** the same session runs `npx -p solo-sdd archive add-words`, `npx --package solo-sdd archive add-words` or `sudo -Hu solo-sdd archive add-words`
 - **THEN** each passes: the wrapper's option takes `solo-sdd` as its value, and the program is `archive`; `npx -p solo-sdd solo-sdd archive add-words` is refused, and a runner's own option value stays tried as the program (`uvx --from solo-sdd archive add-words` is refused)
 
+#### Scenario: GNU time's long options
+- **WHEN** the same session runs `time --output /tmp/x solo-sdd archive add-words`, `/usr/bin/time --format %e solo-sdd archive add-words` or `time --output=/tmp/x solo-sdd archive add-words`
+- **THEN** each is refused, the reason names `src/app.py`; against a change with a foreign CLAIM each is refused as taken by another agent
+
 #### Scenario: End of options before the -c string
 - **WHEN** the same session runs `bash -c -- 'solo-sdd archive add-words'`
 - **THEN** the command is refused
@@ -295,3 +299,26 @@ The comment of `global/model-policy.json` and `docs/hooks.md` SHALL say that the
 #### Scenario: An edited copy
 - **WHEN** a user added a model to `cheap` in the deployed copy and runs `python3 sync.py push`
 - **THEN** the copy stays as edited and `sync.py status` shows it as `drift`
+
+### Requirement: Archive run in a command string of an option
+`guard` SHALL recognise an archive run in the string an option value hands on as a command, split by shell quoting, for the CLAIM refusal and Review before archive: `env -S`/`--split-string`, read with the quoted words after it as the arguments of `env`, also joined and at the end of a short cluster, and every `npx -c`/`--call` value up to `--` (also `npm exec`, `npm x` with npm's options anywhere), at the end of a short cluster, `--call` also joined with `=`.
+
+#### Scenario: env splits the string
+- **WHEN** the session edited `src/app.py`, ran no `Review:` agent and runs `env -S 'solo-sdd archive add-words'`, `env --split-string 'solo-sdd archive add-words'`, `env -iS 'solo-sdd archive add-words'`, `env -S 'solo-sdd archive' add-words`, `uv run env -S 'solo-sdd archive add-words'`, `env -S '' solo-sdd archive add-words` or `env -S 'bash -c' 'solo-sdd archive add-words'`
+- **THEN** each is refused, the reason names `src/app.py`; against a change with a foreign CLAIM each is refused as taken by another agent
+
+#### Scenario: A joined env string
+- **WHEN** the same session runs `env -S'solo-sdd archive add-words'`, `env --split-string='solo-sdd archive add-words'` or `env -S '-i solo-sdd archive add-words'`
+- **THEN** the archive checks read the run of `add-words`, and each command is refused with the env guard's reason "The command prints the whole environment or a secret": that check runs first and reads a joined `-S`, or a string that starts with an option, as an `env` with no program
+
+#### Scenario: npx runs the string
+- **WHEN** the same session runs `npx -c 'solo-sdd archive add-words'`, `npx --call 'solo-sdd archive add-words'`, `npx --call='solo-sdd archive add-words'`, `sudo -u root npx -c 'bash -c "solo-sdd archive add-words"'`, `npx -yc 'solo-sdd archive add-words'`, `npm exec -c 'solo-sdd archive add-words'`, `npm x --call 'solo-sdd archive add-words'`, `npx -c 'echo hi' -c 'solo-sdd archive add-words'`, `npx -c '' -c 'solo-sdd archive add-words'`, `npm exec -p x -c 'solo-sdd archive add-words'`, `npm exec --prefix /tmp -c 'solo-sdd archive add-words'`, `npx --prefix /tmp -c 'solo-sdd archive add-words'`, `npm --prefix /tmp exec -c 'solo-sdd archive add-words'`, `npm -y exec -c 'solo-sdd archive add-words'` or `npm exec -a -c 'solo-sdd archive add-words'`
+- **THEN** each is refused, the reason names `src/app.py`; against a change with a foreign CLAIM each is refused as taken by another agent
+
+#### Scenario: A string that runs no archive
+- **WHEN** the same session runs `env -S 'solo-sdd validate --all'`, `npx -c 'echo solo-sdd archive add-words'`, `env -u S 'solo-sdd archive add-words'`, `npx -c'solo-sdd archive add-words'`, `env -S -i 'solo-sdd archive add-words'`, `npm exec -- prettier -c 'solo-sdd archive add-words'` or `echo env -S 'solo-sdd archive add-words'`
+- **THEN** each passes: `env -u` takes `S` as its value, so the string is the program word, npm reads no joined `-c…`, the env string `-i` keeps the quoted words after it as one program word, npm reads no option after `--`, and an argument of `echo` is text
+
+#### Scenario: Broken and deep strings
+- **WHEN** the archive checks read `env -S 'solo-sdd archive add-words` (an open quote), `env -S`, `npx -c`, `npx --call=`, `eval eval eval eval env -S 'solo-sdd archive add-words'` `env` followed by 3,000 pairs `-S -x`, `npx` followed by 3,000 values `-c 'echo'` and `-c 'solo-sdd archive add-words'`, or `env -` followed by 20,000 `i` letters and `S 'solo-sdd archive add-words'`
+- **THEN** the first six give no archive run and no internal error (past three `eval` levels the parse stops, as `eval eval eval eval solo-sdd archive add-words` does today), the 3,000 pairs within a second, the 3,000 npx values give the run of `add-words` within a second, and the long cluster gives the run of `add-words` in under a second

@@ -171,6 +171,7 @@ class ProcessGuardTests(unittest.TestCase):
             'grep -rln "run-prepared\\|runPrepared" packages apps --include="*.test.ts"; grep -n "spawnExecutor\\|shutdown" packages/mcp/src/*.ts | head -40',
             "sed -i '' 's|process.kill(-child.pid, sig);|child.kill(sig);|' packages/core/src/cli-agents/process.ts",
             "cat > f <<'EOF'\n$(pkill node)\nEOF",
+            "grep -n 'kill' f |& head -5", "grep -n 'kill' f |\nhead -5",
         ):
             with self.subTest(command=command):
                 result = self.command(command)
@@ -207,7 +208,7 @@ class ProcessGuardTests(unittest.TestCase):
     def test_process_substitution_and_escaped_redirect(self):
         for command in ("grep <(pkill node) f", "grep -e <(pkill node) f", "rg <(pkill node) .",
                         "cat \\<<X\nkill 1", "cat \\<<X\nkill 1\nX", "cat <<'EOF' \\\n| bash\nkill 1\nEOF",
-                        "grep kill f | sh", "cat f | grep kill | sh", "cat <<'A'; cat <<'B' | sh\nx\nA\nkill 1\nB",
+                        "grep kill f | sh", "grep kill f |& sh", "grep kill f |\nsh", "cat f | grep kill | sh", "cat <<'A'; cat <<'B' | sh\nx\nA\nkill 1\nB",
                         "cat <<'A'; bash <<'B'\nx\nA\nkill 1\nB", "sed -n '1w kill' f"):
             with self.subTest(command=command):
                 self.assertEqual(self.command(command).returncode, 2)

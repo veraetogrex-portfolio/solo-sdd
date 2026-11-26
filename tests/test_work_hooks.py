@@ -6,7 +6,7 @@ sys.stdin are patched and stdout is captured; the git-root cache starts empty, a
 own temporary HOME (`wh-home-*`), removed when the test ends, also when it fails. `EntryPoint` runs the real
 `global/work_hooks.py` as a process, one to three times per command `main` dispatches.
 """
-import contextlib, datetime, importlib.util, io, json, os, shutil, subprocess, sys, tempfile, time, unicodedata, unittest, warnings
+import contextlib, datetime, importlib.util, io, itertools, json, os, shutil, subprocess, sys, tempfile, time, unicodedata, unittest, warnings
 from unittest import mock
 
 from hypothesis import given, settings, strategies as st
@@ -44,8 +44,8 @@ def setUpModule():
 H = REPO = ENV = OWNER = None
 
 
-def call(mod, cmd, inp, env, raw=False):
-    """One in-process hook call `work_hooks.py <cmd>` with `inp` on stdin and exactly `env` as the environment."""
+def call(mod, cmd, inp, env, raw=False, stdin=None):
+    """One in-process hook call `work_hooks.py <cmd>` with `inp` (or the text `stdin`) on stdin and exactly `env` as the environment."""
     home = env.get("HOME") or OUTSIDE
     out = io.StringIO()
     with contextlib.ExitStack() as s:
@@ -54,7 +54,7 @@ def call(mod, cmd, inp, env, raw=False):
         s.enter_context(mock.patch.object(mod, "STATE", os.path.join(home, ".claude", "hook-state")))
         s.enter_context(mock.patch.object(mod, "_roots", {}))
         s.enter_context(mock.patch.object(sys, "argv", [mod.__file__, cmd]))
-        s.enter_context(mock.patch.object(sys, "stdin", io.StringIO(json.dumps(inp))))
+        s.enter_context(mock.patch.object(sys, "stdin", io.StringIO(json.dumps(inp) if stdin is None else stdin)))
         s.enter_context(contextlib.redirect_stdout(out))
         try:
             code = mod.main()
@@ -67,8 +67,8 @@ def call(mod, cmd, inp, env, raw=False):
     return json.loads(text) if text.strip() else None
 
 
-def run(cmd, inp, env=None, raw=False):
-    return call(wh, cmd, inp, env or ENV, raw)
+def run(cmd, inp, env=None, raw=False, stdin=None):
+    return call(wh, cmd, inp, env or ENV, raw, stdin)
 
 
 def entry(cmd, inp, env=None):
@@ -258,6 +258,105 @@ class Secrets(HookCase):
         assert bash("git add .env"), "explicit .env"
         assert denied({"tool_name": "Write", "tool_input": {"file_path": os.path.join(REPO, ".env"), "content": "x"}}), "write .env"
         assert denied({"tool_name": "Write", "tool_input": {"file_path": os.path.join(REPO, "sub/.env"), "content": "x"}}), "second .env"
+
+
+class SecretChecksFailClosed(HookCase):
+    """Requirements: Secret checks fail closed; Unreadable guard input refused."""
+
+    @staticmethod
+    def boom(*a, **k):
+        raise RuntimeError("boom-42")
+
+    def answer(self, inp=None, stdin=None):
+        out = run("guard", dict({"session_id": "S1", "cwd": REPO}, **(inp or {})), stdin=stdin)
+        return out["hookSpecificOutput"] if out else None
+
+    def log_text(self):
+        """The errors.log text, removed after reading so the tearDown check stays for the rows that must log nothing."""
+        log = os.path.join(H, ".claude/hook-state/errors.log")
+        if not os.path.exists(log):
+            return ""
+        text = open(log).read()
+        os.remove(log)
+        return text
+
+    def assert_refused(self, out, name, logged):
+        self.assertTrue(out and out["permissionDecision"] == "deny", out)
+        why = out["permissionDecisionReason"]
+        self.assertIn("`%s`" % name, why)
+        self.assertIn("~/.claude/hook-state/errors.log", why)
+        text = self.log_text()
+        self.assertIn("guard " + name, text)
+        self.assertIn(logged, text)
+
+    def test_secret_checks_fail_closed_raising_checks(self):
+        env_local = {"tool_name": "Bash", "tool_input": {"command": "cat .env.local"}}
+        rows = (("guard_secrets_bash", "guard_secrets_bash", env_local),
+                ("guard_env_read", "guard_env_read", {"tool_name": "Read", "tool_input": {"file_path": os.path.join(REPO, "README.md")}}),
+                ("guard_env_write", "guard_env_write", {"tool_name": "Write", "tool_input": {"file_path": os.path.join(REPO, "notes.md"), "content": "x"}}),
+                ("command_text", "guard_secrets_bash", env_local))
+        for patched, name, inp in rows:
+            with self.subTest(patched), mock.patch.object(wh, patched, self.boom):
+                self.assert_refused(self.answer(inp), name, "boom-42")
+
+    def test_secret_checks_fail_closed_another_check_raises(self):
+        write = {"tool_name": "Write", "tool_input": {"file_path": os.path.join(REPO, "notes.md"), "content": "x"}}
+        ls = {"tool_name": "Bash", "tool_input": {"command": "ls"}}
+        rows = [(n, write) for n in ("guard_override_write", "guard_scope", "guard_claim")]
+        rows += [(n, ls) for n in ("guard_override_bash", "guard_models_bash", "guard_worktree", "guard_merge", "guard_archive", "note_claim_cmd")]
+        rows += [("guard_models_agent", agent("Explore a")),
+                 ("guard_question", {"tool_name": "AskUserQuestion", "tool_input": {"questions": [{"question": "Which one?"}]}}),
+                 ("status_problems", {"tool_name": "SubagentHandback", "tool_input": {"message": "done"}})]
+        for name, inp in rows:
+            with self.subTest(name):
+                self.assertIsNone(self.answer(inp), "passes without the fault")
+                self.assertEqual(self.log_text(), "")
+                with mock.patch.object(wh, name, self.boom):
+                    self.assertIsNone(self.answer(inp))
+                self.assertIn("boom-42", self.log_text())
+
+    def test_unreadable_guard_input_refused_stdin(self):
+        for text in ("[1]", "not json", ""):
+            with self.subTest(text):
+                self.assert_refused(self.answer(stdin=text), "guard input", "Error")
+
+    def test_unreadable_guard_input_refused_a_field_of_the_wrong_type(self):
+        rows = [("guard input", {"tool_name": "Read", "tool_input": {"file_path": "README.md"}, "cwd": v}) for v in (5, 0, [])]
+        rows += [("guard input", {"tool_name": t, "tool_input": v}) for t, v in (("Read", ["README.md"]), ("Bash", 0), ("Write", []))]
+        rows += [("guard_secrets_bash", {"tool_name": "Bash", "tool_input": {"command": v}}) for v in (5, 0, [], False)]
+        rows += [("guard_env_write", {"tool_name": "Write", "tool_input": {"file_path": v, "content": "x"}}) for v in (5, 0)]
+        rows += [("guard_env_write", {"tool_name": "NotebookEdit", "tool_input": {"notebook_path": ["a.ipynb"]}})]
+        rows += [("guard_env_read", {"tool_name": "Read", "tool_input": {"file_path": v}}) for v in (5, ["a/.env"])]
+        for name, inp in rows:
+            with self.subTest(inp):
+                self.assert_refused(self.answer(inp), name, "TypeError")
+        for inp in ({"tool_name": "Read", "tool_input": {"file_path": os.path.join(REPO, "README.md")}, "cwd": None},
+                    {"tool_name": "Bash", "tool_input": {"command": None}}, {"tool_name": "Write", "tool_input": None}):
+            with self.subTest(inp):
+                self.assertIsNone(self.answer(inp), "an absent or null field passes as before")
+        self.assertIsNone(self.answer({"tool_name": "AskUserQuestion", "tool_input": 0, "cwd": 5}), "another tool passes as before")
+        self.assertIn("guard TypeError", self.log_text())
+
+    def test_unreadable_guard_input_refused_hostile_command_text(self):
+        big = 100_000
+        for c in ('echo "a', "echo 'a", "cat <<EOF\nhello", "echo $(echo `date $(id -u)`)", 'echo "$(printf %s `date`)"',
+                  'echo "' + '\\"' * (big // 2), 'grep "' + "a |" * (big // 3) + '" f', "echo " + "$(" * 1000):
+            with self.subTest(c[:40]):
+                t = time.monotonic()
+                self.assertIsNone(self.answer({"tool_name": "Bash", "tool_input": {"command": c}}))
+                self.assertLess(time.monotonic() - t, 5)
+                self.assertEqual(self.log_text(), "")
+
+    def test_secret_checks_fail_closed_named_in_the_rules(self):
+        root = os.path.dirname(os.path.dirname(HOOK))
+        flat = lambda t: " ".join(t.split())
+        agents = flat(open(os.path.join(root, "AGENTS.md")).read())
+        docs = open(os.path.join(root, "docs", "hooks.md")).read().splitlines()
+        deny = [l for l in open(os.path.join(root, "solo_sdd", "hooks.py")).read().splitlines() if l.startswith("DENY = ")]
+        self.assertTrue("secret checks" in agents, "AGENTS.md")
+        self.assertTrue("secret checks" in flat(wh.__doc__), "the docstring of work_hooks.py")
+        self.assertTrue("secret checks" in deny[0], deny[0])
+        self.assertTrue(any("secret checks" in l and "onFailure" in l for l in docs), "docs/hooks.md: one line names both")
 
 
 class Models(HookCase):
@@ -1907,7 +2006,8 @@ class ArchiveRunners(HookCase):
     def test_known_limit_an_argument_of_a_runner_started_program_reads_as_an_archive_run(self):
         """Not a requirement: pins a known false refusal kept over a missed run (proposal Out of Scope of archive-run-words);
         a fix of the limit inverts this test."""
-        for c in ("npx prettier solo-sdd archive add-words", "uv run pytest solo-sdd archive add-words"):
+        for c in ("npx prettier solo-sdd archive add-words", "uv run pytest solo-sdd archive add-words",
+                  "npx prettier -c 'solo-sdd archive add-words'"):
             assert archive5([EDIT5], cmd=c), "known false refusal: " + c
 
     def test_archive_run_behind_runners_and_options_a_runner_that_starts_python(self):
@@ -1942,6 +2042,56 @@ class ArchiveRunners(HookCase):
             assert run("guard", {"session_id": "S60", "cwd": R6, "tool_name": "Bash", "tool_input": {"command": c}}) is None, c
         for c in ("npx -p solo-sdd solo-sdd archive add-words", "uvx --from solo-sdd archive add-words"):
             archive_refused(c)
+
+    def test_archive_run_behind_runners_and_options_gnu_times_long_options(self):
+        for c in ("time --output /tmp/x solo-sdd archive add-words", "/usr/bin/time --format %e solo-sdd archive add-words",
+                  "time --output=/tmp/x solo-sdd archive add-words"):
+            archive_refused(c)
+
+    def test_archive_run_in_a_command_string_of_an_option_env_splits_the_string(self):
+        for c in ("env -S 'solo-sdd archive add-words'", "env --split-string 'solo-sdd archive add-words'",
+                  "env -iS 'solo-sdd archive add-words'", "env -S 'solo-sdd archive' add-words",
+                  "uv run env -S 'solo-sdd archive add-words'",
+                  "env -S '' solo-sdd archive add-words", "env -S 'bash -c' 'solo-sdd archive add-words'"):
+            archive_refused(c)
+
+    def test_archive_run_in_a_command_string_of_an_option_a_joined_env_string(self):
+        for c in ("env -S'solo-sdd archive add-words'", "env --split-string='solo-sdd archive add-words'",
+                  "env -S '-i solo-sdd archive add-words'"):
+            assert wh.archive_runs(c) == ["add-words"], c
+            for r in (archive5([EDIT5], cmd=c), run("guard", {"session_id": "S60", "cwd": R6, "tool_name": "Bash",
+                                                             "tool_input": {"command": c}})["hookSpecificOutput"]["permissionDecisionReason"]):
+                assert r and "prints the whole environment" in r, (c, r)
+
+    def test_archive_run_in_a_command_string_of_an_option_npx_runs_the_string(self):
+        for c in ("npx -c 'solo-sdd archive add-words'", "npx --call 'solo-sdd archive add-words'",
+                  "npx --call='solo-sdd archive add-words'", "sudo -u root npx -c 'bash -c \"solo-sdd archive add-words\"'",
+                  "npx -yc 'solo-sdd archive add-words'", "npm exec -c 'solo-sdd archive add-words'",
+                  "npm x --call 'solo-sdd archive add-words'", "npx -c 'echo hi' -c 'solo-sdd archive add-words'",
+                  "npx -c '' -c 'solo-sdd archive add-words'", "npm exec -p x -c 'solo-sdd archive add-words'",
+                  "npm exec --prefix /tmp -c 'solo-sdd archive add-words'", "npx --prefix /tmp -c 'solo-sdd archive add-words'",
+                  "npm --prefix /tmp exec -c 'solo-sdd archive add-words'", "npm -y exec -c 'solo-sdd archive add-words'",
+                  "npm exec -a -c 'solo-sdd archive add-words'", "npx -c>/dev/null 'solo-sdd archive add-words'",
+                  "npm exec -a --call>log 'solo-sdd archive add-words'"):
+            archive_refused(c)
+
+    def test_archive_run_in_a_command_string_of_an_option_a_string_that_runs_no_archive(self):
+        for c in ("env -S 'solo-sdd validate --all'", "npx -c 'echo solo-sdd archive add-words'",
+                  "env -u S 'solo-sdd archive add-words'", "npx -c'solo-sdd archive add-words'",
+                  "env -S -i 'solo-sdd archive add-words'", "npm exec -- prettier -c 'solo-sdd archive add-words'",
+                  "echo env -S 'solo-sdd archive add-words'"):
+            assert archive5([EDIT5], cmd=c) is None, "not an archive run: " + c
+            assert run("guard", {"session_id": "S60", "cwd": R6, "tool_name": "Bash", "tool_input": {"command": c}}) is None, c
+
+    def test_archive_run_in_a_command_string_of_an_option_broken_and_deep_strings(self):
+        for c in ("env -S 'solo-sdd archive add-words", "env -S", "npx -c", "npx --call=",
+                  "eval eval eval eval env -S 'solo-sdd archive add-words'"):
+            assert wh.archive_runs(c) == [], c
+        for c, want in (("env -" + "i" * 20_000 + "S 'solo-sdd archive add-words'", ["add-words"]), ("env" + " -S -x" * 3000, []),
+                        ("npx" + " -c 'echo'" * 3000 + " -c 'solo-sdd archive add-words'", ["add-words"])):
+            t = time.monotonic()
+            assert wh.archive_runs(c) == want, c[:40]
+            assert time.monotonic() - t < 1, c[:40]
 
     def test_archive_run_behind_runners_and_options_end_of_options_before_the_c_string(self):
         archive_refused("bash -c -- 'solo-sdd archive add-words'")
@@ -2023,7 +2173,7 @@ class SecretFiles(HookCase):
                   "printf $'KEY=1\\n' >> .env", "echo ${X:-\"}\" #}; cat .env", "echo \"$(echo \")\" \" #\"; cat .env)\"",
                   "echo ${X:-(a) #}; cat .env", "cat .e\\nv # x", "cat .e\"\"nv", "cat x # cat <<EOF\ncat .env\nEOF",
                   "echo $'a\\'\ncat <<EOF\n'; cat .env\nEOF", "cat .e\\\nnv # c", "cat .e\\\nnv ${X:-}",
-                  "eval echo cat .env | sh"):
+                  "eval echo cat .env | sh", "echo cat .env |& sh"):
             assert bash(c), c
 
     def test_secret_file_reads_in_bash_allowed_uses(self):
@@ -2070,14 +2220,25 @@ class SecretFiles(HookCase):
                   "eval 'echo env; true' | sh", "eval eval eval eval echo env | sh", "echo env | eval sh",
                   "echo env | eval 'true; sh'", "echo env | eval 'cat | sh'", "printf env | eval eval sh",
                   "echo env | eval 'eval true; sh'", "echo env | eval eval eval eval sh", "echo env | eval cat | sh",
-                  "echo env | eval tee | sh", "eval echo env | eval sh", "echo env | eval cat | eval cat | eval cat | eval cat | sh"):
+                  "echo env | eval tee | sh", "eval echo env | eval sh", "echo env | eval cat | eval cat | eval cat | eval cat | sh",
+                  "echo env |& sh", "echo env |& bash -s", "echo env |\nsh", "eval -- env", "echo env | eval -- sh",
+                  "echo env | (sh)", "echo env | ( sh )", "echo env | ( (sh))", "echo env | (eval sh)",
+                  "eval '(' true ')' ';' printenv", "eval '(' true ')' '&&' env", "eval -- '(' true ')' ';' printenv",
+                  "echo env | eval '(' true ')' ';' sh", "bash --rcfile ')' -c printenv", "bash --init-file ')' -c env",
+                  "( bash --rcfile ')' -c printenv )"):
             assert bash(c), c
         for c in ("set -e", "set -euo pipefail", "set -- a b", "export PATH=/x:$PATH", "export -n FOO", "declare -p HOME",
                   "env -u ELECTRON_RUN_AS_NODE npm test", "printenv HOME", "env FOO=1 make", "echo set", "env env ls",
                   "env -i env HOME=/x true", "env env printenv HOME", 'echo "$(date)"; env e""nv ls',
                   'echo "$(date)"; env /usr/bin/env ls', "eval echo hi | sh", "echo ls | eval sh", "echo ok | eval cat",
-                  "echo env | eval true", "eval \"echo 'env\" | sh"):
+                  "echo env | eval true", "eval \"echo 'env\" | sh", "echo ls |& sh", "echo ls |\nsh", "eval -- ls",
+                  "echo ls | eval -- sh", "echo ls | (sh)", 'echo "$(date)"; grep "env" f |& cat'):
             assert not bash(c), c
+        # every pipe form into every shell form: what a dump word prints is refused, ls passes
+        for p, sh, w in itertools.product(("| ", "|& ", "|\n", "| \n\n "), ("sh", "bash -s", "(sh)", "( sh )", "( (sh) )", "( (sh))",
+                                          "eval sh", "eval -- sh", "eval '--' sh", "(eval sh)"), ("env", "printenv", "export -p", "ls")):
+            c = "echo %s %s%s" % (w, p, sh)
+            assert bash(c) == (w != "ls"), c
 
     def test_environment_dumps_refused_a_dump_word_in_a_search_pattern(self):
         for c in (r'grep -n "secret\|printenv\|env |echo \$" skills/debug-profile/SKILL.md', r'grep -n "foo\|env\[" global/sdd_eval.py'):
@@ -2133,7 +2294,10 @@ class SecretFiles(HookCase):
         # eval in a pipe: long eval runs, many segments, a long chain of pipes through eval, and broken eval texts
         for c, want in (("eval " * 10_000 + "echo env | sh", True), ("echo env | eval '" + "sh -c ls; " * 5_000 + "'", False),
                         ("echo env | " + "eval cat | " * 500 + "sh", True), ("echo env | eval 'sh \\'", True),
-                        ("echo env | eval", False)):
+                        ("echo env | eval", False),
+                        ("echo env |" + "\n" * 10_000 + "sh", True), ("echo env" + " |& tee" * 5_000 + " | sh", True),
+                        ("echo ls |& " * 10_000 + "sh", False), ("echo env | " + "( " * 1_000 + "sh" + ")" * 1_000, True),
+                        ("echo env | (sh", True), ("echo env |\n", False), ("echo env | eval --", False)):
             assert bash(c) == want, (c[:60], want)
             t = time.monotonic()
             wh.env_dump(c)
@@ -2153,10 +2317,10 @@ class SecretFiles(HookCase):
                   "sudo -u root env -u X printenv", "sudo -g wheel printenv", "env -u X bash -c env", "env --unset X printenv",
                   "env --chdir /tmp printenv", "sudo --user root printenv", "env -u", "(env -u X printenv)",
                   "(sudo -u root printenv)", "x=1; (sudo -u root printenv)", "sudo -Hu root printenv", "sudo -iu root printenv",
-                  "env -iu X printenv", "sudo -uroot printenv"):
+                  "env -iu X printenv", "sudo -uroot printenv", "time --output /tmp/x printenv", "/usr/bin/time --format %e printenv"):
             assert bash(c), c
         for c in ("env -u HOME python3 -V", "env -C /tmp ls", "env -u X sh -c ls", "sudo -u root ls", "caffeinate -t 5 ls",
-                  "npx -p x eslint .", "time -o /tmp/x ls", "env -u X printenv HOME", "sudo -u", "(sudo -u root ls)",
+                  "npx -p x eslint .", "time -o /tmp/x ls", "time --output /tmp/x ls", "env -u X printenv HOME", "sudo -u", "(sudo -u root ls)",
                   "sudo -Hu root ls", "sudo -uroot ls"):
             assert not bash(c), c
         c = "env" + " -u X" * 20_000 + " printenv"

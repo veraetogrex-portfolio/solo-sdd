@@ -59,8 +59,8 @@ As a guard against accidental dumps, not a boundary, `guard` SHALL refuse a Bash
 - **THEN** each command is refused: a `#`, a form of `UNCUT`, a heredoc or `case` anywhere in the command, an open quote or a trailing backslash leaves the whole command counted, and the inside of `$(…)`, `${…}` and a backquote is read with its own quotes and never cut; `echo "$(date)"; grep "x` passes, as it holds no dump word
 
 #### Scenario: A wrapper option with a value
-- **WHEN** the agent runs `env -u X printenv`, `env -C /tmp printenv`, `env -P /usr/bin printenv`, `/usr/bin/env -u X printenv`, `timeout 5 env -u X printenv`, `sudo -u root printenv`, `sudo -u root env`, `sudo -u root printenv GITHUB_TOKEN`, `env -u X sh -c env`, `sudo -u root sh -c printenv`, `caffeinate -t 5 printenv`, `caffeinate -w 1 printenv`, `exec -a NAME printenv`, `npx -p x printenv`, `npx --package x printenv`, `time -o /tmp/x printenv` or `/usr/bin/time -f %e printenv`
-- **THEN** each command is refused, and `env -u HOME python3 -V`, `env -C /tmp ls`, `env -u X sh -c ls`, `sudo -u root ls`, `caffeinate -t 5 ls`, `npx -p x eslint .`, `time -o /tmp/x ls` and `env -u X printenv HOME` pass
+- **WHEN** the agent runs `env -u X printenv`, `env -C /tmp printenv`, `env -P /usr/bin printenv`, `/usr/bin/env -u X printenv`, `timeout 5 env -u X printenv`, `sudo -u root printenv`, `sudo -u root env`, `sudo -u root printenv GITHUB_TOKEN`, `env -u X sh -c env`, `sudo -u root sh -c printenv`, `caffeinate -t 5 printenv`, `caffeinate -w 1 printenv`, `exec -a NAME printenv`, `npx -p x printenv`, `npx --package x printenv`, `time -o /tmp/x printenv`, `/usr/bin/time -f %e printenv`, `time --output /tmp/x printenv` or `/usr/bin/time --format %e printenv`
+- **THEN** each command is refused, and `env -u HOME python3 -V`, `env -C /tmp ls`, `env -u X sh -c ls`, `sudo -u root ls`, `caffeinate -t 5 ls`, `npx -p x eslint .`, `time -o /tmp/x ls`, `time --output /tmp/x ls` and `env -u X printenv HOME` pass
 
 #### Scenario: A dump nested past the parsed depth
 - **WHEN** the agent runs `eval eval eval eval env` or `eval eval eval eval printenv`
@@ -73,6 +73,10 @@ As a guard against accidental dumps, not a boundary, `guard` SHALL refuse a Bash
 #### Scenario: eval in a pipe into a shell
 - **WHEN** the agent runs `eval echo env | sh`, `eval echo printenv | bash`, `eval 'echo env' | sh`, `eval echo env | tee | sh`, `eval 'echo env; true' | sh`, `eval eval eval eval echo env | sh`, `echo env | eval sh`, `echo env | eval 'true; sh'`, `echo env | eval 'cat | sh'`, `printf env | eval eval sh`, `echo env | eval 'eval true; sh'`, `echo env | eval eval eval eval sh`, `echo env | eval cat | sh`, `echo env | eval tee | sh`, `eval echo env | eval sh` or `echo env | eval cat | eval cat | eval cat | eval cat | sh`
 - **THEN** each command is refused with the reason "The command prints the whole environment or a secret": what a pipe into `eval` carries is echoed into the first segment head of its text that reads input: a shell that reads its commands from stdin, `tee`, a bare `cat`, or an `eval` whose text has such a head, an `eval` past three levels counting as one; an `eval` source, so fed, prints what each segment of its text (split at `;`, `&&`, `||`, `&` and a newline) not piped on prints, and past three `eval` levels the dump words of the pipeline up to it; `eval echo hi | sh`, `echo ls | eval sh`, `echo ok | eval cat`, `echo env | eval true` and `eval "echo 'env" | sh` (an open quote: `eval` runs nothing) pass
+
+#### Scenario: Pipe and eval forms of the shell grammar
+- **WHEN** the agent runs `echo env |& sh`, `echo env |& bash -s`, `echo env |` followed by a newline and `sh`, `eval -- env`, `echo env | eval -- sh`, `echo env | (sh)`, `echo env | ( sh )`, `echo env | ( (sh))` or `echo env | (eval sh)`
+- **THEN** each command is refused with the reason "The command prints the whole environment or a secret": `|&` is a pipe, a newline after `|` or `|&` continues the pipeline, a `--` right after `eval` ends its options, and every `)` that closes a subshell, glued to the program word or standing alone, ends the words of the command in it; `echo ls |& sh`, `echo ls |` followed by a newline and `sh`, `eval -- ls`, `echo ls | eval -- sh` and `echo ls | (sh)` pass
 
 ### Requirement: Known bypasses of the Bash guard
 `docs/hooks.md` SHALL name as outside the Bash guard: brace expansion, `sh -c` with the file as a positional argument, process substitution with a quoted `)`, a heredoc marker line with an open quote, `${X:-env}`, BSD `sed r` unspaced and, in a plain command, an interpreter's script that runs or reads the environment or a dump word another program runs from its argument (`xargs`, sed `e`, a spaced `env -S`); the boundary is `Read(**/.env)` in `permissions.deny` and secrets kept only in `.env`.
@@ -117,3 +121,45 @@ The sandbox read deny for `.env` SHALL be the `Read(**/.env)` entry of `permissi
 #### Scenario: Sandbox off
 - **WHEN** the settings have no sandbox and `install --hooks` runs
 - **THEN** no sandbox key is written and the output says the read deny needs the sandbox
+
+### Requirement: Secret checks fail closed
+When `guard_env_write`, `guard_env_read` or `guard_secrets_bash` raises, or the preparation of its input in `cmd_guard` raises (a path or command text built for it), `guard` SHALL answer `deny` with a reason naming the check and `~/.claude/hook-state/errors.log`, and SHALL write the error there as before. An exception in any other check SHALL keep letting the call through.
+
+#### Scenario: A raising Bash secret check
+- **WHEN** `guard_secrets_bash` raises while the agent runs `cat .env.local`
+- **THEN** the answer is `deny`, its reason names `guard_secrets_bash` and `errors.log`, and `errors.log` holds the error
+
+#### Scenario: A raising read check
+- **WHEN** `guard_env_read` raises on a `Read` of `README.md`
+- **THEN** the answer is `deny` naming `guard_env_read`
+
+#### Scenario: A raising Write check
+- **WHEN** `guard_env_write` raises on a `Write` of `notes.md`
+- **THEN** the answer is `deny` naming `guard_env_write`
+
+#### Scenario: Preparation raises
+- **WHEN** `command_text` raises while `guard` prepares a Bash command for `guard_secrets_bash`
+- **THEN** the answer is `deny` naming `guard_secrets_bash`
+
+#### Scenario: Another check raises
+- **WHEN** `guard_models_agent` raises on an `Agent` call
+- **THEN** the call passes and `errors.log` holds the error
+
+### Requirement: Unreadable guard input refused
+`guard` SHALL answer `deny` naming `guard input` and `~/.claude/hook-state/errors.log`, and write the error there, when stdin is not a JSON object, or a call of Bash, Read, Grep, Write, Edit, MultiEdit or NotebookEdit has a `tool_input` that is not an object or a `cwd` that is not a string. A present `command`, `file_path` or `notebook_path` that is not a string SHALL deny naming its secret check instead. Other tools pass as before.
+
+#### Scenario: Stdin is not a JSON object
+- **WHEN** `guard` gets `[1]`, an empty stdin or text that is not JSON
+- **THEN** the answer is `deny` naming `guard input`, and `errors.log` holds the error
+
+#### Scenario: A field of the wrong type
+- **WHEN** `guard` gets a `Read` with `cwd` `5`, `0` or `[]`, a Read, Bash or Write call whose `tool_input` is `["README.md"]`, `0` or `[]`, a Bash call with `command` `5`, `0`, `[]` or `false`, a `Write` with `file_path` `5` or `0`, a `Read` with `file_path` `5` or `["a/.env"]`, or a `NotebookEdit` with `notebook_path` `["a.ipynb"]`
+- **THEN** the answer is `deny` naming `guard input` for the `cwd` and `tool_input` cases, `guard_secrets_bash` for `command` and `guard_env_write` for the Write `file_path` and `notebook_path`, and `guard_env_read` for the Read `file_path`
+
+#### Scenario: Absent fields and other tools
+- **WHEN** `guard` gets a `Read` with `cwd` null, a Bash call with `command` null, a `Write` with `tool_input` null, or an `AskUserQuestion` with `tool_input` `0` and `cwd` `5`
+- **THEN** no answer comes
+
+#### Scenario: Hostile command text
+- **WHEN** `guard` gets a Bash command with unbalanced quotes, an unterminated heredoc, nested `$(` and backquotes (1,000 levels of `$(` at most), or 100,000 characters of `\"` pairs or of `a |` inside one quoted `grep` pattern, none naming a secret
+- **THEN** no answer comes, `errors.log` stays empty, and each call returns within 5 seconds
