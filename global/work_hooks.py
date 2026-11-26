@@ -2287,8 +2287,9 @@ def dump_text(raw):
         return raw
     subst = lambda x: substitution(x) or "${" in x
     dump = lambda x: subst(x) or DUMP_WORDS.search(flat(x)) or re.search(r"[*?\[]", x)  # a glob may expand to a dump word
-    # a nested env (`env env ls`) is read on as env, only as a literal word: a `$`, a backquote or a glob may be anything
-    nested = lambda x: os.path.basename(flat(x)) == "env" and not re.search(r"[$`*?\[]", x)
+    # a nested env (`env env ls`) is read on as env, only as a literal word: a substitution, a `$`, a backquote or a glob
+    # may be anything
+    nested = lambda x: os.path.basename(flat(x)) == "env" and not subst(x) and not re.search(r"[$`*?\[]", x)
     # output that may reach a program running it (a pipe into anything but a bare text reader, >(…)) keeps every search counted
     readers = TEXT_SINKS - {"python", "python3", "node"}
     piped = ">(" in raw or any(segs[k - 1][1] in ("|", "|&") and os.path.basename(flat(raw[slice(*segs[k][0][0])]) if segs[k][0] else "")
