@@ -1939,7 +1939,8 @@ NOT_PLAIN_CASES = {"#": "echo hi # see .env", "$'": "echo $'hi' .env", "${": "ec
 # forms pass today. A change that closes one moves it to a refused list; until then this test says docs/hooks.md is true.
 KNOWN_BYPASSES = ("cat .e{n,}v", "sh -c 'cat \"$1\"' _ .env", "ls >(cat ')' .env)", "cat <<EOF 'x\n'; cat .env\nEOF",
                   "${X:-env} | wc -l", "sed '1r.env' a.txt",
-                  'echo "$(date)"; grep -o "printenv" f > x; sh x')
+                  'echo "$(date)"; grep -o "printenv" f > x; sh x', "awk 'BEGIN{system(\"env\")}' /dev/null",
+                  "python3 -c 'import os; print(os.environ)'", "xargs printenv", "sed 's/.*/env/e' f", "env -S env")
 SECRET_WORDS = ["KEY", "TOKEN", "SECRET", "PASSWORD", "PASSWD", "WEBHOOK", "CREDENTIAL"]
 OTHER_WORDS = ["MONKEY", "KEYBOARD", "TOKENIZER", "SECRETARY", "PASSWORDLESS", "NAME", "API", "DB", "HOME", "PATH", "KEYED"]
 
@@ -2093,16 +2094,44 @@ class SecretFiles(HookCase):
             wh.dump_text(c)
             assert time.monotonic() - t < 1, c[:60]
 
+    def test_environment_dumps_refused_a_wrapper_option_with_a_value(self):
+        for c in ("env -u X printenv", "env -C /tmp printenv", "env -P /usr/bin printenv", "/usr/bin/env -u X printenv",
+                  "timeout 5 env -u X printenv", "sudo -u root printenv", "sudo -u root env", "sudo -u root printenv GITHUB_TOKEN",
+                  "env -u X sh -c env", "sudo -u root sh -c printenv", "caffeinate -t 5 printenv", "caffeinate -w 1 printenv",
+                  "exec -a NAME printenv", "npx -p x printenv", "npx --package x printenv", "time -o /tmp/x printenv",
+                  "/usr/bin/time -f %e printenv", "env -u X -u Y printenv", "env -u X sudo -u root printenv",
+                  "sudo -u root env -u X printenv", "sudo -g wheel printenv", "env -u X bash -c env", "env --unset X printenv",
+                  "env --chdir /tmp printenv", "sudo --user root printenv", "env -u"):
+            assert bash(c), c
+        for c in ("env -u HOME python3 -V", "env -C /tmp ls", "env -u X sh -c ls", "sudo -u root ls", "caffeinate -t 5 ls",
+                  "npx -p x eslint .", "time -o /tmp/x ls", "env -u X printenv HOME", "sudo -u"):
+            assert not bash(c), c
+        assert wh.archive_runs("caffeinate -t 5 solo-sdd archive x") == []  # the archive guard's reading, not changed here
+        c = "env" + " -u X" * 20_000 + " printenv"
+        assert bash(c), "20,000 valued options"
+        t = time.monotonic()
+        assert wh.env_dump(c) == "dump"
+        assert time.monotonic() - t < 1
+
+    def test_environment_dumps_refused_a_dump_nested_past_the_parsed_depth(self):
+        for c in ("eval eval eval eval env", "eval eval eval eval printenv"):
+            assert bash(c), c
+        for c in ("eval eval eval eval ls", "eval eval eval env X=1 python3 -V"):
+            assert not bash(c), c
+
     @settings(max_examples=150, deadline=None)
     @given(st.lists(st.sampled_from(['grep -n "printenv|env" f', "rg 'env |set' f", "env X=1 python3 -V", 'env -u HOME grep "set" f',
-                                     "env -i HOME=$HOME true"]), min_size=1, max_size=5),
+                                     "env -i HOME=$HOME true", "sudo -u root ls", "caffeinate -t 5 ls"]), min_size=1, max_size=5),
            st.lists(st.sampled_from(["; ", " && ", " || ", "\n"]), min_size=6, max_size=6),
-           st.sampled_from(["env", "printenv", 'env p""rintenv', "env -i printenv", "set", "env -u X e\\nv"]), st.integers(0, 5))
+           st.sampled_from(["env", "printenv", 'env p""rintenv', "env -i printenv", "set", "env -u X e\\nv", "sudo -u root printenv",
+                            "env -u X printenv", "caffeinate -t 5 printenv", "exec -a N printenv", "npx -p x printenv",
+                            "time -o /tmp/x printenv"]), st.integers(0, 5))
     def test_environment_dumps_refused_property(self, segs, seps, dump, at):
         join = lambda xs: "".join(x + seps[i] for i, x in enumerate(xs))
-        assert not bash('echo "$(date)"; ' + join(segs)), segs
-        c = 'echo "$(date)"; ' + join(segs[:at] + [dump] + segs[at:])
-        assert bash(c), c
+        for lead in ('echo "$(date)"; ', ""):  # without the substitution the command is plain and only env_dump reads it
+            assert not bash(lead + join(segs)), segs
+            c = lead + join(segs[:at] + [dump] + segs[at:])
+            assert bash(c), c
 
     def test_known_bypasses_of_the_bash_guard_known_limits(self):
         for c in KNOWN_BYPASSES:

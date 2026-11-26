@@ -12,9 +12,10 @@ Cause: `global/work_hooks.py:2138`, `env_dump`: `cmd_start` (line 1394) skips a 
 
 ## What Changes
 
-- `env_dump` reads the words of each command through `wrapper_values_cut` before `cmd_start` and before `shell_text`, as `archive_runs` does: after a wrapper, the value of a valued option (`env -u X`, `-C /tmp`, `-P /usr/bin`, `sudo -u root`, `-g wheel`, `caffeinate -t 5`, `exec -a NAME`, `npx -p x`) is not the program, so `printenv`, `env`, a secret `printenv NAME` and a shell's `-c` dump after it are refused.
+- `env_dump` reads the words of each command through `wrapper_values_cut` before `cmd_start` and before `shell_text`, as `archive_runs` does: after a wrapper, the value of a valued option (`env -u X`, `-C /tmp`, `-P /usr/bin`, `sudo -u root`, `-g wheel`, `caffeinate -t 5`, `-w 1`, `exec -a NAME`, `npx -p x`, `--package x`, `time -o /tmp/x`, `-f %e`) is not the program, so `printenv`, `env`, a secret `printenv NAME` and a shell's `-c` dump after it are refused.
+- A text that `eval` or a shell's `-c` string hands on past three levels, where `env_dump` reads no further, counts by any dump word in it, as `env_read` counts any `.env` name there: `eval eval eval eval env` is refused, `eval eval eval env X=1 python3 -V` still passes.
 - `env_dump` hands `wrapper_values_cut` a map of each wrapper's valued options; `archive_runs`, its other reader, keeps reading only `sudo`'s and `env`'s values, so the archive guard does not change.
-- The delta's Environment dumps refused block is the one `fix-env-dump-text-words` leaves in the main spec after its archive, with one scenario added.
+- The delta's Environment dumps refused block is the one `fix-env-dump-text-words` leaves in the main spec after its archive, with two scenarios added.
 - `env -u HOME python3 -V`, `env -C /tmp ls`, `env -u X sh -c ls`, `sudo -u root ls`, `caffeinate -t 5 ls`, `npx -p x eslint .` and `env -u X printenv HOME` still pass.
 - `docs/hooks.md` lists among the known bypasses of the Bash checks an interpreter's script that runs or reads the environment (`awk 'BEGIN{system("env")}'`, `python3 -c 'import os; print(os.environ)'`) and a dump word another program runs from its arguments (`xargs printenv`, sed's `e` command, `env -S env`).
 
@@ -23,7 +24,7 @@ Cause: `global/work_hooks.py:2138`, `env_dump`: `cmd_start` (line 1394) skips a 
 ### New Capabilities
 
 ### Modified Capabilities
-- `secret-guard`: MODIFIED requirements Environment dumps refused (a scenario of a wrapper's valued option) and Known bypasses of the Bash guard (an interpreter's script).
+- `secret-guard`: MODIFIED requirements Environment dumps refused (scenarios of a wrapper's valued option and of a dump nested past the parsed depth) and Known bypasses of the Bash guard (an interpreter's script).
 
 ## Impact
 
@@ -34,7 +35,8 @@ Cause: `global/work_hooks.py:2138`, `env_dump`: `cmd_start` (line 1394) skips a 
 ## Out of Scope
 
 - The other readers of `cmd_start` without `wrapper_values_cut` (the merge guard lists `sudo -u` and `env -u` as its known bypasses in `docs/hooks.md`): their own guards, not the environment dump.
-- A change of `cmd_start` itself: it is in the shell block shared with `global/process-guard.py` and read by eight callers.
+- A change of `cmd_start` itself: it is in the shell block shared with `global/process-guard.py` and called at twelve places of `global/work_hooks.py`.
+- npm's own valued options before the program of `npx` (`--loglevel`, `--registry`, `--cache`, `-w`, `--prefix`): `npx --loglevel silent printenv` still passes; the map takes only `npx`'s own `-p`/`--package`.
 - Reading interpreters' scripts (awk `system(`, `getline`, python `os.environ`, perl, node), `xargs`, sed's `e` command and the `env -S` split string: listed as known bypasses instead.
 - The archive guard's reading of `caffeinate -t`, `exec -a` and `npx -p` (`archive_runs`, requirement Archive run behind runners and options of `work-hooks-subagents`): a change of its own.
 - The non-plain fallback of the same requirement: `fix-env-dump-text-words`.
