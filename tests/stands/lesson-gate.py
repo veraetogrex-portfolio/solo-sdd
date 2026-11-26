@@ -50,7 +50,7 @@ def stand_copy(dest):
 
 
 args = sys.argv[1:]
-if args not in ([],) and not (len(args) == 2 and args[0] == "--prepare"):
+if args and (len(args) != 2 or args[0] != "--prepare"):
     raise SystemExit("usage: lesson-gate.py [--prepare <dir>]")
 keep = pathlib.Path(args[1]).resolve() if args else None
 t = keep or pathlib.Path(tempfile.mkdtemp(prefix="lesson-gate-"))
@@ -62,7 +62,7 @@ try:
     rules = {r: section15(read(r)) for r in (".claude/CLAUDE.md", ".codex/AGENTS.md")}
     nxt = read(".claude/skills/spec-next/SKILL.md")
     miss = ["%s %s" % (r, w) for r, x in rules.items() for w in RULES if w not in x]
-    miss += ["spec-next %s" % w for w in RULES[::2] if w not in nxt]
+    miss += ["spec-next %s" % w for w in ("Lesson gate:", "Lesson held:") if w not in nxt]
     step("1 installed rules", p.returncode == 0 and not miss,
          "push code %d, missing: %s" % (p.returncode, ", ".join(miss) or "none"))
 

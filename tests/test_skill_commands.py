@@ -444,7 +444,8 @@ class SkillCommandsTest(unittest.TestCase):
                        "First search `## Lessons`, the rest of that `AGENTS.md` and the `Held by:` entries of its "
                        "`LESSONS.md`",
                        "a lesson a `Held by:` entry covers writes no line and no `Lesson gate:`, and the report gives "
-                       "`Lesson held: <lesson> -> <check>`"):
+                       "`Lesson held: <line> -> <check>` with its held line",
+                       "gets no such line, nor does one a `Held by:` entry covers (next bullet)"):
             self.assertIn(phrase, lessons)
         report = flat(skill_text.skill("spec-next")).split("Lesson: <line written or refined", 1)[1]
         self.assertIn("Lesson gate: <the check> — <where it would run>", report)
