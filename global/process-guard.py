@@ -176,11 +176,11 @@ GIT_GLOBAL_VALUED = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--e
 MESSAGE_OPTS = {"git": ("commit", "tag"), "gh": ("pr", "issue")}
 
 
-def git_sub(w, i):
+def git_sub(w, i, valued=GIT_GLOBAL_VALUED):
     """Index of the git subcommand after the program word i, past the global options."""
     j = i + 1
     while j < len(w) and w[j].startswith("-"):
-        j += 2 if w[j] in GIT_GLOBAL_VALUED else 1
+        j += 2 if w[j] in valued else 1
     return j
 
 

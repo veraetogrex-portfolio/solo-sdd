@@ -2431,6 +2431,8 @@ class DirectMerge(HookCase):
         assert merge_denied("gh api -X PUT 'repos/o/r/pulls/5/merge?merge_method=squash'"), "a query string after the endpoint"
         assert merge_denied("FOO='a b' gh pr merge 5 --squash"), "an assignment with a quoted value is not the program"
         assert merge_denied('git commit -m msg -m "$(gh pr merge 5)"'), "a substitution in a message runs"
+        for c in ("( gh pr merge 5 )", "{ gh pr merge 5; }", "! gh pr merge 5", ">/dev/null gh pr merge 5", "2>&1 gh pr merge 5"):
+            assert merge_denied(c), "a group, a negation or a redirection before the program: " + c
 
     def test_direct_merge_refused_in_a_process_tree_no_tree(self):
         assert merge_denied("gh pr merge 5 --squash", REPO) is None
@@ -2505,6 +2507,10 @@ HISTORY_REFUSED = ("git push --force", "git push -f origin x", "git push -fu ori
                    "git push origin -- +main", "git -C ../repo push -f", "/usr/bin/git push -f", "sudo git push -f",
                    "env GIT_TRACE=1 git push -f", "command git push -f", "time git push -f", "git push --force-with-lease=main:abc origin",
                    "git push -uf origin x", "cd x && git push -f",
+                   # a group, a negation or a redirection before the program, a git global option taking the next word
+                   "( git push -f )", "{ git push -f; }", "cd /tmp && { git push -f origin x; }", "! git push -f", "time ( git push -f )",
+                   "( git reset --hard )", ">/dev/null git push -f", "2>&1 git push -f", "> out.log git reset --hard",
+                   "git --attr-source HEAD push -f", "git --config-env x.y=HOME push -f",
                    # A hidden run
                    'bash -c "git push -f"', "eval git push --force", "echo $(git push -f)",
                    # The hard forms
@@ -2522,12 +2528,12 @@ HISTORY_PASSING = ("git push origin main", "git push -u origin x", "git push --d
 # Requirement: Known bypasses of the history guard. An accident guard, not a boundary: these pass today.
 # A change that closes one moves it to the refused tests and docs/hooks.md.
 KNOWN_HISTORY_BYPASSES = (
-    "echo x | xargs git push -f", "find . -maxdepth 0 -exec git push -f \;", "sudo -u x git push -f", "env -u X git push -f",
+    "echo x | xargs git push -f", "find . -maxdepth 0 -exec git push -f \\;", "sudo -u x git push -f", "env -u X git push -f",
     "f(){ git reset --hard; }; f", "A=(1 2) bash -c 'git push -f'", "A=(1 2) eval git push -f",
     'echo "$(echo "$(echo "$(echo "$(git push -f)")")")"', 'echo "$(echo "`git push -f; grep ")" f`")"',
     "echo $(echo '(') $(echo '(') $(echo '(') \"$(git reset --hard)\"", 'echo "x\n$\\\n(git push -f)"',
     "caffeinate -t 5 git push -f", "exec -a N git push -f", "npx -p x git push -f", "time -o /tmp/x git push -f", "sudo -Hu root git push -f",
-    "git config alias.fp 'push --force'; git fp origin main","git -c remote.origin.push=+main:main push origin",
+    "git config alias.fp 'push --force'; git fp origin main", "git -c remote.origin.push=+main:main push origin",
     "python3 <<'EOF'\nimport subprocess\nsubprocess.run(['git', 'push', '--force'])\nEOF",
     "node <<'EOF'\nrequire('child_process').execSync('git push --force')\nEOF")
 KNOWN_HISTORY_FALSE_REFUSALS = ('A=(1 2); git commit -m "a; git push -f later"',)

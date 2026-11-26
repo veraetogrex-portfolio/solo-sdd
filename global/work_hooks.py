@@ -1489,11 +1489,11 @@ GIT_GLOBAL_VALUED = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--e
 MESSAGE_OPTS = {"git": ("commit", "tag"), "gh": ("pr", "issue")}
 
 
-def git_sub(w, i):
+def git_sub(w, i, valued=GIT_GLOBAL_VALUED):
     """Index of the git subcommand after the program word i, past the global options."""
     j = i + 1
     while j < len(w) and w[j].startswith("-"):
-        j += 2 if w[j] in GIT_GLOBAL_VALUED else 1
+        j += 2 if w[j] in valued else 1
     return j
 
 
@@ -2627,6 +2627,9 @@ def gh_merge_words(w):
     return pos[:2] == ["pr", "merge"] or pos[:1] == ["api"] and any(MERGE_API.search(x) for x in pos[1:])
 
 
+REDIR_WORD = re.compile(r"\d*(?:&>>|&>|>>|>&|>\||<&|<>|<<<|<<|>|<)-?")  # an operator alone: its target is the next word
+
+
 def gh_merges(cmd, depth=0, subs=None, match=gh_merge_words):
     """A gh pr merge or gh api …/pulls/<n>/merge run, read as archive_runs reads an archive: the program word after
     wrappers and assignments; substitutions (each a command list again), eval and a shell's -c string are parsed again;
@@ -2636,6 +2639,14 @@ def gh_merges(cmd, depth=0, subs=None, match=gh_merge_words):
         return True
     for part in split_cmd(cmd)[::2]:
         raw = split_words(part)
+        # a redirection (>/dev/null, 2>&1, `> out` with its target) is not a word of the command, wherever it stands
+        kept, skip = [], False
+        for y in raw:
+            if skip or REDIR_WORD.match(y):
+                skip = not skip and bool(REDIR_WORD.fullmatch(y))
+                continue
+            kept.append(y)
+        raw = kept
         w = [os.path.basename(x) if os.path.basename(x) in WRAPPERS else x for x in (re.split(r"[<>)&]", y, 1)[0] for y in raw)]
         # an assignment with a quoted value holding spaces (FOO='a b') is unquoted here, cmd_start would take it for the program
         w = ["A=x" if re.fullmatch(r"[A-Za-z_]\w*=[\s\S]*", x) else x for x in w]
@@ -2648,7 +2659,7 @@ def gh_merges(cmd, depth=0, subs=None, match=gh_merge_words):
             c = next((k for k in range(i + 1, len(w)) if re.fullmatch(r"-\w*c\w*", w[k])), None)
             if c is not None and c + 1 < len(w) and gh_merges(raw[c + 1], depth + 1, match=match):
                 return True
-        elif match(w):
+        elif match(w[i:]):  # cmd_start has already stripped a leading ( { ! in place: the match reads from the program
             return True
     return False
 
@@ -2721,7 +2732,7 @@ def git_history_words(w):
     i = cmd_start(w)
     if i >= len(w) or os.path.basename(w[i]) != "git":
         return False
-    j = git_sub(w, i)
+    j = git_sub(w, i, GIT_GLOBAL_VALUED | {"--attr-source", "--config-env"})  # git 2.54 reads their value as the next word
     sub, args = w[j:j + 1], w[j + 1:]
     if sub == ["push"]:
         return push_forced(args)
