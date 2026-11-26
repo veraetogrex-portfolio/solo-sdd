@@ -6,7 +6,7 @@ sys.stdin are patched and stdout is captured; the git-root cache starts empty, a
 own temporary HOME (`wh-home-*`), removed when the test ends, also when it fails. `EntryPoint` runs the real
 `global/work_hooks.py` as a process, one to three times per command `main` dispatches.
 """
-import contextlib, datetime, importlib.util, io, itertools, json, os, shutil, subprocess, sys, tempfile, time, unicodedata, unittest, warnings
+import contextlib, datetime, importlib.util, io, itertools, json, os, re, shutil, subprocess, sys, tempfile, time, unicodedata, unittest, warnings
 from unittest import mock
 
 from hypothesis import given, settings, strategies as st
@@ -2431,6 +2431,10 @@ class DirectMerge(HookCase):
         assert merge_denied("gh api -X PUT 'repos/o/r/pulls/5/merge?merge_method=squash'"), "a query string after the endpoint"
         assert merge_denied("FOO='a b' gh pr merge 5 --squash"), "an assignment with a quoted value is not the program"
         assert merge_denied('git commit -m msg -m "$(gh pr merge 5)"'), "a substitution in a message runs"
+        for c in ("( gh pr merge 5 )", "{ gh pr merge 5; }", "! gh pr merge 5", ">/dev/null gh pr merge 5", "2>&1 gh pr merge 5",
+                  'bash -c ">x; gh pr merge 5"', "eval '>x; gh pr merge 5'", 'bash -c ">/dev/null gh pr merge 5"',
+                  "eval '>x;gh' pr merge 5", ">'my out.log' gh pr merge 5", "2>'a b' gh pr merge 5", ">$(mktemp -d)/log gh pr merge 5", "gh api -H '>' -X PUT repos/o/r/pulls/5/merge"):
+            assert merge_denied(c), "a group, a negation or a redirection before the program: " + c
 
     def test_direct_merge_refused_in_a_process_tree_no_tree(self):
         assert merge_denied("gh pr merge 5 --squash", REPO) is None
@@ -2492,6 +2496,134 @@ class DirectMerge(HookCase):
         got = merge_denied(wrap % (cmd.replace(q, other) if q else cmd), TREE if tree else REPO)
         assert bool(got) == (tree and command), (tree, wrap, cmd, got)
 
+
+# ---------- Requirements: Forced push refused, Hard reset refused, Known bypasses of the history guard (history-guard) ----------
+
+def history_denied(c, cwd=None):
+    out = run("guard", {"session_id": "S1", "cwd": cwd or REPO, "tool_name": "Bash", "tool_input": {"command": c}})
+    return out["hookSpecificOutput"]["permissionDecisionReason"] if out else None
+
+
+HISTORY_REFUSED = ("git push --force", "git push -f origin x", "git push -fu origin x", "git push --force-with-lease",
+                   "git push --force-if-includes --force-with-lease", "git push --force-w", "git push origin +main",
+                   "git push origin -- +main", "git -C ../repo push -f", "/usr/bin/git push -f", "sudo git push -f",
+                   "env GIT_TRACE=1 git push -f", "command git push -f", "time git push -f", "git push --force-with-lease=main:abc origin",
+                   "git push -uf origin x", "cd x && git push -f",
+                   # a group, a negation or a redirection before the program, a git global option taking the next word
+                   "( git push -f )", "{ git push -f; }", "cd /tmp && { git push -f origin x; }", "! git push -f", "time ( git push -f )",
+                   "( git reset --hard )", ">/dev/null git push -f", "2>&1 git push -f", "> out.log git reset --hard",
+                   "git --attr-source HEAD push -f", "git --config-env x.y=HOME push -f",
+                   'bash -c ">x; git push -f"', "eval '>x; git reset --hard'", 'bash -c ">/dev/null git push -f"',
+                   "sh -c '2>&1 git reset --hard'", "bash -c '>x;git push -f'", "eval '>x;git' push -f", "eval '2>&1;git' reset --hard",
+                   ">'my out.log' git push -f", "2>'a b' git reset --hard", '>"/tmp/my log" git push -f', "eval \\>x\\;git push -f",
+                   ">$(mktemp -d)/log git push -f", "2>$(mktemp -d)/err git reset --hard", ">`mktemp -d`/log git push -f",
+                   '>"$(echo a b)" git push -f',
+                   # A hidden run
+                   'bash -c "git push -f"', "eval git push --force", "echo $(git push -f)",
+                   # The hard forms
+                   "git reset --hard", "git reset --hard HEAD~1", "git reset origin/main --hard", "git reset --har HEAD",
+                   "git reset --h", "git -C ../repo reset --hard")
+HISTORY_PASSING = ("git push origin main", "git push -u origin x", "git push --delete origin x", "git push -o ci.skip origin x",
+                   "git push -of origin x", "git push --no-force origin x", "git push --repo --force origin x",
+                   # Other programs and subcommands
+                   "python3 sync.py push --force", "git worktree remove --force /tmp/wt", "git branch -f x main",
+                   # Text about a forced push
+                   'git commit -m "never git push --force"', 'rg -- "push --force" docs', "echo 'git reset --hard'",
+                   "cat > note.md <<'EOF'\ngit push --force\nEOF", 'git commit -m "x" -m "git reset --hard is refused"',
+                   "echo '>x; git push -f'", "git status > 'my out.log'",
+                   # Other resets
+                   "git reset", "git reset --soft HEAD~1", "git reset -- file.py", "git reset -- --hard", "git reset --mixed HEAD")
+# Requirement: Known bypasses of the history guard. An accident guard, not a boundary: these pass today.
+# A change that closes one moves it to the refused tests and docs/hooks.md.
+KNOWN_HISTORY_BYPASSES = (
+    "echo x | xargs git push -f", "find . -maxdepth 0 -exec git push -f \\;", "sudo -u x git push -f", "env -u X git push -f",
+    "f(){ git reset --hard; }; f", "A=(1 2) bash -c 'git push -f'", "A=(1 2) eval git push -f",
+    'echo "$(echo "$(echo "$(echo "$(git push -f)")")")"', 'echo "$(echo "`git push -f; grep ")" f`")"',
+    "echo $(echo '(') $(echo '(') $(echo '(') \"$(git reset --hard)\"", 'echo "x\n$\\\n(git push -f)"',
+    "caffeinate -t 5 git push -f", "exec -a N git push -f", "npx -p x git push -f", "time -o /tmp/x git push -f", "sudo -Hu root git push -f",
+    "git config alias.fp 'push --force'; git fp origin main", "git -c remote.origin.push=+main:main push origin",
+    "python3 <<'EOF'\nimport subprocess\nsubprocess.run(['git', 'push', '--force'])\nEOF",
+    "node <<'EOF'\nrequire('child_process').execSync('git push --force')\nEOF")
+KNOWN_HISTORY_FALSE_REFUSALS = ('A=(1 2); git commit -m "a; git push -f later"',)
+# the property: remotes, refs and plain options around one force form; git's value-taking options of push
+PUSH_PLAIN = ["-u", "-v", "-q", "--tags", "--atomic", "--prune", "--follow-tags", "-o ci.skip", "--push-option=x", "--repo origin",
+              "--recurse-submodules check", "-uv", "-n"]
+PUSH_FORCE = ["--force", "-f", "-fu", "-uf", "-vfq", "-fn", "-qf", "--force-with-lease", "--force-with-lease=main:abc", "--force-if-includes",
+              "--force-w", "--force-wi", "--force-with", "+main", "+refs/heads/x:refs/heads/x"]
+PUSH_VALUE = ["-o %s", "--push-option %s", "--repo %s", "--receive-pack %s", "--exec %s", "-uo %s"]
+RESET_PLAIN = ["-q", "--soft", "--mixed", "--no-refresh", "HEAD", "HEAD~1", "origin/main"]
+RESET_HARD = ["--hard", "--h", "--ha", "--har"]
+GITS = ["git", "git -C ../repo", "/usr/bin/git", "git -c user.name=x", "git --git-dir=.git"]
+
+
+class HistoryGuard(HookCase):
+    def test_forced_push_refused_the_forced_forms(self):
+        for c in HISTORY_REFUSED:
+            why = history_denied(c)
+            assert why, "passes: " + c
+            assert "No `--force` and no `git reset --hard`" in why and "new commit" in why and "git stash" in why, why
+        assert history_denied("git push -f", H), "outside a git repository"
+
+    def test_forced_push_refused_plain_pushes(self):
+        for c in HISTORY_PASSING:
+            assert history_denied(c) is None, c
+
+    def test_forced_push_refused_broken_input(self):
+        rows = ('git push -f "origin', "git push -f $(echo x", "cat <<EOF; git push -f", "echo " + "a" * 200000 + "; git push -f",
+                "echo x\\\n" * 25000 + "; git push -f", "echo " + "$(" * 5000 + "x" + ")" * 5000 + "; git push -f")
+        for c in rows:
+            t = time.monotonic()
+            assert history_denied(c), c[:60]
+            assert time.monotonic() - t < 10, (c[:60], time.monotonic() - t)
+
+    @settings(max_examples=200, deadline=None)
+    @given(st.data())
+    def test_forced_push_refused_and_hard_reset_refused_property(self, data):
+        d = lambda s: data.draw(s)
+        g = d(st.sampled_from(GITS))
+        reset = d(st.booleans())
+        plain = d(st.lists(st.sampled_from(RESET_PLAIN if reset else PUSH_PLAIN), max_size=4))
+        form = d(st.sampled_from(RESET_HARD if reset else PUSH_FORCE))
+        tail = d(st.sampled_from([[], ["--", "file.py"]] if reset else [[], ["origin"], ["origin", "main"], ["origin", "--", "x"]]))
+        refspec = form.startswith("+")
+        slot = d(st.sampled_from(["option", "after --", "message"] + ([] if reset else ["value"])))
+        if slot == "after --" and refspec:
+            slot = "option"  # a + refspec after -- still forces
+        at = d(st.integers(0, len(plain)))
+        if slot == "option":
+            words, want = plain[:at] + [form] + plain[at:] + tail, True
+        elif slot == "value":
+            words, want = plain[:at] + [d(st.sampled_from(PUSH_VALUE)) % form] + plain[at:] + tail, False
+        elif slot == "after --":
+            words, want = plain + (tail if "--" in tail else tail + ["--"]) + [form], False
+        else:
+            c = '%s commit -m "never %s %s %s"' % (g, "reset" if reset else "push", " ".join(plain), form)
+            assert history_denied(c) is None, c
+            return
+        c = "%s %s %s" % (g, "reset" if reset else "push", " ".join(words))
+        assert bool(history_denied(c)) == want, (c, want)
+
+    @settings(max_examples=100, deadline=None)
+    @given(st.sampled_from(["git push -f", "git push --force origin main", "git reset --hard", "eval git push -f"]),
+           st.lists(st.sampled_from(['"origin', "'x", "$(echo x", "`x", "<<EOF", "\\", "${x", "=(", "$'y", "((", "\n"]), min_size=1, max_size=4))
+    def test_forced_push_refused_broken_input_property(self, run_, tail):
+        c = run_ + " " + " ".join(tail)
+        assert history_denied(c), c  # tearDown: no errors.log line
+
+    def test_known_bypasses_of_the_history_guard_a_known_bypass_closed(self):
+        for c in KNOWN_HISTORY_BYPASSES:
+            assert history_denied(c) is None, "a known bypass is refused now, move it to the refused tests and docs/hooks.md: " + c
+
+    def test_known_bypasses_of_the_history_guard_a_known_false_refusal(self):
+        for c in KNOWN_HISTORY_FALSE_REFUSALS:
+            assert history_denied(c), "a known false refusal passes now, move it to the passing tests: " + c
+
+    def test_forced_push_refused_git_option_names(self):
+        """The option names the reader knows are git's own: `git push -h` and `git reset -h` of the git on PATH list them."""
+        helps = {sub: subprocess.run(["git", sub, "-h"], capture_output=True, text=True).stdout for sub in ("push", "reset")}
+        for sub, names in (("push", wh.PUSH_FORCE_OPTS + wh.PUSH_VALUE_OPTS), ("reset", (wh.RESET_HARD_OPT,))):
+            for n in names:
+                assert re.search(r"--(\[no-\])?%s\b" % re.escape(n[2:]), helps[sub]), (sub, n)
 
 # ---------- Requirements: Checks without the policy, Hook errors in the session context, Error log size (work-hooks-subagents)
 # and Test model allowlist (model-guard). The hook reads model-policy.json next to itself: a copy of the hook in its own folder,
