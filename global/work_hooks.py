@@ -2098,13 +2098,16 @@ def reads_input(w, depth=0):
 
 def eval_text(parts, k, text, depth=0):
     """The text that part k runs with its stdin (handed_text); when a pipe feeds it, what the pipe carries (piped_text) is
-    echoed into the first head of the text that reads its input: `echo env | eval sh` runs as `echo env | sh`. One head: a
-    shell, tee and a bare cat read their input to its end."""
+    echoed into the first head of the text that reads its input, or else into its first compound command when the text
+    runs a program that reads commands from stdin: `echo env | eval sh` runs as `echo env | sh`. One head: a shell, tee and
+    a bare cat read their input to its end."""
     t = piped_text(parts, k - 2, depth + 1) if k >= 2 and parts[k - 1] == "|" else None
     if t is None:
         return text
     sub = split_cmd(text)
     j = next((j for j in heads(sub) if reads_input(part_words(sub[j])[0], depth)), None)
+    if j is None and any(runs_stdin(words_of(x)) for x in sub[::2]):  # `echo env | sh -c 'true; (true; sh)'`: the
+        j = next((j for j in heads(sub) if opens(words_of(sub[j]))), None)  # compound's commands read the text's stdin
     if j is not None:
         sub[j] = "echo %s | %s" % (shlex.quote(t), sub[j])
     return "".join(sub)
@@ -2215,17 +2218,42 @@ COMPOUND = {"if", "while", "until", "for", "select", "case", "coproc", "{"}
 COMPOUND_END = {"fi", "done", "esac", "}"}
 
 
+def words_of(part):
+    """The words of a part without its redirections (part_words): `sh 2>/dev/null` runs sh with no script."""
+    return part_words(part)[0]
+
+
+def opens(w):
+    return any(x[:1] == "(" or x in COMPOUND for x in w)
+
+
+def runs_stdin(w, depth=0):
+    """The part with the bare words w runs a program that reads commands from its stdin: a shell without a script or with
+    -s, or an eval or a shell's -c string whose text has such a part (past three levels any); the program is the word after
+    the keywords, wrappers and a subshell's or group's brackets, or the word after a case pattern's `)`."""
+    starts = [k + 1 for k, x in enumerate(w) if re.search(r"\)\d*$", x)]
+    w = [x.lstrip("({!").split(")")[0].rstrip("}") for x in w]  # `(sh)2>/dev/null`: the fd after `)` is the redirection's
+    for i in [cmd_start(w, extra=("coproc",))] + starts:
+        p = os.path.basename(w[i]) if i < len(w) else ""
+        text = " ".join(eval_words(w, i)) if p == "eval" else shell_reads_stdin(w, i)[0] if p in SHELLS else None
+        if text is not None and (depth >= 3 or any(runs_stdin(words_of(x), depth + 1) for x in split_cmd(text)[::2])):
+            return True
+        if text is None and p in SHELLS and shell_reads_stdin(w, i)[1]:
+            return True
+    return False
+
+
 def unread(parts):
     """The text of parts the pipe walk does not read, so every name in it counts: all of it when a pipe meets a compound
     command (a part after `|` with a word starting with `(` or an opening keyword, or a part before `|` with a word ending
-    in `)` or a closing keyword) and a word names a shell or eval, as a compound's commands share its stdin and output; and
-    from the first part that runs case to the last esac, as a pattern's `)` and `|` hide the program after it. '' else."""
-    words = [[re.split(r"[<>]", unsubstituted(x))[0] for x in split_words(protect_quoted(parts[k]))] for k in range(0, len(parts), 2)]
-    opens = lambda w: any(x[:1] == "(" or x in COMPOUND for x in w)
-    ends = lambda w: any(x.endswith(")") and not x.endswith("()") or x in COMPOUND_END for x in w)
+    in `)` or a closing keyword) and a part runs a program that reads commands from its stdin (runs_stdin), as a compound's
+    commands share its stdin and output; and from the first part that runs case to the last esac, as a pattern's `)` and
+    `|` hide the program after it. '' else."""
+    words = [words_of(parts[k]) for k in range(0, len(parts), 2)]
+    ends = lambda w: any(re.search(r"[^(]\)\d*$", x) or x in COMPOUND_END for x in w)
     piped = any(parts[2 * n + 1:2 * n + 2] == ["|"] and (ends(w) or n + 1 < len(words) and opens(words[n + 1]))
                 for n, w in enumerate(words))
-    if piped and any(os.path.basename(y) in SHELLS + ("eval",) for w in words for x in w for y in re.split(r"[(){}!]", x)):
+    if piped and any(runs_stdin(w) for w in words):
         return "".join(parts)
     runs = [n for n, w in enumerate(words) if first_word(parts[2 * n]) == "case"]
     if not runs:

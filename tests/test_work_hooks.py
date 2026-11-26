@@ -2185,7 +2185,8 @@ class SecretFiles(HookCase):
                   "eval echo cat .env | sh", "echo cat .env |& sh", "echo cat .env | (true; sh)", "echo cat .env | sh>out",
                   "(cat <.env)", "case x in x) cat .env;; esac", "(cat) < .env", "(cat)<.env | wc -l", "(sort)<.env",
                   "(cd /tmp; cat) < .env", "(while read l; do echo $l; done) < .env", "cat !(x) .env", "cat @(a) .env",
-                  "cat *(N) .env", "cat *(N) <.env", "echo cat .env | case x in x) sh;; esac"):
+                  "cat *(N) .env", "cat *(N) <.env", "echo cat .env | case x in x) sh;; esac", "echo cat .env | (true; sh&>out)",
+                  "echo cat .env | sh -c 'true; (true; sh)'"):
             assert bash(c), c
 
     def test_secret_file_reads_in_bash_allowed_uses(self):
@@ -2203,7 +2204,9 @@ class SecretFiles(HookCase):
                   "cat > notes.md <<'EOF'\n# Setup\nCopy .env.example to .env, then run env.\nEOF",
                   "case \"$1\" in a) echo hi;; esac; test -f .env && echo y", "case x in x) true;; esac; echo 'API_KEY=' >> .env",
                   "( (ls -la .env) )", "( if true; then ls .env; fi )", "for i in 1; do true; done>out; test -f .env",
-                  "f() { true; }; test -f .env", "[[ $x =~ (a|b) ]] && test -f .env", "case x in esac; test -f .env"):
+                  "f() { true; }; test -f .env", "[[ $x =~ (a|b) ]] && test -f .env", "case x in esac; test -f .env",
+                  "(cd app && bash build.sh) 2>&1 | tail -5; test -f .env && echo ok", "for f in *.sh; do bash -n \"$f\"; done | head; test -f .env",
+                  "(sh -c 'ls') | wc -l; grep -c '^KEY=' .env"):
             assert not bash(c), c
 
     def test_secret_file_reads_in_bash_not_plain_forms(self):
@@ -2248,7 +2251,10 @@ class SecretFiles(HookCase):
                   "echo env | { cat; } | sh", "echo env | if true; then cat; fi | sh", "{ echo env; } | sh", "(echo env; true) | sh",
                   "for i in 1; do echo env; done | sh", "echo env | (case x in x) sh;; esac)",
                   "echo env | sh&>out", "echo env | time (sh)", "echo env | coproc (sh)", "echo env | (true); sh",
-                  "echo env | (true; sh ')')", "echo env | ( true ) | sh", "{ echo \"'\"; echo \"'\"; echo env; } | sh", "echo env | sh -c \"eval 'sh -c sh'\"",
+                  "echo env | ( true ) | sh", "{ echo \"'\"; echo \"'\"; echo env; } | sh",
+                  "echo env | (true; sh&>out)", "echo env | (cat) | sh&>out", "{ echo env; }&>/dev/stdout | sh",
+                  "for i in 1; do echo env; done&>/dev/stdout | sh", "echo env | sh -c 'true; (true; sh)'",
+                  "echo env | eval 'true; (true; sh)'", "echo env | sh -c 'case x in x) sh;; esac'", "echo env | sh -c \"eval 'sh -c sh'\"",
                   "echo env | sh -c \"sh -c 'sh -c \\\"sh -c \\\\\\\"sh -c sh\\\\\\\"\\\"'\"",
                   'echo "$(case x in x) env;; esac)"', "echo $(case x in x) env;; esac)", 'y=$(case x in x) env;; esac); echo "$y"'):
             assert bash(c), c
@@ -2259,9 +2265,10 @@ class SecretFiles(HookCase):
                   "echo env | eval true", "eval \"echo 'env\" | sh", "echo ls |& sh", "echo ls |\nsh", "eval -- ls",
                   "echo ls | eval -- sh", "echo ls | (sh)", 'echo "$(date)"; grep "env" f |& cat',
                   "echo ls | (true; sh)", "echo ls | sh -c sh", "echo ls | sh>out", "echo ls | (cat) | sh", "case x in x) ls;; esac",
-                  "echo ls | (true; sh ')')", "echo env | (cat) > out", "echo env | (cat; true) > out",
+                  "echo ls | (true; sh ')')", "echo env | (true; sh ')')", "echo env | (cat) > out", "echo env | (cat; true) > out",
                   "echo ls | (cat; true) | sh", "{ echo ls; } | sh", 'grep "env" f; case x in x) true;; esac',
-                  "> [ ] update check (off by env)"):
+                  "> [ ] update check (off by env)", "(cd /tmp && sh x.sh) | head -2; env -u X python3 -V",
+                  "(which bash) | head; printenv HOME"):
             assert not bash(c), c
         # every pipe form into every shell form: what a dump word prints is refused, ls passes
         for p, sh, w in itertools.product(("| ", "|& ", "|\n", "| \n\n "), ("sh", "bash -s", "(sh)", "( sh )", "( (sh) )", "( (sh))",
