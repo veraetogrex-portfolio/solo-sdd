@@ -6,15 +6,20 @@ target repository, with the launch lines, and writes none for a target without a
                                              prompts; prints `target:`, `plain:`, `bare:`, `notes:`, `inputs:`,
                                              `allout:`, `prompt:`, `inside:`, `plain-prompt:`, `bare-prompt:`,
                                              `allout-prompt:`
+  prepare --chat                             a fresh stand with only `target/` (its files and history never hold
+                                             `docs/review.md`), `home/` and the chat prompt; prints `target:`,
+                                             `home:`, `chat-prompt:`
   clean <folder>                             remove a folder `prepare` made (it holds the marker), refuse any other
   --grade <stand> <reply> <input folder>     the nine lines of an input and its reply
-  --grade-refusal <stand> <reply> <target>   `no input`, `reason named`
+  --grade-refusal <stand> <reply> <target>   `no input` (no new file or folder at all), `reason named`
   --grade-nothing <stand> <reply>            `no input`, `nothing to plan`
   --grade-confined <transcript>              `grading out of reach`
   selftest                                   every reference and hostile-input check of Live Scenario step 6; the last
                                              line is `<n> of <m> checks passed`
 
-A new file is one not listed in `.prepared` (a walk after the fixtures, `.git/` folders skipped, links not followed).
+A new file or folder is one not listed in `.prepared` (a walk after the fixtures, `.git/` folders skipped, links not
+followed). The launch lines of a reply are its first three non-empty lines, the first not naming the input path; those
+of an input file stand anywhere in its first 10 non-empty lines, below its title, its first non-empty line.
 Lines are graded after `*`, backquotes, heading, list and quote markers are stripped and whitespace collapsed; items are
 found by their text, not by their review letter. An empty, non-UTF-8 or over 1 MB reply or input file, an over 20 MB
 transcript, a transcript line that is not one whole JSON record, a new `.md` that is a link, a missing file and a wrong
@@ -104,11 +109,11 @@ def git(cwd, *args, check=False):
 
 
 def walk(root):
-    """Relative paths of every file and link under root, `.git` folders skipped, links not followed."""
+    """Relative paths of every file, folder and link under root, `.git` folders skipped, links not followed."""
     out = []
     for d, dirs, files in os.walk(root):
         dirs[:] = sorted(x for x in dirs if x != ".git" and not os.path.islink(os.path.join(d, x)))
-        out += [os.path.relpath(os.path.join(d, f), root) for f in files]
+        out += [os.path.relpath(os.path.join(d, f), root) for f in files + dirs]
         out += [os.path.relpath(os.path.join(d, x), root) for x in os.listdir(d)
                 if x != ".git" and os.path.islink(os.path.join(d, x)) and os.path.isdir(os.path.join(d, x))]
     return sorted(out)
@@ -118,11 +123,62 @@ def base():
     return pathlib.Path(os.environ.get("TMPDIR") or "/tmp")
 
 
-def prompt(skill, target, review, extra=""):
-    where = "the review is `%s`" % review if review else "the review is in the owner's message, with no file"
-    return ("The skill you follow, whole:\n\n" + skill + "\n\nThe target repository is `%s`, %s.%s\n\n"
-            "Do not read anything of the solo-sdd repository: the skill is above.\n\n"
-            "The owner's message: make an input for spec-plan from the review\n" % (target, where, extra))
+def prompt(skill, target, review, home, extra=""):
+    where = "the review is `%s`" % review if review else "the review is pasted in the owner's message"
+    return ("The skill you follow, whole:\n\n" + skill + "\n\nThe target repository is `%s`, %s. For this task `~` "
+            "is `%s`.%s\n\nDo not read anything of the solo-sdd repository: the skill is above.\n\n"
+            "Your final message is passed to the owner as your answer.\n\n"
+            "The owner's message: make an input for spec-plan from the review%s\n"
+            % (target, where, home, extra, "" if review else ":\n\n" + REVIEW))
+
+
+def make_target(target, env, review):
+    """A git repository with a solo-sdd tree, the open change log-retries and the commits of items C and G; with
+    review, `docs/review.md` is in its first commit."""
+    target.mkdir()
+    git(target, "init", "-q", check=True)
+    for args in (["init", "--yes"], ["new", "log-retries"]):
+        p = subprocess.run([sys.executable, "-m", "solo_sdd"] + args, cwd=target, env=env,
+                           capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=120)
+        if p.returncode:
+            raise RuntimeError("solo-sdd %s: %s" % (args[0], (p.stdout + p.stderr).strip()))
+    (target / "solo-sdd/changes/log-retries/tasks.md").write_text(TASKS, encoding="utf-8")
+    (target / "app.py").write_text(APP, encoding="utf-8")
+    (target / "legacy.py").write_text("OLD = True\n", encoding="utf-8")
+    if review:
+        (target / "docs").mkdir(exist_ok=True)
+        (target / "docs/review.md").write_text(REVIEW, encoding="utf-8")
+    git(target, "add", "-A", check=True)
+    git(target, "commit", "-qm", "start", check=True)
+    (target / "app.py").write_text(APP + RETRY, encoding="utf-8")
+    git(target, "commit", "-qam", SUBJECT_C, check=True)
+    git(target, "rm", "-q", "legacy.py", check=True)
+    git(target, "commit", "-qm", SUBJECT_G, check=True)
+
+
+def write_list(tmp):
+    files = walk(tmp) + [LIST]
+    (tmp / LIST).write_text("".join(f + "\n" for f in sorted(files)), encoding="utf-8")
+
+
+def prepare_chat():
+    tmp = pathlib.Path(tempfile.mkdtemp(prefix=PREFIX, dir=str(base())))
+    home = pathlib.Path(tempfile.mkdtemp(prefix="plan-input-home."))
+    try:
+        (tmp / MARK).write_text("plan-input stand\n", encoding="utf-8")
+        make_target(tmp / "target", dict(os.environ, PYTHONPATH=str(REPO), HOME=str(home)), False)
+        (tmp / "home").mkdir()
+        skill = (REPO / "skills/plan-input/SKILL.md").read_text(encoding="utf-8")
+        (tmp / "chat-prompt.md").write_text(prompt(skill, tmp / "target", None, tmp / "home"), encoding="utf-8")
+        write_list(tmp)
+    except BaseException:
+        shutil.rmtree(tmp, ignore_errors=True)
+        raise
+    finally:
+        shutil.rmtree(home, ignore_errors=True)
+    for name in ("target", "home"):
+        print("%s: %s" % (name, tmp / name))
+    print("chat-prompt: %s" % (tmp / "chat-prompt.md"))
 
 
 def prepare():
@@ -131,28 +187,8 @@ def prepare():
     try:
         (tmp / MARK).write_text("plan-input stand\n", encoding="utf-8")
         target = tmp / "target"
-        target.mkdir()
-        git(target, "init", "-q", check=True)
         env = dict(os.environ, PYTHONPATH=str(REPO), HOME=str(home))
-        p = subprocess.run([sys.executable, "-m", "solo_sdd", "init", "--yes"], cwd=target, env=env,
-                           capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=120)
-        if p.returncode:
-            raise RuntimeError("solo-sdd init: " + (p.stdout + p.stderr).strip())
-        p = subprocess.run([sys.executable, "-m", "solo_sdd", "new", "log-retries"], cwd=target, env=env,
-                           capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=120)
-        if p.returncode:
-            raise RuntimeError("solo-sdd new: " + (p.stdout + p.stderr).strip())
-        (target / "solo-sdd/changes/log-retries/tasks.md").write_text(TASKS, encoding="utf-8")
-        (target / "app.py").write_text(APP, encoding="utf-8")
-        (target / "legacy.py").write_text("OLD = True\n", encoding="utf-8")
-        (target / "docs").mkdir(exist_ok=True)
-        (target / "docs/review.md").write_text(REVIEW, encoding="utf-8")
-        git(target, "add", "-A", check=True)
-        git(target, "commit", "-qm", "start", check=True)
-        (target / "app.py").write_text(APP + RETRY, encoding="utf-8")
-        git(target, "commit", "-qam", SUBJECT_C, check=True)
-        git(target, "rm", "-q", "legacy.py", check=True)
-        git(target, "commit", "-qm", SUBJECT_G, check=True)
+        make_target(target, env, True)
         locked = tmp / "locked"
         locked.mkdir()
         git(locked, "init", "-q", check=True)
@@ -185,10 +221,9 @@ def prepare():
                 ("bare-prompt", tmp / "bare", tmp / "notes/review.md", ""),
                 ("allout-prompt", target, tmp / "allout/review.md", ""),
                 ("locked-prompt", locked, tmp / "notes/review.md", ""),
-                ("chat-prompt", target, None, " For this task `~` is `%s`.\n\nThe review:\n\n%s" % (tmp / "home", REVIEW))):
-            (tmp / (name + ".md")).write_text(prompt(skill, tgt, review, extra), encoding="utf-8")
-        files = walk(tmp) + [LIST]
-        (tmp / LIST).write_text("".join(f + "\n" for f in sorted(files)), encoding="utf-8")
+                ("chat-prompt", target, None, "")):
+            (tmp / (name + ".md")).write_text(prompt(skill, tgt, review, tmp / "home", extra), encoding="utf-8")
+        write_list(tmp)
         (locked / "solo-sdd/changes").chmod(0)
     except BaseException:
         unlock(tmp)
@@ -342,10 +377,20 @@ def names_path(path, text):
     return any(re.search(re.escape(t) + r"(?:/(?![\w-]|\.\w)|(?![\w/-]))", text) for t in forms(path))
 
 
-def launch(text, target, inp):
-    head = "\n".join(lines(text)[:10])
-    return (names_path(target, head) and "/spec-dispatch" in head
-            and any(re.search(r"/spec-plan\s+\"?" + re.escape(f) + "\"?", head) for f in forms(inp)))
+def launch(text, target, inp, reply=False):
+    """The three launch lines: a reply's first three non-empty lines in order; in an input file, within its first 10
+    non-empty lines, after its `#` title, the first."""
+    ls = lines(text)
+
+    def plan(line):
+        return any(re.search(r"/spec-plan\s+\"?" + re.escape(f) + "\"?", line) for f in forms(inp))
+    if reply:
+        return (len(ls) >= 3 and names_path(target, ls[0]) and not any(names_path(f, ls[0]) for f in forms(inp))
+                and plan(ls[1]) and "/spec-dispatch" in ls[2])
+    raw = [r for r in text.splitlines() if r.strip()]
+    head = "\n".join(ls[1:10])
+    return (bool(raw) and re.match(r"\s*#\s", raw[0]) is not None and names_path(target, head)
+            and "/spec-dispatch" in head and plan(head))
 
 
 def commit_hashes(target):
@@ -393,7 +438,7 @@ def grade(stand, reply, folder):
                        for head, body in letters))
     c = counts(reply_text)
     print("outside target: %s" % yes(not new_files(stand, "target")))
-    print("launch lines: %s" % yes(launch(text, target, inp) and launch(reply_text, target, inp)))
+    print("launch lines: %s" % yes(launch(text, target, inp) and launch(reply_text, target, inp, reply=True)))
     print("plan line: %s" % yes(any(re.search(r"\bonly\b.*\bletter\b.*\bplan", l, re.I) for l in before)))
     print("decided items: %s" % yes(decided))
     print("already done: %s" % yes(only("C", "already done") and only("G", "already done")
@@ -421,7 +466,7 @@ def grade_refusal(stand, reply, target):
     target = pathlib.Path(target)
     is_git = git(target, "rev-parse", "--show-toplevel") is not None
     reason = (NO_TREE.search(flat) and not NOT_GIT.search(flat)) if is_git else NOT_GIT.search(flat)
-    print("no input: %s" % yes(no_input(stand)))
+    print("no input: %s" % yes(not new_files(stand)))
     print("reason named: %s" % yes(reason and names_path(target, flat) and not any(counts(text).values())))
 
 
@@ -527,6 +572,7 @@ def selftest():
         return 1
     stand = pathlib.Path(paths["target"]).parent
     scratch = pathlib.Path(tempfile.mkdtemp(prefix="plan-input-self."))
+    chat_paths = {}
     try:
         p = subprocess.run([sys.executable, "-m", "solo_sdd", "list", "--json"], cwd=paths["locked"],
                            env=dict(os.environ, PYTHONPATH=str(REPO)), capture_output=True, text=True,
@@ -572,7 +618,15 @@ def selftest():
                 ("conflicting counts", ref, reply.replace("2 already done", "2 already done, 3 done"),
                  "report counts: no"),
                 ("the target with a trailing slash", ref.replace("folder `{target}`", "folder `{target}/`"),
-                 reply.replace("folder `{target}`", "folder `{target}/`"), "launch lines: yes")):
+                 reply.replace("folder `{target}`", "folder `{target}/`"), "launch lines: yes"),
+                ("a reply opening with the input path", ref, "Input: `{input}`.\n" + reply, "launch lines: no"),
+                ("an input with the launch lines above its title", ref.split("\n", 1)[1].replace(
+                    "\n\nStarted from", "\n\n" + ref.split("\n", 1)[0] + "\n\nStarted from", 1), reply,
+                 "launch lines: no"),
+                ("a reply naming the input path on launch line 1", ref,
+                 reply.replace("`{target}`.", "`{target}`, input `{input}`.", 1), "launch lines: no"),
+                ("a reply with the input path inside the launch lines", ref,
+                 reply.replace("2. Type", "`{input}`\n2. Type"), "launch lines: no")):
             (notes / name).write_text(text, encoding="utf-8")
             (scratch / "reply.md").write_text(rep, encoding="utf-8")
             grades(label, ["--grade", stand, scratch / "reply.md", notes], [want])
@@ -618,6 +672,10 @@ def selftest():
         (scratch / "refusal.md").write_text("Stopped: `%s` is not a git repository.\n" % bare, encoding="utf-8")
         grades("a refusal for a folder without git", ["--grade-refusal", stand, scratch / "refusal.md", bare],
                ["no input: yes", "reason named: yes"])
+        (pathlib.Path(bare) / "docs").mkdir()
+        grades("an empty docs/ folder made in bare/", ["--grade-refusal", stand, scratch / "refusal.md", bare],
+               ["no input: no"])
+        (pathlib.Path(bare) / "docs").rmdir()
         hash_c = git(paths["target"], "log", "--format=%h", "--fixed-strings", "--grep=" + SUBJECT_C).split()[0]
         nothing = ("Nothing to plan.\n\n- Already done: 1 (C, retry once on timeout, %s)\n- Already planned: 0\n"
                    "- Not checked: 1 (E: `worker.py` is missing)\n- Not decided: 1 (D, switch to async)\n" % hash_c)
@@ -653,6 +711,28 @@ def selftest():
         (pathlib.Path(paths["inputs"]) / "x.md").write_text("x\n", encoding="utf-8")
         grades("an input written anyway", ["--grade-nothing", stand, scratch / "nothing.md"], ["no input: no"])
         refused("a wrong argument", ["--grade", stand])
+        owner = "Your final message is passed to the owner as your answer."
+        code, out = run("prepare", "--chat")
+        chat_paths = dict(line.split(": ", 1) for line in out if ": " in line)
+        check("prepare --chat prints target, home and chat-prompt",
+              code == 0 and {"target", "home", "chat-prompt"} <= set(chat_paths))
+        if code == 0 and "target" in chat_paths:
+            chat_stand = pathlib.Path(chat_paths["target"]).parent
+            item = REVIEW.splitlines()[4]
+            holders = [f for f in walk(chat_stand) if (chat_stand / f).is_file()
+                       and item in (chat_stand / f).read_text(encoding="utf-8", errors="replace")]
+            check("no file of the chat stand but its prompt holds the review",
+                  holders == ["chat-prompt.md"])
+            check("the chat target's history never holds docs/review.md",
+                  git(chat_paths["target"], "log", "--all", "--format=%H", "--", "docs/review.md") == "")
+        prompts = [(paths, n) for n in ("prompt", "inside", "plain-prompt", "bare-prompt", "allout-prompt",
+                                        "locked-prompt", "chat-prompt")] + [(chat_paths, "chat-prompt")]
+        for where, n in prompts:
+            text = pathlib.Path(where[n]).read_text(encoding="utf-8") if n in where else ""
+            check("the owner and ~ lines in %s%s" % (n, " of --chat" if where is chat_paths else ""),
+                  owner in text and "The owner's message:" in text
+                  and text.index(owner) < text.index("The owner's message:")
+                  and "For this task `~` is `%s`." % where.get("home") in text)
         refused("a missing reply", ["--grade", stand, scratch / "missing.md", notes])
         keep = scratch / "keep"
         keep.mkdir()
@@ -660,6 +740,8 @@ def selftest():
         refused("clean on a folder without the marker", ["clean", keep])
         check("nothing removed by that clean", (keep / "file.txt").is_file())
     finally:
+        if "target" in chat_paths:
+            run("clean", pathlib.Path(chat_paths["target"]).parent)
         shutil.rmtree(scratch, ignore_errors=True)
         code, _ = run("clean", stand)
         check("clean of the stand", code == 0)
@@ -672,6 +754,8 @@ if __name__ == "__main__":
     args = sys.argv[1:]
     if args == ["prepare"]:
         prepare()
+    elif args == ["prepare", "--chat"]:
+        prepare_chat()
     elif args == ["selftest"]:
         sys.exit(selftest())
     elif len(args) == 2 and args[0] == "clean":
@@ -689,6 +773,6 @@ if __name__ == "__main__":
     elif len(args) == 2 and args[0] == "--grade-confined":
         grade_confined(args[1])
     else:
-        fail("usage: plan-input.py prepare | clean <folder> | selftest | --grade <stand> <reply> <input folder> | "
+        fail("usage: plan-input.py prepare [--chat] | clean <folder> | selftest | --grade <stand> <reply> <input folder> | "
              "--grade-refusal <stand> <reply> <target> | --grade-nothing <stand> <reply> | --grade-unchecked <stand> <reply> | "
              "--grade-chat <stand> <reply> | --grade-confined <transcript>")
