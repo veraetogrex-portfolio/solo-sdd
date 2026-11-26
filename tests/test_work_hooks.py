@@ -2039,11 +2039,14 @@ class SecretFiles(HookCase):
                   "typeset -x # c", "set 2>&1 # c", "export 2>&1 # c", "declare -x 2>&1 # c", "set > /tmp/s # c",
                   "env env", "env -i env", "env -u X env", "env FOO=1 env", "env env -i", "/usr/bin/env env", "env /usr/bin/env",
                   "sudo env env", "timeout 5 env env", 'env "env"', "env -- env", "env -uX env", "env --unset=X env",
-                  "printf x | env env", "env -S env"):
+                  "printf x | env env", "env -S env", 'echo "$(date)"; env "$(xargs printenv)"/env ls',
+                  'echo "$(date)"; env `xargs printenv`/env ls', 'echo "$(date)"; env ${X}/env ls', 'echo "$(date)"; env $X/env ls',
+                  'echo "$(date)"; env "${HOME}"/env ls', 'echo "$(date)"; env /u*/bin/env ls'):
             assert bash(c), c
         for c in ("set -e", "set -euo pipefail", "set -- a b", "export PATH=/x:$PATH", "export -n FOO", "declare -p HOME",
                   "env -u ELECTRON_RUN_AS_NODE npm test", "printenv HOME", "env FOO=1 make", "echo set", "env env ls",
-                  "env -i env HOME=/x true", "env env printenv HOME"):
+                  "env -i env HOME=/x true", "env env printenv HOME", 'echo "$(date)"; env e""nv ls',
+                  'echo "$(date)"; env /usr/bin/env ls'):
             assert not bash(c), c
 
     def test_environment_dumps_refused_a_dump_word_in_a_search_pattern(self):
