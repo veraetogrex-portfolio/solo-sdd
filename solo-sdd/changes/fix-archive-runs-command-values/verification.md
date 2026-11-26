@@ -27,6 +27,7 @@ Step 5 needs the layout, a prod action after merge: before it the hook from the 
 
 ## Decisions Without Owner
 
+- sibling (2026-11-26, archive of `fix-pipe-walk-env`): it added the scenario Pipe and eval forms of the shell grammar to Environment dumps refused → the scenario is copied unchanged into this change's MODIFIED block, so this archive keeps it; nothing else in the block changed.
 - analyze: joined `env -S'…'`/`--split-string=…` are refused by the env guard first, so the archive reason never shows (J1) → the joined forms keep the dump reason in their own scenario; the env guard is not changed for them — `env_alone` belongs to Environment dumps refused, and they are refused either way.
 - analyze: the hostile rows had no expected answer (J3) → scenario Broken and deep strings: no run and no internal error for the broken and the past-depth strings, the run within a second for the long cluster.
 - analyze: the secret-guard delta was built on the dependency's delta before its PR #99 merged (J6) → #99 merged as 5549bc4, this branch was fast-forwarded onto it before any code, and the delta equals the main spec plus the `time --output`/`--format` rows; it is compared again before the archive.
