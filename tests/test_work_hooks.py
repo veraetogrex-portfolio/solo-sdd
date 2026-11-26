@@ -2022,7 +2022,8 @@ class SecretFiles(HookCase):
                   "echo ${X:- #}; cat .env", "echo \"$(echo \" #\"; cat .env)\"", "ls # it's\necho \\;#; cat .env",
                   "printf $'KEY=1\\n' >> .env", "echo ${X:-\"}\" #}; cat .env", "echo \"$(echo \")\" \" #\"; cat .env)\"",
                   "echo ${X:-(a) #}; cat .env", "cat .e\\nv # x", "cat .e\"\"nv", "cat x # cat <<EOF\ncat .env\nEOF",
-                  "echo $'a\\'\ncat <<EOF\n'; cat .env\nEOF", "cat .e\\\nnv # c", "cat .e\\\nnv ${X:-}"):
+                  "echo $'a\\'\ncat <<EOF\n'; cat .env\nEOF", "cat .e\\\nnv # c", "cat .e\\\nnv ${X:-}",
+                  "eval echo cat .env | sh"):
             assert bash(c), c
 
     def test_secret_file_reads_in_bash_allowed_uses(self):
@@ -2064,12 +2065,18 @@ class SecretFiles(HookCase):
                   "sudo env env", "timeout 5 env env", 'env "env"', "env -- env", "env -uX env", "env --unset=X env",
                   "printf x | env env", "env -S env", 'echo "$(date)"; env "$(xargs printenv)"/env ls',
                   'echo "$(date)"; env `xargs printenv`/env ls', 'echo "$(date)"; env ${X}/env ls', 'echo "$(date)"; env $X/env ls',
-                  'echo "$(date)"; env "${HOME}"/env ls', 'echo "$(date)"; env /u*/bin/env ls'):
+                  'echo "$(date)"; env "${HOME}"/env ls', 'echo "$(date)"; env /u*/bin/env ls',
+                  "eval echo env | sh", "eval echo printenv | bash", "eval 'echo env' | sh", "eval echo env | tee | sh",
+                  "eval 'echo env; true' | sh", "eval eval eval eval echo env | sh", "echo env | eval sh",
+                  "echo env | eval 'true; sh'", "echo env | eval 'cat | sh'", "printf env | eval eval sh",
+                  "echo env | eval 'eval true; sh'", "echo env | eval eval eval eval sh", "echo env | eval cat | sh",
+                  "echo env | eval tee | sh", "eval echo env | eval sh", "echo env | eval cat | eval cat | eval cat | eval cat | sh"):
             assert bash(c), c
         for c in ("set -e", "set -euo pipefail", "set -- a b", "export PATH=/x:$PATH", "export -n FOO", "declare -p HOME",
                   "env -u ELECTRON_RUN_AS_NODE npm test", "printenv HOME", "env FOO=1 make", "echo set", "env env ls",
                   "env -i env HOME=/x true", "env env printenv HOME", 'echo "$(date)"; env e""nv ls',
-                  'echo "$(date)"; env /usr/bin/env ls'):
+                  'echo "$(date)"; env /usr/bin/env ls', "eval echo hi | sh", "echo ls | eval sh", "echo ok | eval cat",
+                  "echo env | eval true", "eval \"echo 'env\" | sh"):
             assert not bash(c), c
 
     def test_environment_dumps_refused_a_dump_word_in_a_search_pattern(self):
@@ -2122,6 +2129,14 @@ class SecretFiles(HookCase):
             assert bash(c) == want, (c[:60], want)
             t = time.monotonic()  # the new reader; the hook's older readers of the same text are not timed here
             wh.dump_text(c)
+            assert time.monotonic() - t < 1, c[:60]
+        # eval in a pipe: long eval runs, many segments, a long chain of pipes through eval, and broken eval texts
+        for c, want in (("eval " * 10_000 + "echo env | sh", True), ("echo env | eval '" + "sh -c ls; " * 5_000 + "'", False),
+                        ("echo env | " + "eval cat | " * 500 + "sh", True), ("echo env | eval 'sh \\'", True),
+                        ("echo env | eval", False)):
+            assert bash(c) == want, (c[:60], want)
+            t = time.monotonic()
+            wh.env_dump(c)
             assert time.monotonic() - t < 1, c[:60]
         c = " ".join(["env"] * big)
         assert bash(c), "100,000 env words"

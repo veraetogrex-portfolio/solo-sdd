@@ -1998,29 +1998,77 @@ def shell_reads_stdin(w, i):
     return None, s or j >= len(w)
 
 
+def heads(parts):
+    """The indices of the parts that start a pipeline: the first and each one after a separator other than `|`."""
+    return [j for j in range(0, len(parts), 2) if j == 0 or parts[j - 1] != "|"]
+
+
+def reads_input(w, depth=0):
+    """Whether a pipeline head with the words w reads the pipe into it on: a shell that reads its commands from stdin, tee,
+    a bare cat, or an eval whose text has such a head (past three levels any eval)."""
+    i = cmd_start(w)
+    p = os.path.basename(w[i]) if i < len(w) else ""
+    if p == "eval":
+        sub = split_cmd(" ".join(w[i + 1:]))
+        return depth >= 3 or any(reads_input(part_words(sub[j])[0], depth + 1) for j in heads(sub))
+    return p == "tee" or p == "cat" and len(w) == i + 1 or p in SHELLS and shell_reads_stdin(w, i) == (None, True)
+
+
+def eval_text(parts, k, w, i, depth=0):
+    """The text the eval of part k runs; when a pipe feeds it, what the pipe carries (piped_text) is echoed into the first
+    head of the text that reads its input: `echo env | eval sh` runs as `echo env | sh`. One head: a shell, tee and a bare
+    cat read their input to its end."""
+    text = " ".join(w[i + 1:])
+    t = piped_text(parts, k - 2, depth + 1) if k >= 2 and parts[k - 1] == "|" else None
+    if t is None:
+        return text
+    sub = split_cmd(text)
+    j = next((j for j in heads(sub) if reads_input(part_words(sub[j])[0], depth)), None)
+    if j is not None:
+        sub[j] = "echo %s | %s" % (shlex.quote(t), sub[j])
+    return "".join(sub)
+
+
+def piped_text(parts, j, depth=0):
+    """What part j prints into the pipe after it: the words of echo or printf, through tee or a bare cat what reaches them,
+    for eval (eval_text) what each segment of its text that is not piped on prints; None for any other program. Past three
+    eval levels the dump words of the pipeline up to part j are what it prints, one a line."""
+    while True:
+        pw = part_words(parts[j])[0]
+        pi = cmd_start(pw)
+        p = os.path.basename(pw[pi]) if pi < len(pw) else ""
+        if p in ("echo", "printf"):
+            return " ".join(pw[pi + 1:])
+        if p == "eval" and depth >= 3:
+            s = j
+            while s >= 2 and parts[s - 1] == "|":
+                s -= 2
+            # ponytail: scans the pipeline again for each such eval, quadratic in the length of a chain of pipes through eval
+            return "\n".join(DUMP_WORDS.findall(flat("\n".join(parts[s:j + 1:2])))) or None
+        if p == "eval":
+            sub = split_cmd(eval_text(parts, j, pw, pi, depth))
+            texts = [t for t in (piped_text(sub, x, depth + 1) for x in range(0, len(sub), 2) if sub[x + 1:x + 2] != ["|"])
+                     if t is not None]
+            return "\n".join(texts) if texts else None
+        if p != "tee" and not (p == "cat" and len(pw) == pi + 1) or j < 2 or parts[j - 1] != "|":
+            return None
+        j -= 2
+
+
 def shell_text(parts, k, words):
-    """The command text that part k hands to a shell: eval's words, a shell's -c string, or the words of echo/printf piped
-    (also through tee or a bare cat) into a shell that reads its commands from stdin; None when it is no such part."""
+    """The command text that part k hands to a shell: eval's text with the pipe into it (eval_text), a shell's -c string,
+    or what is piped (piped_text) into a shell that reads its commands from stdin; None when it is no such part."""
     w = list(words)
     i = cmd_start(w)
     prog = os.path.basename(w[i]) if i < len(w) else ""
     if prog == "eval":
-        return " ".join(w[i + 1:])
+        return eval_text(parts, k, w, i)
     if prog not in SHELLS:
         return None
     text, stdin = shell_reads_stdin(w, i)
     if text is not None or not stdin:
         return text
-    while k >= 2 and parts[k - 1] == "|":
-        pw = part_words(parts[k - 2])[0]
-        pi = cmd_start(pw)
-        p = os.path.basename(pw[pi]) if pi < len(pw) else ""
-        if p in ("echo", "printf"):
-            return " ".join(pw[pi + 1:])
-        if p != "tee" and not (p == "cat" and len(pw) == pi + 1):
-            return None
-        k -= 2
-    return None
+    return piped_text(parts, k - 2) if k >= 2 and parts[k - 1] == "|" else None
 
 
 def names_only(prog, rest):
