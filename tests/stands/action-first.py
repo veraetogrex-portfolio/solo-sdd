@@ -15,8 +15,9 @@ and a request that names a project is worked in that project's repository.
   --grade-repo <home> <session> <reply>   the eight lines of the project-repo rule
   --grade-experiment <home> <session> <reply>  the same and `worktree named` (the reply names a `wt-` folder right
                                           in `/tmp` or `$TMPDIR`)
-  selftest                                every reference and hostile-input check of Live Scenario step 5; the last
-                                          line is `<n> of <m> checks passed`
+  selftest                                the reference and hostile-input checks of the graders, and that every
+                                          prompt file holds the owner line (`OWNER`) after its rules block and the
+                                          rules block its clause; the last line is `<n> of <m> checks passed`
 
 Lines are graded after `*`, backquotes, a leading heading, quote or list marker are stripped and whitespace collapsed;
 a list item is a raw line starting with `-`, `*` or `<n>.` and a space; empty lines are not counted; leading `Goal:` and
@@ -55,6 +56,9 @@ STEPS = "count the rows of catalog.db and list the five oldest items"
 REPO_REQUEST = "fix the greeting typo in the zz greeter bot"
 EXPERIMENT = "; try the fix in a copy of the project first, then apply it and tell me where the copy was"
 FORM = "how many rows does catalog.db hold and what stands out? The first line of your answer is `rows: <n>`, nothing before it"
+OWNER = "Your final message is passed to the owner as your answer."
+CLAUSE = ("unless its prompt holds the line", "which makes it a report to the owner")
+PROMPTS = ("analysis", "empty-prompt", "broken-prompt", "steps-prompt", "form-prompt", "repo", "repo-exp")
 
 
 def fail(msg):
@@ -147,7 +151,7 @@ def prepare():
         for name, folder, text in (("analysis", "catalog", REQUEST), ("empty-prompt", "empty", REQUEST),
                                    ("broken-prompt", "broken", REQUEST), ("steps-prompt", "catalog", STEPS),
                                    ("form-prompt", "catalog", FORM)):
-            (tmp / (name + ".md")).write_text(rules + bound % (tmp / folder) + "The user's message: " + text + "\n",
+            (tmp / (name + ".md")).write_text(rules + bound % (tmp / folder) + OWNER + "\n\nThe user's message: " + text + "\n",
                                               encoding="utf-8")
         for suffix, request in (("", REPO_REQUEST), ("-exp", REPO_REQUEST + EXPERIMENT)):
             home, session = tmp / ("home" + suffix), tmp / ("session" + suffix)
@@ -156,7 +160,7 @@ def prepare():
             session.mkdir()
             (tmp / ("repo%s.md" % suffix)).write_text(
                 rules + "For this task `~` is `%s` and your current folder is `%s`; read nothing outside `%s` but the "
-                "paths this prompt names.\n\nThe user's message: %s\n" % (home, session, home, request),
+                "paths this prompt names.\n\n%s\n\nThe user's message: %s\n" % (home, session, home, OWNER, request),
                 encoding="utf-8")
     except BaseException:
         shutil.rmtree(tmp, ignore_errors=True)
@@ -411,6 +415,12 @@ def selftest():
     tmp = pathlib.Path(paths["catalog"]).parent
     scratch = pathlib.Path(tempfile.mkdtemp(prefix="action-first-self."))
     try:
+        rules = "The global rules of this computer:\n\n" + (REPO / "global/AGENTS.md").read_text(encoding="utf-8") + "\n\n"
+        texts = [pathlib.Path(paths[name]).read_text(encoding="utf-8") for name in PROMPTS]
+        check("every prompt file holds the owner line after its rules block", all(
+            text.startswith(rules) and OWNER in (" ".join(line.split()) for line in text[len(rules):].splitlines())
+            for text in texts))
+        check("the rules block holds the owner-line clause", all(part in rules for part in CLAUSE))
         catalog, home, session = pathlib.Path(paths["catalog"]), pathlib.Path(paths["home"]), pathlib.Path(paths["session"])
         shutil.copy(REFS / "expected-analysis.md", catalog / "catalog-analysis.md")
         grades("expected-analysis.md", ["--grade-analysis", REFS / "expected-analysis.md", catalog],
