@@ -15,14 +15,9 @@ Cause:
 
 ## What Changes
 
-- A pipe next to a compound command (a part after `|` with a word starting with `(` or an opening keyword: `{`, `if`, `while`, `until`, `for`, `select`, `case`, `coproc`; or a part before `|` with a word ending in `)` or a closing keyword: `}`, `fi`, `done`, `esac`), in a command with a part that runs a program reading commands from its stdin (a shell without a script or with `-s` whose stdin is not redirected from a file, a heredoc or a here-string, as `redirections`, the parse `part_words` reads, gives the last redirection of fd 0 (a dup such as `<&3`, a process substitution, a `/dev/` or `/proc/` path once normalised, or a target the shell expands, `~`, `$F`, `/[d]ev/stdin`, `/{d..d}ev/stdin`, `/(dev)/stdin`, keeps the pipe), or an `eval` or a shell's `-c` string whose text has such a part; each part read as the walk reads a command, by `part_words`, `wrapper_values_cut`, `cmd_start` and `handed_text`, with its unquoted closing brackets and an fd glued after one cut from its end in one linear scan; and a `-c` or `eval` text with a word `case`), counts every dump word and every `.env` name of the command: the commands of a compound share its stdin and its output, and the walk does not read the nesting. `echo env | (true; sh)`, `echo env | (cd /tmp && sh)`, `echo env | if true; then sh; fi`, `echo env | case x in x) sh;; esac`, `echo env | (sh)>out`, `echo env | (sh)2>/dev/null`, `echo env | (cat) | sh`, `echo env | (eval cat) | sh`, `echo env | (cat; true) | sh`, `{ echo env; } | sh`, `echo env | time (sh)`, `echo env | coproc (sh)`, `echo env | (true; sh&>out)` and `{ echo env; }&>/dev/stdout | sh` are refused with the existing reason "The command prints the whole environment or a secret". The rule reads each part's words once, so its cost is linear. It refuses `echo env | (true); sh` and `echo env | ( true ) | sh` too, refusals on the safe side.
-- A redirection glued after text (`sh>out`, `sh&>out`) is no part of the word before it, as the shell reads it: `echo env | sh>out` is refused, and a `)` after a redirection's target (`(cat <.env)`) is no part of the target.
-- A shell's `-c` string is read like `eval`'s text, with what is piped into the shell, and when no head of such a text reads its input but the text runs a program reading commands from stdin, the piped text goes into its first head that runs such a program or opens a compound command: `echo env | sh -c sh`, `echo env | sh -c 'cat | sh'`, `echo env | sh -c 'true; (true; sh)'`, `echo env | eval 'true; (true; sh)'`, `echo env | sh -c 'case x in x) sh;; esac'` and `echo env | eval "sh -c 'case x in x) sh;; esac'"` are refused. A subshell's `)` glued to a redirection's target ends the compound too: `(echo env; true 2>/dev/null) | sh` is refused.
-- A command with a word `case` counts every dump word and every `.env` name of the command, at each depth of `eval`, a `-c` string and a substitution, as its patterns' `)` and `|` hide the program after them (the rule the main spec already applies to a command that is not plain): `case x in x) env;; esac` is refused and `case x in x) cat .env;; esac` stays a `.env` read; `case x in x) grep env f;; esac` and `case x in x) true;; esac; test -f .env && echo y` are refused too, refusals on the safe side, while `grep "env" f; case x in x) true;; esac` passes (the search pattern is cut first) and `case x in x) ls;; esac` passes.
-- `archive_runs` and `gh_merges` read eval's words past one `--` (`eval_words`): `eval -- solo-sdd archive foo` is an archive run of `foo` and `eval -- gh pr merge 1` a merge, refused by the existing CLAIM, review and merge reasons.
-- `echo ls | (true; sh)`, `echo ls | sh -c sh`, `echo ls | sh>out`, `echo ls | (cat) | sh`, `case x in x) ls;; esac`, `echo ls | (true; sh ')')`, `echo env | (true; sh ')')` (sh runs the script `)`), `echo env | (cat) > out`, `(cd app && bash build.sh) 2>&1 | tail -5; test -f .env && echo ok` (a shell that runs a script reads no commands from stdin), `echo ls | (cat; true) | sh`, `A=(1 2) /usr/bin/env gh pr merge 5` (a known merge bypass) and `ls >(cat ')' .env)` (a known Bash bypass) still pass.
-- `env_read` reads the same rules, so `echo cat .env | (true; sh)`, `echo cat .env | sh>out`, `echo cat .env | (true; sh <//dev/stdin)` and `(cat <.env)` are refused as `.env` reads, and `(make) | tail; sh; test -f .env && echo ok` is refused on the safe side: a new scenario of the requirement Secret file reads in Bash names it. A here-string or a heredoc is never the pipe, so `( bash <<<"make $T" ) | tail -3; grep -c '^KEY=.' .env` passes as on the base.
-- Through the shared `gh_merges`, `eval_words` also serves the history guard's match: `eval -- git push --force` is refused as `eval git push --force` already is (requirement Forced push refused). `echo env | time (sh)` was refused on the base already and is no new behaviour.
+- A redirection glued after text is no part of the word before it, as the shell reads it (`part_words`): `echo env | sh>out`, `echo env | sh&>out` and `echo env | (sh)>out` are refused with the existing reason "The command prints the whole environment or a secret"; `echo ls | sh>out` passes.
+- `archive_runs` and `gh_merges` read eval's words past one `--` (`eval_words`): `eval -- solo-sdd archive foo` is an archive run of `foo` and `eval -- gh pr merge 1` a merge, refused by the existing CLAIM, review and merge reasons; through the shared `gh_merges` the history guard reads `eval -- git push --force` too, as it reads `eval git push --force`.
+- The other forms of the report, a pipe into or out of a compound command or into a shell's `-c` string (`echo env | (true; sh)`, `echo env | (cat) | sh`, `echo env | sh -c sh`, `echo env | (sh)2>/dev/null`) and a case item's program (`case x in x) env;; esac`), are named in `docs/hooks.md` as known bypasses of the Bash guard and pinned by its known-bypass test: the guard is an accident guard, an agent does not write these forms by accident, and reading them needs a parser of the shell's compound grammar (two attempts with 11 review rounds each opened new misses in it).
 - The stand `tests/stands/pipe-walk-compound.py` runs steps 1-3 of the Live Scenario: the real hook by its entry point on the base 17c3c00 and on the branch.
 
 ## Capabilities
@@ -30,7 +25,7 @@ Cause:
 ### New Capabilities
 
 ### Modified Capabilities
-- `secret-guard`: MODIFIED requirement Environment dumps refused (scenario compound commands, `-c` strings, glued redirections and `case` in a pipe) and MODIFIED requirement Secret file reads in Bash (scenario a pipe next to a compound command).
+- `secret-guard`: MODIFIED requirement Environment dumps refused (scenario a redirection glued to the shell word) and MODIFIED requirement Known bypasses of the Bash guard (the pipe-walk forms named; its text shortened to the 500-character limit, the list moved into a scenario).
 - `work-hooks-subagents`: MODIFIED requirements Direct merge refused in a process tree and Archive run behind runners and options (scenario `eval --`).
 
 ## Impact
@@ -38,13 +33,12 @@ Cause:
 - `global/work_hooks.py`
 - `tests/test_work_hooks.py`
 - `tests/stands/pipe-walk-compound.py`
+- `docs/hooks.md`
 
 ## Out of Scope
 
-- The nesting of a compound command: not read; a pipe next to one counts the whole command (What Changes), and reading it item by item would need the shell's grammar of `(`, `{`, `if`, `case`, `while`, `for` and their closes across parts (a first take that read it, in review round 1, opened new misses and a cubic cost: round 2).
-- A shell's `-c` string as a pipe source (`echo env | sh -c cat | sh`): passes on the base and the branch; reading it as `eval`'s source would take the known quadratic rescan of an `eval` chain past three levels.
-- `tee >(sh)`: a process substitution fed by `tee` (`echo env | tee >(sh)`) passes on the base and the branch; a change of its own.
-- A here-string feeder (`sh <<< env`, `(cat) <<< env | sh`): passes on the base and the branch; a change of its own.
+- Reading a compound command, a shell's `-c` string as a pipe sink or source, and a case statement in the pipe walk: known bypasses (What Changes), decided by the owner on 2026-11-27 after two attempts.
+- `tee >(sh)`, a here-string feeder (`sh <<< env`), `source /dev/stdin`, text filters other than `tee` and a bare `cat` piped into a shell: passes on the base and the branch.
 
 ## Depends On
 

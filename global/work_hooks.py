@@ -9,7 +9,6 @@ input `guard` cannot read: those secret checks fail closed and refuse the call.
 """
 import datetime
 import fnmatch
-import functools
 import glob
 import hashlib
 import json
@@ -2011,14 +2010,12 @@ def protect_quoted(text):
     return "".join(out)
 
 
-@functools.lru_cache(maxsize=4096)  # unread and runs_stdin read the same parts: each is parsed once
-def redirections(part):
-    """(words of one command without their redirections, its redirections as (fd, operator, target)). An unquoted operator
+def part_words(part):
+    """(words of one command without their redirections, whether a redirection reads a .env file). An unquoted operator
     (`>`, `2>&1`, `<.env`, `x>out`) starts a redirection with its target, as the shell reads it: a word before a glued one
-    (`sh>out`) is the word alone, and the fd is the digits or `{name}` right before the operator ('' for the default).
-    Substitution texts are cut out of the words: they are checked as commands of their own."""
+    (`sh>out`) is the word alone. Substitution texts are cut out of the words: they are checked as commands of their own."""
     w = [unsubstituted(x) for x in split_words(protect_quoted(part))]
-    args, redirs, j = [], [], 0
+    args, j, reads = [], 0, False
     while j < len(w):
         r = REDIRECT.match(w[j])
         if not r:
@@ -2026,39 +2023,11 @@ def redirections(part):
             j += 1
             continue
         target, j = (r.group(3), j + 1) if r.group(3) else ((w[j + 1] if j + 1 < len(w) else ""), j + 2)
+        reads |= bool(re.fullmatch(ENV_FILE, target, re.I)) and r.group(2).startswith("<")
         x = re.sub(r"&$", "", r.group(1))  # `sh&>out`: the `&` belongs to the operator
-        fd = x if re.fullmatch(r"\d+|\{\w+\}", x) else ""  # `2>`, `{fd}>`: an fd is no word
-        if x and not fd:
+        if x and not re.fullmatch(r"\d+|\{\w+\}", x):  # `2>`, `{fd}>`: an fd is no word
             args.append(x)
-        redirs.append((fd, r.group(2), target))
-    public = lambda x: x.replace(QUOTED_LT, "<").replace(QUOTED_GT, ">")
-    return tuple(public(x) for x in args), tuple((fd, op, public(t)) for fd, op, t in redirs)
-
-
-def part_words(part):
-    """(words of one command without their redirections, whether a redirection reads a .env file); `(cat <.env)`: the
-    subshell's `)` is no part of the target."""
-    args, redirs = redirections(part)
-    return list(args), any(op.startswith("<") and re.fullmatch(ENV_FILE, t.rstrip(")"), re.I) for _, op, t in redirs)
-
-
-def stdin_from_file(redirs):
-    """The last redirection of fd 0 gives the command a stdin other than the pipe: a file, a heredoc or a here-string. A dup
-    (`<&3`), a process substitution (`< <(cat)`) or a device path (`/dev/stdin`, `//dev/./stdin`, `/dev/fd/3`,
-    `/proc/self/fd/0`) may be the pipe again, so it does not, nor does a target the shell expands; `/dev/null` does. ponytail: a relative name is a file even
-    after `cd /dev` (`cd /dev; sh <stdin`)."""
-    last = None
-    for fd, op, target in redirs:
-        if fd in ("", "0") and op.startswith("<"):
-            if op == "<<<" or target[:1] == "<" and target[1:2] != "(":  # a here-string or a heredoc (`<<EOF`) is its text
-                last = True
-                continue
-            path = os.path.normpath(re.sub(r"^/+", "/", target.rstrip(")")))
-            # a target the shell expands (`~`, `$F`, `/[d]ev/stdin`, `/{d..d}ev/stdin`, zsh's `/(dev)/stdin`, extglob's
-            # `/@(dev)/stdin`) is not known to be a file
-            known = not re.search(r"[~$*?\[{(`]", target)
-            last = op != "<&" and known and (path == "/dev/null" or not path.startswith(("/dev/", "/proc/")))
-    return bool(last)
+    return [x.replace(QUOTED_LT, "<").replace(QUOTED_GT, ">") for x in args], reads
 
 
 def shell_reads_stdin(w, i):
@@ -2095,14 +2064,6 @@ def eval_words(w, i):
     return w[i + 2:] if w[i + 1:i + 2] == ["--"] else w[i + 1:]
 
 
-def handed_text(w, i):
-    """The command text the program at index i runs with its own stdin: eval's text, a shell's -c string; else None."""
-    p = os.path.basename(w[i]) if i < len(w) else ""
-    if p == "eval":
-        return " ".join(eval_words(w, i))
-    return shell_reads_stdin(w, i)[0] if p in SHELLS else None
-
-
 def subshell_end(words, w, i):
     """The words w (cmd_start's copy of words, program word at i) without the `)` that close the subshells opened before
     the program word, one `)` cut from their end per `(`: `(sh)`, `( sh )` and `( (sh))` run sh alone, while a `)` inside
@@ -2118,32 +2079,27 @@ def subshell_end(words, w, i):
 
 def reads_input(w, depth=0):
     """Whether a pipeline head with the words w reads the pipe into it on: a shell that reads its commands from stdin, tee,
-    a bare cat, or an eval or a shell's -c string whose text has such a head (past three levels any)."""
+    a bare cat, or an eval whose text has such a head (past three levels any eval)."""
     words = list(w)
     i = cmd_start(w)
     w = subshell_end(words, w, i)
     p = os.path.basename(w[i]) if i < len(w) else ""
-    text = handed_text(w, i)
-    if text is not None:
-        sub = split_cmd(text)
+    if p == "eval":
+        sub = split_cmd(" ".join(eval_words(w, i)))
         return depth >= 3 or any(reads_input(part_words(sub[j])[0], depth + 1) for j in heads(sub))
     return p == "tee" or p == "cat" and len(w) == i + 1 or p in SHELLS and shell_reads_stdin(w, i) == (None, True)
 
 
-def eval_text(parts, k, text, depth=0):
-    """The text that part k runs with its stdin (handed_text); when a pipe feeds it, what the pipe carries (piped_text) is
-    echoed into the first head of the text that reads its input, or else into its first compound command when the text
-    runs a program that reads commands from stdin: `echo env | eval sh` runs as `echo env | sh`. One head: a shell, tee and
-    a bare cat read their input to its end."""
+def eval_text(parts, k, w, i, depth=0):
+    """The text the eval of part k runs; when a pipe feeds it, what the pipe carries (piped_text) is echoed into the first
+    head of the text that reads its input: `echo env | eval sh` runs as `echo env | sh`. One head: a shell, tee and a bare
+    cat read their input to its end."""
+    text = " ".join(eval_words(w, i))
     t = piped_text(parts, k - 2, depth + 1) if k >= 2 and parts[k - 1] == "|" else None
     if t is None:
         return text
     sub = split_cmd(text)
     j = next((j for j in heads(sub) if reads_input(part_words(sub[j])[0], depth)), None)
-    if j is None and (any(runs_stdin(sub, x) for x in range(0, len(sub), 2)) or has_case(sub)):
-        # `echo env | sh -c 'true; (true; sh)'`, `echo env | eval "sh -c 'case …'"`: a compound's commands, or a -c or
-        # eval text with such a reader, read the text's stdin
-        j = next((j for j in heads(sub) if runs_stdin(sub, j) or opens(words_of(sub[j]))), None)
     if j is not None:
         sub[j] = "echo %s | %s" % (shlex.quote(t), sub[j])
     return "".join(sub)
@@ -2166,7 +2122,7 @@ def piped_text(parts, j, depth=0):
             # ponytail: scans the pipeline again for each such eval, quadratic in the length of a chain of pipes through eval
             return "\n".join(DUMP_WORDS.findall(flat("\n".join(parts[s:j + 1:2])))) or None
         if p == "eval":
-            sub = split_cmd(eval_text(parts, j, " ".join(eval_words(pw, pi)), depth))
+            sub = split_cmd(eval_text(parts, j, pw, pi, depth))
             texts = [t for t in (piped_text(sub, x, depth + 1) for x in range(0, len(sub), 2) if sub[x + 1:x + 2] != ["|"])
                      if t is not None]
             return "\n".join(texts) if texts else None
@@ -2176,17 +2132,19 @@ def piped_text(parts, j, depth=0):
 
 
 def shell_text(parts, k, words):
-    """The command text that part k hands to a shell: eval's text or a shell's -c string with the pipe into it (eval_text),
+    """The command text that part k hands to a shell: eval's text with the pipe into it (eval_text), a shell's -c string,
     or what is piped (piped_text) into a shell that reads its commands from stdin; None when it is no such part."""
     w = list(words)
     i = cmd_start(w)
     w = subshell_end(words, w, i)
     prog = os.path.basename(w[i]) if i < len(w) else ""
-    text = handed_text(w, i)
-    if text is not None:
-        return eval_text(parts, k, text)
-    if prog not in SHELLS or not shell_reads_stdin(w, i)[1]:
+    if prog == "eval":
+        return eval_text(parts, k, w, i)
+    if prog not in SHELLS:
         return None
+    text, stdin = shell_reads_stdin(w, i)
+    if text is not None or not stdin:
+        return text
     return piped_text(parts, k - 2) if k >= 2 and parts[k - 1] == "|" else None
 
 
@@ -2250,74 +2208,6 @@ def flat(cmd):
     return re.sub(r"[\\'\"]", "", cmd.replace("\\\n", ""))
 
 
-COMPOUND = {"if", "while", "until", "for", "select", "case", "coproc", "{"}
-COMPOUND_END = {"fi", "done", "esac", "}"}
-
-
-def words_of(part):
-    """The words of a part without its redirections (part_words): `sh 2>/dev/null` runs sh with no script."""
-    return part_words(part)[0]
-
-
-def opens(w):
-    """A word opens a compound command: a subshell's `(` or an opening keyword."""
-    return any(x[:1] == "(" or x in COMPOUND for x in w)
-
-
-def runs_stdin(parts, k, depth=0):
-    """Part k runs a program that reads commands from its stdin: a shell without a script or with -s whose stdin is not
-    redirected from a file, a heredoc or a here-string (stdin_from_file), or an eval or a shell's -c string whose text has such a part (past three levels any). The part is
-    read as the walk reads a command (part_words, wrapper_values_cut, cmd_start, handed_text) with its unquoted closing
-    brackets, and an fd glued after one, cut from its end."""
-    w, redirs = redirections(parts[k])
-    w = wrapper_values_cut(list(w))
-    # only the unquoted ones: a quoted or escaped `')'` is a script
-    budget = len(re.findall(r"[)}]", re.sub(r"\\.|'[^']*'|\"(?:\\.|[^\"\\])*\"", "", parts[k])))
-    while w and budget:  # `( true; sh )`, `(sh)2>/dev/null`: a closing bracket and the fd glued after it are no argument
-        x, end = w[-1], len(w[-1])
-        while budget:
-            e = end
-            while e and x[e - 1].isdigit():
-                e -= 1
-            if not e or x[e - 1] not in ")}":
-                break
-            end, budget = e - 1, budget - 1
-        if end:
-            w[-1] = x[:end]
-            break
-        w.pop()
-    i = cmd_start(w, extra=("coproc",))
-    p = os.path.basename(w[i]) if i < len(w) else ""
-    text = handed_text(w, i)
-    if text is not None:
-        sub = split_cmd(text)
-        return depth >= 3 or any(runs_stdin(sub, j, depth + 1) for j in range(0, len(sub), 2)) or has_case(sub)
-    return p in SHELLS and shell_reads_stdin(w, i)[1] and not stdin_from_file(redirs)
-
-
-def has_case(parts):
-    """A word of the parts is case (quotes, brackets and separators glued to it cut off): its patterns' `)` and `|` hide the
-    program after them, so the walk does not read a case statement."""
-    return any(y == "case" for x in parts[::2] if "case" in x for z in split_words(x) for y in re.split(r"[(){}|;&!]", z))
-
-
-def unread(parts):
-    """The text of parts the pipe walk does not read, so every name in it counts: all of it when a pipe meets a compound
-    command (a part after `|` with a word starting with `(` or an opening keyword, or a part before `|` with a word ending
-    in `)` or a closing keyword) and a part runs a program that reads commands from its stdin (runs_stdin), as a compound's
-    commands share its stdin and output; and all of it when a word is case (has_case). '' else."""
-    reads = [redirections(parts[k]) for k in range(0, len(parts), 2)]
-    words = [list(w) for w, _ in reads]
-    # a subshell's `)` ends a word or a redirection's target: `(echo env; true 2>/dev/null) | sh`
-    ends = lambda n: any(re.search(r"\)\d*$", x) and not x.endswith("()") or x in COMPOUND_END
-                         for x in words[n] + [t for _, _, t in reads[n][1]])
-    piped = any(parts[2 * n + 1:2 * n + 2] == ["|"] and (ends(n) or n + 1 < len(words) and opens(words[n + 1]))
-                for n in range(len(words)))
-    if has_case(parts) or piped and any(runs_stdin(parts, k) for k in range(0, len(parts), 2)):
-        return "".join(parts)
-    return ""
-
-
 def env_read(cmd, depth=0):
     """A command that gives a .env file to a program, redirects input from it, sources, copies or moves it; read with the
     parser of archive_runs: the program word after wrappers; substitutions, eval, a shell's -c string and echo piped into
@@ -2328,8 +2218,6 @@ def env_read(cmd, depth=0):
     if any(env_read(command_text(s), depth + 1) for s in substituted(cmd)):
         return True
     parts = split_cmd(cmd)
-    if ENV_WORD.search(unread(parts)):
-        return True
     for k in range(0, len(parts), 2):
         args, reads = part_words(parts[k])
         if reads:
@@ -2375,8 +2263,6 @@ def env_dump(cmd, depth=0):
         if d:
             return d
     parts = split_cmd(cmd)
-    if DUMP_WORDS.search(flat(unread(parts))):
-        return "dump"
     for k in range(0, len(parts), 2):
         raw = wrapper_values_cut(part_words(parts[k])[0])  # `env -u X printenv`: X is no program
         inner = shell_text(parts, k, raw)

@@ -2,12 +2,12 @@
 
 The real hook as Claude Code starts it: `python3 global/work_hooks.py guard` with a PreToolUse JSON on stdin (`tool_name: Bash`, the command, `cwd` a folder with a `solo-sdd/` tree), run from a script file; an empty answer means the command passes, a `deny` answer prints its reason.
 
-1. On the base commit 17c3c00, its hook run from a temporary worktree of that commit: `echo env | (true; sh)`, `echo env | (cd /tmp && sh)`, `echo env | if true; then sh; fi`, `echo env | case x in x) sh;; esac`, `echo env | sh -c sh`, `echo env | sh>out`, `echo env | (sh)>out`, `echo env | (sh)2>/dev/null`, `echo env | (cat) | sh`, `echo env | (eval cat) | sh`, `case x in x) env;; esac` with `cwd` the repository, `eval -- gh pr merge 1` with `cwd` the repository and `eval -- solo-sdd archive add-words` with `cwd` a temporary repository whose change `add-words` holds a foreign `CLAIM` → no answer (each passes).
-2. On the branch, the same thirteen commands → the eleven dump forms `deny` with "The command prints the whole environment or a secret", the merge `deny` naming `sdd-pr.py merge`, the archive `deny` as taken by another agent.
-3. On the branch, `echo ls | (true; sh)`, `echo ls | sh -c sh`, `echo ls | sh>out`, `echo ls | (cat) | sh`, `case x in x) ls;; esac`, `echo env | (true; sh ')')` and `echo env | (cat) > out` → no answer.
-Steps 1-3 run in one call of the stand, which makes and removes its temporary home, repository and base worktree: `python3 tests/stands/pipe-walk-compound.py`, printing `pipe-walk-compound: 33 of 33 checks passed`.
+1. On the base commit 17c3c00, its hook run from a temporary worktree of that commit: `echo env | sh>out`, `echo env | sh&>out`, `echo env | (sh)>out` and `eval -- gh pr merge 1` with `cwd` the repository, and `eval -- solo-sdd archive add-words` with `cwd` a temporary repository whose change `add-words` holds a foreign `CLAIM` → no answer (each passes).
+2. On the branch, the same five commands → the three dump forms `deny` with "The command prints the whole environment or a secret", the merge `deny` naming `sdd-pr.py merge`, the archive `deny` as taken by another agent.
+3. On the branch, `echo ls | sh>out` and the known bypasses `echo env | (true; sh)`, `echo env | sh -c sh`, `echo env | (cat) | sh`, `echo env | case x in x) sh;; esac`, `case x in x) env;; esac` and `echo env | (sh)2>/dev/null` → no answer.
+Steps 1-3 run in one call of the stand, which makes and removes its temporary home, repository and base worktree: `python3 tests/stands/pipe-walk-compound.py`, printing `pipe-walk-compound: 17 of 17 checks passed`.
 
-4. In a Claude Code session after `sync.py push` of the merged change: `echo env | (true; sh) | wc -l`, `echo env | sh -c sh | wc -l` and `echo env | (cat) | sh | wc -l` run through the Bash tool are refused with the same reason instead of printing a line count of the environment, and `echo ls | (true; sh) > /dev/null && echo passed` prints `passed`.
+4. In a Claude Code session after `sync.py push` of the merged change: `echo env | sh>out; wc -l < out` run through the Bash tool is refused with the same reason, and `echo ls | sh>/dev/null && echo passed` prints `passed`.
 
 ## Needs
 
@@ -20,13 +20,6 @@ Step 4 needs the layout, a prod action after merge: before it the hook from the 
 ## Result
 
 <!-- Filled during apply: date, what was run, what was observed. -->
-
-- 2026-11-27, branch `change/fix-pipe-walk-compound` at ed062ac (main 4ec331e merged): `python3 tests/stands/pipe-walk-compound.py` printed `pipe-walk-compound: 33 of 33 checks passed` (steps 1-3: the thirteen forms pass the base hook 17c3c00 and are refused by the branch with their reasons; the seven passing forms pass).
-- Real shells (2026-11-26/27, line counts only, from script files): each of the eleven dump forms prints the 93-line environment in zsh, bash and dash; `echo env | (true); sh` prints nothing of the pipe.
-- Tests: the new rows of task 1.1 failed on the base code (six tests, each on a new row) and pass on the branch; `test_environment_dumps_refused_compound_property` fails when the whole-text rule is cut out (a mutation run by hand and reverted, after each rework); `tests/run.py --jobs 5 --tier slow`: files 40, failed 0 (243.4 s, 246.7 s, 243.4 s, 245.1 s, 235.5 s, 236.2 s after each rework); lint without output; `scripts/sync_blocks.py --check` exit 0.
-- Replay: every string literal of the base's `tests/*.py` and `tests/stands/*.py` (13,700 at 4ec331e) gives the same `env_dump`, `env_read`, `archive_runs` and `gh_merges` verdicts on the base and the branch.
-- Independent acceptance: rounds 1-5 and the extra round, `Important` 4, 5, 3, 3, 3, 3; after the extra round 3 stay open (Not Verified).
-- Step 4 not run: the change is not merged, so nothing is laid out.
 
 ## Not Verified
 
@@ -94,3 +87,4 @@ Step 4 needs the layout, a prod action after merge: before it the hook from the 
 - new attempt, review round 4 (2026-11-27), Important 1: a glob group target passed as a file (`</(dev)/stdin` in zsh, extglob's `</@(dev)/stdin`, `</de+(v)/stdin`) → `(` joins the expanded characters (a process substitution or a heredoc is read before); rows in the tests.
 - new attempt round 4, Nits: the stale "case's span" text in the scenario, the proposal and task 1.2 now names the word rule; `has_case` splits words at brackets and separators, so `echo (case); test -f .env` is refused → kept, on the safe side; the new test is named after the scenario A pipe next to a compound command, whose case rule its rows pin; `fix-env-word-backtrack` task 1.1's first step now has its proof.
 - new attempt round 4: the hostile row `echo env | eval '` + `sh -c ls; ` × 5,000 + `'` went over its 1 s bound under a load average of 19 (0.69 s idle, base 0.37 s): `unread` and `runs_stdin` each tokenised every part → `redirections` is cached (`functools.lru_cache`, its answers tuples), 0.25 s against the base's 0.29 s.
+- owner (2026-11-27, "Да, не вижу смысла дрочить эту херню так долго, велью практически 0 от этого"): after the new attempt's round 4 the owner narrowed the change → kept: the glued-redirection split in `part_words` and `eval_words` in `archive_runs` and `gh_merges`; dropped: the reader of compound commands, `-c` strings as sinks, stdin redirections and case statements (`redirections`, `stdin_from_file`, `runs_stdin`, `has_case`, `unread`); the dropped forms are named in `docs/hooks.md` as known bypasses, pinned by `KNOWN_BYPASSES`, and the requirement Known bypasses of the Bash guard lists them (its text shortened to the 500-character limit, the list moved into a scenario, behaviour unchanged); the MODIFIED copy of Secret file reads in Bash goes, so `fix-env-word-backtrack` no longer depends on this change. The review rounds and decisions above record the two attempts that led here; the new review starts at round 1 on the narrowed diff.

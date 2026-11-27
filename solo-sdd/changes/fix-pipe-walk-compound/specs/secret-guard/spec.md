@@ -47,26 +47,25 @@ As a guard against accidental dumps, not a boundary, `guard` SHALL refuse a Bash
 - **WHEN** the agent runs `echo env |& sh`, `echo env |& bash -s`, `echo env |` followed by a newline and `sh`, `eval -- env`, `echo env | eval -- sh`, `echo env | (sh)`, `echo env | ( sh )`, `echo env | ( (sh))` or `echo env | (eval sh)`
 - **THEN** each command is refused with the reason "The command prints the whole environment or a secret": `|&` is a pipe, a newline after `|` or `|&` continues the pipeline, a `--` right after `eval` ends its options, and every `)` that closes a subshell, glued to the program word or standing alone, ends the words of the command in it; `echo ls |& sh`, `echo ls |` followed by a newline and `sh`, `eval -- ls`, `echo ls | eval -- sh` and `echo ls | (sh)` pass
 
+#### Scenario: A redirection glued to the shell word
+- **WHEN** the agent runs `echo env | sh>out`, `echo env | sh&>out` or `echo env | (sh)>out`
+- **THEN** each command is refused with the reason "The command prints the whole environment or a secret": a redirection glued after text is no part of the word before it, as the shell reads it, so the shell word is `sh`; `echo ls | sh>out` passes
 
-#### Scenario: Compound commands, -c strings, glued redirections and case in a pipe
-- **WHEN** the agent runs `echo env | (true; sh)`, `echo env | (cd /tmp && sh)`, `echo env | if true; then sh; fi`, `echo env | case x in x) sh;; esac`, `echo env | sh -c sh`, `echo env | sh>out`, `echo env | (sh)>out`, `echo env | (sh)2>/dev/null`, `echo env | (cat) | sh`, `echo env | (eval cat) | sh`, `case x in x) env;; esac` or `case x in x) grep env f;; esac`
-- **THEN** each command is refused with the reason "The command prints the whole environment or a secret": a pipe next to a compound command (a part after `|` with a word starting with `(` or an opening keyword, or a part before `|` with a word ending in `)` or a closing keyword) in a command with a part that runs a program reading commands from its stdin (a shell without a script whose stdin is not redirected from a file, a heredoc or a here-string, or an `eval` or a `-c` string whose text has one, read as the walk reads a command, a lone or glued closing bracket and a glued `&>` no part of its words; a text with a word `case`) counts every dump word of the command, a piped `-c` or `eval` text with no reading head feeds its first head that runs such a reader or opens a compound command, so `echo env | (cat; true) | sh`, `echo env | (true; sh 3<&0 </dev/fd/3)` (a dup, a process substitution, a device path or a target the shell expands as fd 0 keeps the pipe) and `echo env | (true); sh` are refused too; a redirection glued after text is no part of the word; a shell's `-c` string reads the shell's stdin as `eval`'s text does (past three levels of `-c` or `eval` any one counting as a reader); and a command with a word `case` counts every dump word of the command, as its patterns' `)` and `|` hide the program after them, so `case x in x) true;; esac; printenv HOME` is refused on the safe side; a here-string or a heredoc is never the pipe; `echo ls | (true; sh)`, `echo ls | sh -c sh`, `echo ls | sh>out`, `echo ls | (cat) | sh`, `case x in x) ls;; esac`, `echo env | (cat) > out`, `echo env | (true; sh ')')` and `grep "env" f; case x in x) true;; esac` pass
+### Requirement: Known bypasses of the Bash guard
+`docs/hooks.md` SHALL name the forms of the scenarios below as outside the Bash guard; the boundary is `Read(**/.env)` in `permissions.deny` and secrets kept only in `.env`.
 
-### Requirement: Secret file reads in Bash
-As an accident guard, not a boundary, `guard` SHALL refuse a Bash command that gives a `.env` file path to a program, redirects input from it, runs `source` or `.` on it, or copies or moves it. `ls`, `test`, `[`, `stat`, `touch`, `chmod`, `git check-ignore`, `grep`/`rg` with `-c`, `-q` or `-l` and an output redirect into it SHALL pass, only in a plain command: one holding `#`, `$'`, `${`, `$(`, a backquote or a backslash SHALL be refused when it names a `.env` file anywhere.
+#### Scenario: A known bypass
+- **WHEN** the agent runs `cat .e{n,}v` or `sh -c 'cat "$1"' _ .env`
+- **THEN** the guard lets it through and `docs/hooks.md` lists the form as a known bypass
 
-#### Scenario: Indirect reads in Bash
-- **WHEN** the agent runs `python3 -c "print(open('.env').read())"`, `cp .env /tmp/e`, `source .env && echo ok`, `git diff .env` or `while read l; do echo $l; done < .env`
-- **THEN** each command is refused
+#### Scenario: An interpreter prints the environment
+- **WHEN** the agent runs `awk 'BEGIN{system("env")}' /dev/null`, `python3 -c 'import os; print(os.environ)'`, `xargs printenv`, `sed 's/.*/env/e' f` or `env -S 'A=1 env'`
+- **THEN** the guard lets each through and `docs/hooks.md` lists an interpreter's script that runs or reads the environment and a dump word run by another program from its arguments as known bypasses
 
-#### Scenario: A command that is not plain
-- **WHEN** the agent runs `echo ${X:- #}; cat .env`, `echo hi # see .env` or `echo ${X:-"}" #}; env`
-- **THEN** each command is refused
+#### Scenario: The listed bypasses
+- **WHEN** `docs/hooks.md` is read
+- **THEN** it names as known bypasses brace expansion, `sh -c` with the file as a positional argument, process substitution with a quoted `)`, a heredoc marker line with an open quote, `${X:-env}`, BSD `sed r` unspaced, a pipe into or out of a compound command or into a shell's `-c` string, a case item's program behind its pattern, and, in a plain command, an interpreter's script that runs or reads the environment or a dump word another program runs from its argument (`xargs`, sed `e`, a spaced `env -S`)
 
-#### Scenario: Allowed uses
-- **WHEN** the agent runs `test -f .env`, `ls -la .env`, `grep -c '^API_KEY=.' .env`, `echo 'API_KEY=' >> .env` or `cat .env.example`
-- **THEN** each command passes
-
-#### Scenario: A pipe next to a compound command
-- **WHEN** the agent runs `echo cat .env | (true; sh)`, `echo cat .env | sh>out`, `(cat <.env)`, `echo cat .env | (true; sh <//dev/stdin)`, `echo cat .env | case x in x) sh;; esac` or `(make) | tail; sh; test -f .env && echo ok`
-- **THEN** each command is refused: where a pipe meets a compound command and a part runs a program reading commands from its stdin, every `.env` name of the command counts, as every dump word does (requirement Environment dumps refused), so the last one is refused on the safe side, and a command with a word `case` counts every `.env` name of the command, so `case a in a) true;; esac; test -f .env && echo y` is refused on the safe side; `(cd app && bash <<'EOF'`, a newline, `make`, a newline, `EOF`, a newline, `) | tail -3; grep -c '^KEY=.' .env` and `( bash <<<"make $T" ) | tail -3; grep -c '^KEY=.' .env` pass
+#### Scenario: Pipe walk forms outside the guard
+- **WHEN** the agent runs `echo env | (true; sh)`, `echo env | (cd /tmp && sh)`, `echo env | if true; then sh; fi`, `echo env | case x in x) sh;; esac`, `echo env | sh -c sh`, `echo env | (sh)2>/dev/null`, `echo env | (cat) | sh`, `echo env | (eval cat) | sh` or `case x in x) env;; esac`
+- **THEN** the guard lets each through, each pinned by a known-bypass test, and `docs/hooks.md` lists a pipe into or out of a compound command or into a shell's `-c` string and a case item's program behind its pattern as known bypasses
