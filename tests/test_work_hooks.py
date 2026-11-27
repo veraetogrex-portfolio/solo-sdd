@@ -2178,7 +2178,8 @@ class SecretFiles(HookCase):
                   "printf $'KEY=1\\n' >> .env", "echo ${X:-\"}\" #}; cat .env", "echo \"$(echo \")\" \" #\"; cat .env)\"",
                   "echo ${X:-(a) #}; cat .env", "cat .e\\nv # x", "cat .e\"\"nv", "cat x # cat <<EOF\ncat .env\nEOF",
                   "echo $'a\\'\ncat <<EOF\n'; cat .env\nEOF", "cat .e\\\nnv # c", "cat .e\\\nnv ${X:-}",
-                  "eval echo cat .env | sh", "echo cat .env |& sh"):
+                  "eval echo cat .env | sh", "echo cat .env |& sh", "(cat<.env)", "(cat <.env)", "cat<.env>/dev/stdout",
+                  "cat <.env>/dev/stdout", "cat>y<.env", "source<.env>o", "bash -c 'cat<.env>o'"):
             assert bash(c), c
 
     def test_secret_file_reads_in_bash_allowed_uses(self):
