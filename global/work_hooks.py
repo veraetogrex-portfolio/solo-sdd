@@ -2010,12 +2010,13 @@ def protect_quoted(text):
     return "".join(out)
 
 
-def part_words(part):
-    """(words of one command without their redirections, whether a redirection reads a .env file). An unquoted operator
+def redirections(part):
+    """(words of one command without their redirections, its redirections as (fd, operator, target)). An unquoted operator
     (`>`, `2>&1`, `<.env`, `x>out`) starts a redirection with its target, as the shell reads it: a word before a glued one
-    (`sh>out`) is the word alone. Substitution texts are cut out of the words: they are checked as commands of their own."""
+    (`sh>out`) is the word alone, and the fd is the digits or `{name}` right before the operator ('' for the default).
+    Substitution texts are cut out of the words: they are checked as commands of their own."""
     w = [unsubstituted(x) for x in split_words(protect_quoted(part))]
-    args, j, reads = [], 0, False
+    args, redirs, j = [], [], 0
     while j < len(w):
         r = REDIRECT.match(w[j])
         if not r:
@@ -2023,12 +2024,33 @@ def part_words(part):
             j += 1
             continue
         target, j = (r.group(3), j + 1) if r.group(3) else ((w[j + 1] if j + 1 < len(w) else ""), j + 2)
-        # `(cat <.env)`: the subshell's `)` is no part of the target
-        reads |= bool(re.fullmatch(ENV_FILE, target.rstrip(")"), re.I)) and r.group(2).startswith("<")
         x = re.sub(r"&$", "", r.group(1))  # `sh&>out`: the `&` belongs to the operator
-        if x and not re.fullmatch(r"\d+|\{\w+\}", x):  # `2>`, `{fd}>`: an fd is no word
+        fd = x if re.fullmatch(r"\d+|\{\w+\}", x) else ""  # `2>`, `{fd}>`: an fd is no word
+        if x and not fd:
             args.append(x)
-    return [x.replace(QUOTED_LT, "<").replace(QUOTED_GT, ">") for x in args], reads
+        redirs.append((fd, r.group(2), target))
+    public = lambda x: x.replace(QUOTED_LT, "<").replace(QUOTED_GT, ">")
+    return [public(x) for x in args], [(fd, op, public(t)) for fd, op, t in redirs]
+
+
+def part_words(part):
+    """(words of one command without their redirections, whether a redirection reads a .env file); `(cat <.env)`: the
+    subshell's `)` is no part of the target."""
+    args, redirs = redirections(part)
+    return args, any(op.startswith("<") and re.fullmatch(ENV_FILE, t.rstrip(")"), re.I) for _, op, t in redirs)
+
+
+STDIN_NAMES = {"/dev/stdin", "/dev/fd/0", "/proc/self/fd/0"}
+
+
+def stdin_from_file(redirs):
+    """The last redirection of fd 0 gives the command a stdin other than the pipe: a file, a heredoc or a here-string; a dup
+    (`<&3`, which may be the pipe again) or a name of stdin itself (`/dev/stdin`, `/dev/fd/0`) does not."""
+    last = None
+    for fd, op, target in redirs:
+        if fd in ("", "0") and op.startswith("<"):
+            last = op != "<&" and target.rstrip(")") not in STDIN_NAMES
+    return bool(last)
 
 
 def shell_reads_stdin(w, i):
@@ -2110,8 +2132,10 @@ def eval_text(parts, k, text, depth=0):
         return text
     sub = split_cmd(text)
     j = next((j for j in heads(sub) if reads_input(part_words(sub[j])[0], depth)), None)
-    if j is None and (any(runs_stdin(sub, x) for x in range(0, len(sub), 2)) or case_reads(sub)):  # `echo env | sh -c 'true; (true; sh)'`: the
-        j = next((j for j in heads(sub) if opens(words_of(sub[j]))), None)  # compound's commands read the text's stdin
+    if j is None and (any(runs_stdin(sub, x) for x in range(0, len(sub), 2)) or case_reads(sub)):
+        # `echo env | sh -c 'true; (true; sh)'`, `echo env | eval "sh -c 'case …'"`: a compound's commands, or a -c or
+        # eval text with such a reader, read the text's stdin
+        j = next((j for j in heads(sub) if runs_stdin(sub, j) or opens(words_of(sub[j]))), None)
     if j is not None:
         sub[j] = "echo %s | %s" % (shlex.quote(t), sub[j])
     return "".join(sub)
@@ -2231,15 +2255,15 @@ def opens(w):
     return any(x[:1] == "(" or x in COMPOUND for x in w)
 
 
-STDIN_FROM_FILE = re.compile(r"(?:^|[^\d<>&])0?<(?![<&(])\s*(?!/dev/stdin\b)")  # `sh < x`, `0<x`; not <&0, 2<x, <<, <(
 
 
 def runs_stdin(parts, k, depth=0):
     """Part k runs a program that reads commands from its stdin: a shell without a script or with -s whose stdin is not
-    redirected from a file, or an eval or a shell's -c string whose text has such a part (past three levels any). The part is
+    redirected from a file, a heredoc or a here-string (stdin_from_file), or an eval or a shell's -c string whose text has such a part (past three levels any). The part is
     read as the walk reads a command (part_words, wrapper_values_cut, cmd_start, handed_text) with its unquoted closing
     brackets, and an fd glued after one, cut from its end."""
-    w = wrapper_values_cut(part_words(parts[k])[0])
+    w, redirs = redirections(parts[k])
+    w = wrapper_values_cut(w)
     # only the unquoted ones: a quoted or escaped `')'` is a script
     budget = len(re.findall(r"[)}]", re.sub(r"\\.|'[^']*'|\"(?:\\.|[^\"\\])*\"", "", parts[k])))
     while w and budget:  # `( true; sh )`, `(sh)2>/dev/null`: a closing bracket and the fd glued after it are no argument
@@ -2261,7 +2285,7 @@ def runs_stdin(parts, k, depth=0):
     if text is not None:
         sub = split_cmd(text)
         return depth >= 3 or any(runs_stdin(sub, j, depth + 1) for j in range(0, len(sub), 2)) or case_reads(sub)
-    return p in SHELLS and shell_reads_stdin(w, i)[1] and not STDIN_FROM_FILE.search(protect_quoted(parts[k]))
+    return p in SHELLS and shell_reads_stdin(w, i)[1] and not stdin_from_file(redirs)
 
 
 def case_span(parts):
@@ -2286,10 +2310,13 @@ def unread(parts):
     in `)` or a closing keyword) and a part runs a program that reads commands from its stdin (runs_stdin), or a word of a
     case's span names a shell or eval, as a compound's commands share its stdin and output; and the span of a case, from the
     first part that runs case to the last esac, as a pattern's `)` and `|` hide the program after it. '' else."""
-    words = [words_of(parts[k]) for k in range(0, len(parts), 2)]
-    ends = lambda w: any(re.search(r"\)\d*$", x) and not x.endswith("()") or x in COMPOUND_END for x in w)
-    piped = any(parts[2 * n + 1:2 * n + 2] == ["|"] and (ends(w) or n + 1 < len(words) and opens(words[n + 1]))
-                for n, w in enumerate(words))
+    reads = [redirections(parts[k]) for k in range(0, len(parts), 2)]
+    words = [w for w, _ in reads]
+    # a subshell's `)` ends a word or a redirection's target: `(echo env; true 2>/dev/null) | sh`
+    ends = lambda n: any(re.search(r"\)\d*$", x) and not x.endswith("()") or x in COMPOUND_END
+                         for x in words[n] + [t for _, _, t in reads[n][1]])
+    piped = any(parts[2 * n + 1:2 * n + 2] == ["|"] and (ends(n) or n + 1 < len(words) and opens(words[n + 1]))
+                for n in range(len(words)))
     if piped and (any(runs_stdin(parts, k) for k in range(0, len(parts), 2)) or case_reads(parts)):
         return "".join(parts)
     return "".join(case_span(parts))

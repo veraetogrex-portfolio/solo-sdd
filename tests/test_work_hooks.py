@@ -2188,7 +2188,8 @@ class SecretFiles(HookCase):
                   "cat *(N) .env", "cat *(N) <.env", "echo cat .env | case x in x) sh;; esac", "echo cat .env | (true; sh&>out)",
                   "echo cat .env | sh -c 'true; (true; sh)'", "echo cat .env | (true; sh )", "( echo cat .env; true ) | sh",
                   "echo cat .env | (true; sudo -u x sh)", "echo cat .env | case x in\nx) sh;;\nesac",
-                  "echo cat .env | (true; sh 2<x)"):
+                  "echo cat .env | (true; sh 2<x)", "echo cat .env | (true; sh < /dev/stdin)",
+                  "echo cat .env | eval \"sh -c 'case x in x) sh;; esac'\""):
             assert bash(c), c
 
     def test_secret_file_reads_in_bash_allowed_uses(self):
@@ -2210,7 +2211,8 @@ class SecretFiles(HookCase):
                   "(cd app && bash build.sh) 2>&1 | tail -5; test -f .env && echo ok", "for f in *.sh; do bash -n \"$f\"; done | head; test -f .env",
                   "(sh -c 'ls') | wc -l; grep -c '^KEY=' .env",
                   "(cd app && make) 2>&1 | tail -3; bash < deploy.sh; test -f .env && echo ok",
-                  "(ls) | head; echo 'see (docs)' bash; test -f .env"):
+                  "(ls) | head; echo 'see (docs)' bash; test -f .env",
+                  "(cd app && bash <<'EOF'\nmake\nEOF\n) | tail -3; grep -c '^KEY=.' .env", "( bash <<<make ) | tail -3; grep -c '^KEY=.' .env"):
             assert not bash(c), c
 
     def test_secret_file_reads_in_bash_not_plain_forms(self):
@@ -2265,7 +2267,11 @@ class SecretFiles(HookCase):
                   "echo env | case x in a) true;& b) sh;; esac", "echo env | case x in a) true;;& x) sh;; esac",
                   "echo env | case x in\nx) sh;;\nesac", "echo env | case x in y|x) sh;; esac", "echo env | case x in x)sh;; esac",
                   "echo env | eval 'case x in x) sh;; esac'", "echo env | (true; sh <&0)", "echo env | (true; sh </dev/stdin)",
-                  "echo env | (true; sh 2<x)", "echo env | { true; sh 2</dev/null; }", "echo env | sh -c \"eval 'sh -c sh'\"",
+                  "echo env | (true; sh 2<x)", "echo env | { true; sh 2</dev/null; }",
+                  "echo env | (true; sh < /dev/stdin)", "echo env | (true; sh <\"/dev/stdin\")", "echo env | (true; sh </dev/fd/0)",
+                  "echo env | (true; sh </proc/self/fd/0)", "echo env | (true; bash {fd}<x)", "echo env | (true; sh 3<&0 <x <&3)",
+                  "echo env | eval \"sh -c 'case x in x) sh;; esac'\"", "echo env | sh -c \"sh -c 'case x in x) sh;; esac'\"",
+                  "echo env | sh -c \"eval 'true; (true; sh)'\"", "(echo env; true 2>/dev/null) | sh", "(echo env; true <x) | sh", "echo env | sh -c \"eval 'sh -c sh'\"",
                   "echo env | sh -c \"sh -c 'sh -c \\\"sh -c \\\\\\\"sh -c sh\\\\\\\"\\\"'\"",
                   'echo "$(case x in x) env;; esac)"', "echo $(case x in x) env;; esac)", 'y=$(case x in x) env;; esac); echo "$y"'):
             assert bash(c), c
@@ -2280,7 +2286,7 @@ class SecretFiles(HookCase):
                   "echo ls | (cat; true) | sh", "{ echo ls; } | sh", 'grep "env" f; case x in x) true;; esac',
                   "> [ ] update check (off by env)", "(cd /tmp && sh x.sh) | head -2; env -u X python3 -V",
                   "(which bash) | head; printenv HOME", "(cd app && make) 2>&1 | tail -3; sh -s < setup.sh; printenv HOME",
-                  "echo env | (true; sh -s x<y)"):
+                  "echo env | (true; sh -s x<y)", "{ sh -s <<'EOF'\nmake test\nEOF\n} 2>&1 | tail -3; printenv HOME"):
             assert not bash(c), c
         # every pipe form into every shell form: what a dump word prints is refused, ls passes
         for p, sh, w in itertools.product(("| ", "|& ", "|\n", "| \n\n "), ("sh", "bash -s", "(sh)", "( sh )", "( (sh) )", "( (sh))",
