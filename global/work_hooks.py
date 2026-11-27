@@ -9,6 +9,7 @@ input `guard` cannot read: those secret checks fail closed and refuse the call.
 """
 import datetime
 import fnmatch
+import functools
 import glob
 import hashlib
 import json
@@ -2010,6 +2011,7 @@ def protect_quoted(text):
     return "".join(out)
 
 
+@functools.lru_cache(maxsize=4096)  # unread and runs_stdin read the same parts: each is parsed once
 def redirections(part):
     """(words of one command without their redirections, its redirections as (fd, operator, target)). An unquoted operator
     (`>`, `2>&1`, `<.env`, `x>out`) starts a redirection with its target, as the shell reads it: a word before a glued one
@@ -2030,14 +2032,14 @@ def redirections(part):
             args.append(x)
         redirs.append((fd, r.group(2), target))
     public = lambda x: x.replace(QUOTED_LT, "<").replace(QUOTED_GT, ">")
-    return [public(x) for x in args], [(fd, op, public(t)) for fd, op, t in redirs]
+    return tuple(public(x) for x in args), tuple((fd, op, public(t)) for fd, op, t in redirs)
 
 
 def part_words(part):
     """(words of one command without their redirections, whether a redirection reads a .env file); `(cat <.env)`: the
     subshell's `)` is no part of the target."""
     args, redirs = redirections(part)
-    return args, any(op.startswith("<") and re.fullmatch(ENV_FILE, t.rstrip(")"), re.I) for _, op, t in redirs)
+    return list(args), any(op.startswith("<") and re.fullmatch(ENV_FILE, t.rstrip(")"), re.I) for _, op, t in redirs)
 
 
 def stdin_from_file(redirs):
@@ -2052,8 +2054,9 @@ def stdin_from_file(redirs):
                 last = True
                 continue
             path = os.path.normpath(re.sub(r"^/+", "/", target.rstrip(")")))
-            # a target the shell expands (`~`, `$F`, `/[d]ev/stdin`, `/{d..d}ev/stdin`) is not known to be a file
-            known = not re.search(r"[~$*?\[{`]", target) and not re.match(r"[<>]?\(", target)
+            # a target the shell expands (`~`, `$F`, `/[d]ev/stdin`, `/{d..d}ev/stdin`, zsh's `/(dev)/stdin`, extglob's
+            # `/@(dev)/stdin`) is not known to be a file
+            known = not re.search(r"[~$*?\[{(`]", target)
             last = op != "<&" and known and (path == "/dev/null" or not path.startswith(("/dev/", "/proc/")))
     return bool(last)
 
@@ -2267,7 +2270,7 @@ def runs_stdin(parts, k, depth=0):
     read as the walk reads a command (part_words, wrapper_values_cut, cmd_start, handed_text) with its unquoted closing
     brackets, and an fd glued after one, cut from its end."""
     w, redirs = redirections(parts[k])
-    w = wrapper_values_cut(w)
+    w = wrapper_values_cut(list(w))
     # only the unquoted ones: a quoted or escaped `')'` is a script
     budget = len(re.findall(r"[)}]", re.sub(r"\\.|'[^']*'|\"(?:\\.|[^\"\\])*\"", "", parts[k])))
     while w and budget:  # `( true; sh )`, `(sh)2>/dev/null`: a closing bracket and the fd glued after it are no argument
@@ -2304,7 +2307,7 @@ def unread(parts):
     in `)` or a closing keyword) and a part runs a program that reads commands from its stdin (runs_stdin), as a compound's
     commands share its stdin and output; and all of it when a word is case (has_case). '' else."""
     reads = [redirections(parts[k]) for k in range(0, len(parts), 2)]
-    words = [w for w, _ in reads]
+    words = [list(w) for w, _ in reads]
     # a subshell's `)` ends a word or a redirection's target: `(echo env; true 2>/dev/null) | sh`
     ends = lambda n: any(re.search(r"\)\d*$", x) and not x.endswith("()") or x in COMPOUND_END
                          for x in words[n] + [t for _, _, t in reads[n][1]])

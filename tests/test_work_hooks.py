@@ -2190,7 +2190,8 @@ class SecretFiles(HookCase):
                   "echo cat .env | (true; sudo -u x sh)", "echo cat .env | case x in\nx) sh;;\nesac",
                   "echo cat .env | (true; sh 2<x)", "echo cat .env | (true; sh < /dev/stdin)",
                   "echo cat .env | eval \"sh -c 'case x in x) sh;; esac'\"", "echo cat .env | (true; sh <//dev/stdin)",
-                  "(make) | tail; sh; test -f .env && echo ok", "echo cat .env | (true; sh </[d]ev/stdin)"):
+                  "(make) | tail; sh; test -f .env && echo ok", "echo cat .env | (true; sh </[d]ev/stdin)",
+                  "echo cat .env | (true; sh </(dev)/stdin)"):
             assert bash(c), c
 
     def test_secret_file_reads_in_bash_allowed_uses(self):
@@ -2279,6 +2280,7 @@ class SecretFiles(HookCase):
                   "echo env | case x in x) echo esac;; y) sh;; esac", "case x in x) case y in y) true;; esac;; z) env;; esac",
                   "echo env | (true; sh <~/../../../../../../dev/stdin)", "echo env | (true; sh </[d]ev/stdin)", "echo env | (true; sh <$F)",
                   "echo env | (true; sh </{d..d}ev/stdin)", "case x in x|esac) true;; y) env;; esac",
+                  "echo env | (true; sh </(dev)/stdin)", "echo env | (true; sh </@(dev)/stdin)", "echo env | (true; sh </de+(v)/stdin)",
                   "case x in x) true;; 'esac' ) true;; y) env;; esac", "case x in x)case y in y) true;; esac;; z) env;; esac",
                   "case x in x) { case y in y) true;; esac; };; z) env;; esac", "f() { case x in x) env;; esac; }; f",
                   "echo env | case x in x|esac) true;; y) sh;; esac", "echo env | sh -c \"eval 'sh -c sh'\"",
@@ -2427,7 +2429,7 @@ class SecretFiles(HookCase):
         for c in ("eval eval eval eval ls", "eval eval eval env X=1 python3 -V"):
             assert not bash(c), c
 
-    def test_secret_file_reads_in_bash_a_command_with_case(self):
+    def test_secret_file_reads_in_bash_a_pipe_next_to_a_compound_command(self):
         # a case's patterns hide the program after them: a command with a word case counts every .env name and dump word
         for c in ("case \"$1\" in a) echo hi;; esac; test -f .env && echo y",
                   "case x in x) true;; esac; echo 'API_KEY=' >> .env",
