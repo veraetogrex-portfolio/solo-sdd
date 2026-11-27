@@ -2048,9 +2048,12 @@ def stdin_from_file(redirs):
     last = None
     for fd, op, target in redirs:
         if fd in ("", "0") and op.startswith("<"):
+            if op == "<<<" or target[:1] == "<" and target[1:2] != "(":  # a here-string or a heredoc (`<<EOF`) is its text
+                last = True
+                continue
             path = os.path.normpath(re.sub(r"^/+", "/", target.rstrip(")")))
-            # a target the shell expands (`~`, `$F`, `/[d]ev/stdin`) is not known to be a file
-            known = not re.search(r"[~$*?\[`]", target) and not re.match(r"[<>]?\(", target)
+            # a target the shell expands (`~`, `$F`, `/[d]ev/stdin`, `/{d..d}ev/stdin`) is not known to be a file
+            known = not re.search(r"[~$*?\[{`]", target) and not re.match(r"[<>]?\(", target)
             last = op != "<&" and known and (path == "/dev/null" or not path.startswith(("/dev/", "/proc/")))
     return bool(last)
 
@@ -2134,7 +2137,7 @@ def eval_text(parts, k, text, depth=0):
         return text
     sub = split_cmd(text)
     j = next((j for j in heads(sub) if reads_input(part_words(sub[j])[0], depth)), None)
-    if j is None and (any(runs_stdin(sub, x) for x in range(0, len(sub), 2)) or case_reads(sub)):
+    if j is None and (any(runs_stdin(sub, x) for x in range(0, len(sub), 2)) or has_case(sub)):
         # `echo env | sh -c 'true; (true; sh)'`, `echo env | eval "sh -c 'case …'"`: a compound's commands, or a -c or
         # eval text with such a reader, read the text's stdin
         j = next((j for j in heads(sub) if runs_stdin(sub, j) or opens(words_of(sub[j]))), None)
@@ -2285,40 +2288,21 @@ def runs_stdin(parts, k, depth=0):
     text = handed_text(w, i)
     if text is not None:
         sub = split_cmd(text)
-        return depth >= 3 or any(runs_stdin(sub, j, depth + 1) for j in range(0, len(sub), 2)) or case_reads(sub)
+        return depth >= 3 or any(runs_stdin(sub, j, depth + 1) for j in range(0, len(sub), 2)) or has_case(sub)
     return p in SHELLS and shell_reads_stdin(w, i)[1] and not stdin_from_file(redirs)
 
 
-def case_span(parts):
-    """The parts of each case statement, from the part that runs case to the one that ends it (to the end without one), joined:
-    its patterns' `)` and `|` hide the program after them. The keywords count only where the shell reads them: case as a
-    part's program (first_word) or right after a pattern's `)`, esac as a part's program or as the first word after `in`
-    (an empty case), so an argument `case` or `esac` (`echo case`, `x) echo esac`) is no keyword."""
-    span, depth = [], 0
-    for k in range(0, len(parts), 2):
-        first, w = first_word(parts[k]), words_of(parts[k])
-        opened = (first == "case") + sum(w[j] == "case" for j in range(1, len(w)) if w[j - 1].endswith(")"))
-        if not depth and not opened:
-            continue
-        empty = first == "case" and "in" in w and w[w.index("in") + 1:w.index("in") + 2] == ["esac"]
-        depth = max(depth + opened - (first.rstrip(")") == "esac") - empty, 0)
-        span += parts[k:k + 2]
-    return span
-
-
-def case_reads(parts):
-    """A word of a case's span names a shell or eval: in its items the program follows a pattern's `)`, after `;;`, `;&`,
-    `;;&` or a newline, so any such word counts as a reader."""
-    return any(os.path.basename(y) in SHELLS + ("eval",)
-               for x in case_span(parts)[::2] for z in split_words(x) for y in re.split(r"[()|;&]", z))
+def has_case(parts):
+    """A word of the parts is case (quotes, brackets and separators glued to it cut off): its patterns' `)` and `|` hide the
+    program after them, so the walk does not read a case statement."""
+    return any(y == "case" for x in parts[::2] if "case" in x for z in split_words(x) for y in re.split(r"[(){}|;&!]", z))
 
 
 def unread(parts):
     """The text of parts the pipe walk does not read, so every name in it counts: all of it when a pipe meets a compound
     command (a part after `|` with a word starting with `(` or an opening keyword, or a part before `|` with a word ending
-    in `)` or a closing keyword) and a part runs a program that reads commands from its stdin (runs_stdin), or a word of a
-    case's span names a shell or eval, as a compound's commands share its stdin and output; and the span of a case, from the
-    first part that runs case to the last esac, as a pattern's `)` and `|` hide the program after it. '' else."""
+    in `)` or a closing keyword) and a part runs a program that reads commands from its stdin (runs_stdin), as a compound's
+    commands share its stdin and output; and all of it when a word is case (has_case). '' else."""
     reads = [redirections(parts[k]) for k in range(0, len(parts), 2)]
     words = [w for w, _ in reads]
     # a subshell's `)` ends a word or a redirection's target: `(echo env; true 2>/dev/null) | sh`
@@ -2326,9 +2310,9 @@ def unread(parts):
                          for x in words[n] + [t for _, _, t in reads[n][1]])
     piped = any(parts[2 * n + 1:2 * n + 2] == ["|"] and (ends(n) or n + 1 < len(words) and opens(words[n + 1]))
                 for n in range(len(words)))
-    if piped and (any(runs_stdin(parts, k) for k in range(0, len(parts), 2)) or case_reads(parts)):
+    if has_case(parts) or piped and any(runs_stdin(parts, k) for k in range(0, len(parts), 2)):
         return "".join(parts)
-    return "".join(case_span(parts))
+    return ""
 
 
 def env_read(cmd, depth=0):
