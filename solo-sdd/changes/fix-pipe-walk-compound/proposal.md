@@ -21,7 +21,8 @@ Cause:
 - A `case` at a command position counts every dump word and every `.env` name from it to its last `esac`, at each depth of `eval`, a `-c` string and a substitution, as its patterns' `)` and `|` hide the program after them: `case x in x) env;; esac` is refused and `case x in x) cat .env;; esac` stays a `.env` read; `case x in x) grep env f;; esac` is refused too, a refusal on the safe side, while `case x in x) true;; esac; echo 'API_KEY=' >> .env` and `grep "env" f; case x in x) true;; esac` pass as on the base.
 - `archive_runs` and `gh_merges` read eval's words past one `--` (`eval_words`): `eval -- solo-sdd archive foo` is an archive run of `foo` and `eval -- gh pr merge 1` a merge, refused by the existing CLAIM, review and merge reasons.
 - `echo ls | (true; sh)`, `echo ls | sh -c sh`, `echo ls | sh>out`, `echo ls | (cat) | sh`, `case x in x) ls;; esac`, `echo ls | (true; sh ')')`, `echo env | (true; sh ')')` (sh runs the script `)`), `echo env | (cat) > out`, `(cd app && bash build.sh) 2>&1 | tail -5; test -f .env && echo ok` (a shell that runs a script reads no commands from stdin), `echo ls | (cat; true) | sh`, `A=(1 2) /usr/bin/env gh pr merge 5` (a known merge bypass) and `ls >(cat ')' .env)` (a known Bash bypass) still pass.
-- `env_read` reads the same rules, so `echo cat .env | (true; sh)`, `echo cat .env | sh>out`, `echo cat .env | time (sh)` and `(cat <.env)` are refused as `.env` reads; the requirement Secret file reads in Bash already covers them.
+- `env_read` reads the same rules, so `echo cat .env | (true; sh)`, `echo cat .env | sh>out`, `echo cat .env | (true; sh <//dev/stdin)` and `(cat <.env)` are refused as `.env` reads, and `(make) | tail; sh; test -f .env && echo ok` is refused on the safe side: a new scenario of the requirement Secret file reads in Bash names it. A case statement counts its names only from it to its own `esac`, so `case a in a) true;; esac; test -f .env && echo y; case b in b) true;; esac` passes as on the base.
+- Through the shared `gh_merges`, `eval_words` also serves the history guard's match: `eval -- git push --force` is refused as `eval git push --force` already is (requirement Forced push refused). `echo env | time (sh)` was refused on the base already and is no new behaviour.
 - The stand `tests/stands/pipe-walk-compound.py` runs steps 1-3 of the Live Scenario: the real hook by its entry point on the base 17c3c00 and on the branch.
 
 ## Capabilities
@@ -29,7 +30,7 @@ Cause:
 ### New Capabilities
 
 ### Modified Capabilities
-- `secret-guard`: MODIFIED requirement Environment dumps refused (scenario compound commands, `-c` strings, glued redirections and `case` in a pipe).
+- `secret-guard`: MODIFIED requirement Environment dumps refused (scenario compound commands, `-c` strings, glued redirections and `case` in a pipe) and MODIFIED requirement Secret file reads in Bash (scenario a pipe next to a compound command).
 - `work-hooks-subagents`: MODIFIED requirements Direct merge refused in a process tree and Archive run behind runners and options (scenario `eval --`).
 
 ## Impact

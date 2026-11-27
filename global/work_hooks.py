@@ -2040,16 +2040,16 @@ def part_words(part):
     return args, any(op.startswith("<") and re.fullmatch(ENV_FILE, t.rstrip(")"), re.I) for _, op, t in redirs)
 
 
-STDIN_NAMES = {"/dev/stdin", "/dev/fd/0", "/proc/self/fd/0"}
-
-
 def stdin_from_file(redirs):
-    """The last redirection of fd 0 gives the command a stdin other than the pipe: a file, a heredoc or a here-string; a dup
-    (`<&3`, which may be the pipe again) or a name of stdin itself (`/dev/stdin`, `/dev/fd/0`) does not."""
+    """The last redirection of fd 0 gives the command a stdin other than the pipe: a file, a heredoc or a here-string. A dup
+    (`<&3`), a process substitution (`< <(cat)`) or a device path (`/dev/stdin`, `//dev/./stdin`, `/dev/fd/3`,
+    `/proc/self/fd/0`) may be the pipe again, so it does not; `/dev/null` does. ponytail: a relative name is a file even
+    after `cd /dev` (`cd /dev; sh <stdin`)."""
     last = None
     for fd, op, target in redirs:
         if fd in ("", "0") and op.startswith("<"):
-            last = op != "<&" and target.rstrip(")") not in STDIN_NAMES
+            path = os.path.normpath(re.sub(r"^/+", "/", target.rstrip(")")))
+            last = op != "<&" and not re.match(r"[<>]?\(", target) and (path == "/dev/null" or not path.startswith(("/dev/", "/proc/")))
     return bool(last)
 
 
@@ -2252,9 +2252,8 @@ def words_of(part):
 
 
 def opens(w):
+    """A word opens a compound command: a subshell's `(` or an opening keyword."""
     return any(x[:1] == "(" or x in COMPOUND for x in w)
-
-
 
 
 def runs_stdin(parts, k, depth=0):
@@ -2289,12 +2288,17 @@ def runs_stdin(parts, k, depth=0):
 
 
 def case_span(parts):
-    """The parts of a case's span, from the first part that runs case to the last one holding esac (to the end without one)."""
-    runs = [k for k in range(0, len(parts), 2) if first_word(parts[k]) == "case"]
-    if not runs:
-        return []
-    last = max([k for k in range(runs[0], len(parts), 2) if "esac" in words_of(parts[k])] or [len(parts) - 1])
-    return parts[runs[0]:last + 1]
+    """The parts of each case statement, from the part that runs case to the one holding its own esac (nested cases counted,
+    to the end without one), joined: its patterns' `)` and `|` hide the program after them."""
+    span, depth = [], 0
+    for k in range(0, len(parts), 2):
+        if not depth and first_word(parts[k]) != "case":
+            continue
+        w = words_of(parts[k])
+        depth += (first_word(parts[k]) == "case") + sum(x == "case" for x in w[1:]) - sum(x.rstrip(")") == "esac" for x in w)
+        span += parts[k:k + 2]
+        depth = max(depth, 0)
+    return span
 
 
 def case_reads(parts):
