@@ -2023,8 +2023,8 @@ def part_words(part):
             j += 1
             continue
         target, j = (r.group(3), j + 1) if r.group(3) else ((w[j + 1] if j + 1 < len(w) else ""), j + 2)
-        end = re.search(r"[<>)]", target)  # `cat<.env>o`, `(cat<.env)`: the target ends at the next operator or `)`,
-        if end:  # and the rest of the word is read again
+        end = re.search(r"&?[<>]|\)", target)  # `cat<.env>o`, `cat<.env&>o`, `(cat<.env)`: the target ends at the next
+        if end:  # operator or `)`, and the rest of the word is read again
             target, rest = target[:end.start()], target[end.start():].lstrip(")")
             if rest:
                 w.insert(j, rest)
