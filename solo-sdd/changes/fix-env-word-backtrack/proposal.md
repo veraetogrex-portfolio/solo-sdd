@@ -34,7 +34,7 @@ Cause: `ENV_FILE` (`global/work_hooks.py:35`) opens with the optional folder pre
 
 ## Depends On
 
-none
+- fix-pipe-walk-compound
 
 ## Source
 
