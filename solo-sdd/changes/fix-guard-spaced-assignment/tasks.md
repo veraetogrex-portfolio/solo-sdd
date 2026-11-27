@@ -1,0 +1,10 @@
+## 1. Implementation
+
+- [ ] 1.1 Requirement Forced push refused and Requirement Direct merge refused in a process tree: first rebase the `work-hooks-subagents` delta on the main text left by the archived `fix-pipe-walk-compound` (every main scenario of Direct merge refused in a process tree kept, then this change's scenario), and run `solo-sdd validate fix-guard-spaced-assignment`; then add refused rows to the history-guard and merge-guard tests of `tests/test_work_hooks.py` for every command of the scenarios An assignment with a spaced substitution and Broken input in an assignment (the merge rows in a project with `solo-sdd/`), a nesting row `TS=$(` x 5,000 + `)` x 5,000 + ` git push -f` refused within 10 s, regression rows refused already on main (`A="$(git rev-parse HEAD)" B=1 git push --force`, `FOO="a b" git push -f`, `TS="$(date +%s)" git push -f`), passing rows `TS=$(date +%s) git push origin main`, `TS=$(date +%s) git commit -m "x"` and `TS=$(date +%s) gh pr merge 5` in a repository without `solo-sdd/`, and the known-limit row `A=($(date +%s) x) bash -c 'git push -f'` passing; proven by `python3 -m unittest test_work_hooks` from `tests/` failing on the current code on the new refused rows (the regression rows pass there)
+- [ ] 1.2 In `gh_merges` of `global/work_hooks.py`, keep an assignment word holding a command substitution whole before the program (no second `split_words` cut), keeping every existing row of the history-guard, merge-guard and known-bypass tests (`KNOWN_MERGE_BYPASSES` and the history known limits unchanged); proven by `python3 -m unittest test_work_hooks` from `tests/`, where the rows of 1.1 now pass
+- [ ] 1.3 Run `python3 tests/run.py --jobs 5 --tier slow`, the lint and `python3 -m solo_sdd validate --all`; proven by `failed: 0`, no lint output and 0 errors
+
+## 2. Acceptance
+
+- [ ] 2.1 Run the Live Scenario (or its Fallback) from verification.md and record the Result, Not Verified and Decisions Without Owner sections
+- [ ] 2.2 Run `solo-sdd validate fix-guard-spaced-assignment` and archive the change with `solo-sdd archive fix-guard-spaced-assignment --yes`

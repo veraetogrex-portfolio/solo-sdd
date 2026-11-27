@@ -221,7 +221,8 @@ def prepare():
                 ("bare-prompt", tmp / "bare", tmp / "notes/review.md", ""),
                 ("allout-prompt", target, tmp / "allout/review.md", ""),
                 ("locked-prompt", locked, tmp / "notes/review.md", ""),
-                ("chat-prompt", target, None, "")):
+                # the global rules read a pasted excerpt at its source within reach: name the stand as a session folder
+                ("chat-prompt", target, None, " This session's added working folder is `%s`." % tmp)):
             (tmp / (name + ".md")).write_text(prompt(skill, tgt, review, tmp / "home", extra), encoding="utf-8")
         write_list(tmp)
         (locked / "solo-sdd/changes").chmod(0)
