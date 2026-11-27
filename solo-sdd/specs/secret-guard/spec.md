@@ -78,8 +78,12 @@ As a guard against accidental dumps, not a boundary, `guard` SHALL refuse a Bash
 - **WHEN** the agent runs `echo env |& sh`, `echo env |& bash -s`, `echo env |` followed by a newline and `sh`, `eval -- env`, `echo env | eval -- sh`, `echo env | (sh)`, `echo env | ( sh )`, `echo env | ( (sh))` or `echo env | (eval sh)`
 - **THEN** each command is refused with the reason "The command prints the whole environment or a secret": `|&` is a pipe, a newline after `|` or `|&` continues the pipeline, a `--` right after `eval` ends its options, and every `)` that closes a subshell, glued to the program word or standing alone, ends the words of the command in it; `echo ls |& sh`, `echo ls |` followed by a newline and `sh`, `eval -- ls`, `echo ls | eval -- sh` and `echo ls | (sh)` pass
 
+#### Scenario: A redirection glued to the shell word
+- **WHEN** the agent runs `echo env | sh>out`, `echo env | sh&>out` or `echo env | (sh)>out`
+- **THEN** each command is refused with the reason "The command prints the whole environment or a secret": a redirection glued after text is no part of the word before it, as the shell reads it, so the shell word is `sh`; `echo ls | sh>out` passes
+
 ### Requirement: Known bypasses of the Bash guard
-`docs/hooks.md` SHALL name as outside the Bash guard: brace expansion, `sh -c` with the file as a positional argument, process substitution with a quoted `)`, a heredoc marker line with an open quote, `${X:-env}`, BSD `sed r` unspaced and, in a plain command, an interpreter's script that runs or reads the environment or a dump word another program runs from its argument (`xargs`, sed `e`, a spaced `env -S`); the boundary is `Read(**/.env)` in `permissions.deny` and secrets kept only in `.env`.
+`docs/hooks.md` SHALL name the forms of the scenarios below as outside the Bash guard; the boundary is `Read(**/.env)` in `permissions.deny` and secrets kept only in `.env`.
 
 #### Scenario: A known bypass
 - **WHEN** the agent runs `cat .e{n,}v` or `sh -c 'cat "$1"' _ .env`
@@ -88,6 +92,14 @@ As a guard against accidental dumps, not a boundary, `guard` SHALL refuse a Bash
 #### Scenario: An interpreter prints the environment
 - **WHEN** the agent runs `awk 'BEGIN{system("env")}' /dev/null`, `python3 -c 'import os; print(os.environ)'`, `xargs printenv`, `sed 's/.*/env/e' f` or `env -S 'A=1 env'`
 - **THEN** the guard lets each through and `docs/hooks.md` lists an interpreter's script that runs or reads the environment and a dump word run by another program from its arguments as known bypasses
+
+#### Scenario: The listed bypasses
+- **WHEN** `docs/hooks.md` is read
+- **THEN** it names as known bypasses brace expansion, `sh -c` with the file as a positional argument, process substitution with a quoted `)`, a heredoc marker line with an open quote, `${X:-env}`, BSD `sed r` unspaced, a pipe into or out of a compound command or into a shell's `-c` string, a case item's program behind its pattern, and, in a plain command, an interpreter's script that runs or reads the environment or a dump word another program runs from its argument (`xargs`, sed `e`, a spaced `env -S`)
+
+#### Scenario: Pipe walk forms outside the guard
+- **WHEN** the agent runs `echo env | (true; sh)`, `echo env | (cd /tmp && sh)`, `echo env | if true; then sh; fi`, `echo env | case x in x) sh;; esac`, `echo env | sh -c sh`, `echo env | (sh)2>/dev/null`, `echo env | (cat) | sh`, `echo env | (eval cat) | sh` or `case x in x) env;; esac`
+- **THEN** the guard lets each through, each pinned by a known-bypass test, and `docs/hooks.md` lists a pipe into or out of a compound command or into a shell's `-c` string and a case item's program behind its pattern as known bypasses
 
 ### Requirement: Secret variable names
 A variable SHALL count as secret when one part of its name, split at `_`, digits and a lower-to-upper case change and compared in any case, is `KEY`, `TOKEN`, `SECRET`, `PASSWORD`, `PASSWD`, `WEBHOOK` or `CREDENTIAL`, alone or with a trailing `S`. `guard` SHALL refuse `echo`, `printf` and `printenv` of a secret variable and SHALL pass them for any other variable.

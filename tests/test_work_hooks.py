@@ -2095,6 +2095,7 @@ class ArchiveRunners(HookCase):
 
     def test_archive_run_behind_runners_and_options_end_of_options_before_the_c_string(self):
         archive_refused("bash -c -- 'solo-sdd archive add-words'")
+        archive_refused("eval -- solo-sdd archive add-words")
 
     def test_archive_run_behind_runners_and_options_words_that_stay_text(self):
         for c in ("echo solo-sdd archive add-words", "uvx --from solo-sdd solo-sdd validate --all"):
@@ -2113,7 +2114,11 @@ NOT_PLAIN_CASES = {"#": "echo hi # see .env", "$'": "echo $'hi' .env", "${": "ec
 KNOWN_BYPASSES = ("cat .e{n,}v", "sh -c 'cat \"$1\"' _ .env", "ls >(cat ')' .env)", "cat <<EOF 'x\n'; cat .env\nEOF",
                   "${X:-env} | wc -l", "sed '1r.env' a.txt",
                   'echo "$(date)"; grep -o "printenv" f > x; sh x', "awk 'BEGIN{system(\"env\")}' /dev/null",
-                  "python3 -c 'import os; print(os.environ)'", "xargs printenv", "sed 's/.*/env/e' f", "env -S 'A=1 env'")
+                  "python3 -c 'import os; print(os.environ)'", "xargs printenv", "sed 's/.*/env/e' f", "env -S 'A=1 env'",
+                  # a pipe into or out of a compound command or a -c string, a case item's program (change fix-pipe-walk-compound)
+                  "echo env | (true; sh)", "echo env | (cd /tmp && sh)", "echo env | if true; then sh; fi",
+                  "echo env | case x in x) sh;; esac", "echo env | sh -c sh", "echo env | (sh)2>/dev/null", "echo env | (cat) | sh",
+                  "echo env | (eval cat) | sh", "case x in x) env;; esac")
 SECRET_WORDS = ["KEY", "TOKEN", "SECRET", "PASSWORD", "PASSWD", "WEBHOOK", "CREDENTIAL"]
 OTHER_WORDS = ["MONKEY", "KEYBOARD", "TOKENIZER", "SECRETARY", "PASSWORDLESS", "NAME", "API", "DB", "HOME", "PATH", "KEYED"]
 
@@ -2173,7 +2178,9 @@ class SecretFiles(HookCase):
                   "printf $'KEY=1\\n' >> .env", "echo ${X:-\"}\" #}; cat .env", "echo \"$(echo \")\" \" #\"; cat .env)\"",
                   "echo ${X:-(a) #}; cat .env", "cat .e\\nv # x", "cat .e\"\"nv", "cat x # cat <<EOF\ncat .env\nEOF",
                   "echo $'a\\'\ncat <<EOF\n'; cat .env\nEOF", "cat .e\\\nnv # c", "cat .e\\\nnv ${X:-}",
-                  "eval echo cat .env | sh", "echo cat .env |& sh"):
+                  "eval echo cat .env | sh", "echo cat .env |& sh", "(cat<.env)", "(cat <.env)", "cat<.env>/dev/stdout",
+                  "cat <.env>/dev/stdout", "cat>y<.env", "source<.env>o", "bash -c 'cat<.env>o'", "cat<.env&>/dev/stdout",
+                  "cat<.env&>>o", "(cat<.env&>/dev/stdout)", "cat <.env&>/dev/stdout"):
             assert bash(c), c
 
     def test_secret_file_reads_in_bash_allowed_uses(self):
@@ -2225,14 +2232,14 @@ class SecretFiles(HookCase):
                   "echo env | (sh)", "echo env | ( sh )", "echo env | ( (sh))", "echo env | (eval sh)",
                   "eval '(' true ')' ';' printenv", "eval '(' true ')' '&&' env", "eval -- '(' true ')' ';' printenv",
                   "echo env | eval '(' true ')' ';' sh", "bash --rcfile ')' -c printenv", "bash --init-file ')' -c env",
-                  "( bash --rcfile ')' -c printenv )"):
+                  "( bash --rcfile ')' -c printenv )", "echo env | sh>out", "echo env | sh&>out", "echo env | (sh)>out"):
             assert bash(c), c
         for c in ("set -e", "set -euo pipefail", "set -- a b", "export PATH=/x:$PATH", "export -n FOO", "declare -p HOME",
                   "env -u ELECTRON_RUN_AS_NODE npm test", "printenv HOME", "env FOO=1 make", "echo set", "env env ls",
                   "env -i env HOME=/x true", "env env printenv HOME", 'echo "$(date)"; env e""nv ls',
                   'echo "$(date)"; env /usr/bin/env ls', "eval echo hi | sh", "echo ls | eval sh", "echo ok | eval cat",
                   "echo env | eval true", "eval \"echo 'env\" | sh", "echo ls |& sh", "echo ls |\nsh", "eval -- ls",
-                  "echo ls | eval -- sh", "echo ls | (sh)", 'echo "$(date)"; grep "env" f |& cat'):
+                  "echo ls | eval -- sh", "echo ls | (sh)", 'echo "$(date)"; grep "env" f |& cat', "echo ls | sh>out"):
             assert not bash(c), c
         # every pipe form into every shell form: what a dump word prints is refused, ls passes
         for p, sh, w in itertools.product(("| ", "|& ", "|\n", "| \n\n "), ("sh", "bash -s", "(sh)", "( sh )", "( (sh) )", "( (sh))",
@@ -2416,8 +2423,9 @@ class DirectMerge(HookCase):
         subprocess.run(["git", "init", "-q", TREE], check=True, capture_output=True)
 
     def test_direct_merge_refused_in_a_process_tree_a_process_tree(self):
-        why = merge_denied("gh pr merge 5 --squash")
-        assert why and "sdd-pr.py merge" in why, why
+        for c in ("gh pr merge 5 --squash", "eval -- gh pr merge 1"):
+            why = merge_denied(c)
+            assert why and "sdd-pr.py merge" in why, (c, why)
 
     def test_direct_merge_refused_in_a_process_tree_the_api_form(self):
         assert merge_denied("gh api -X PUT repos/o/r/pulls/5/merge")

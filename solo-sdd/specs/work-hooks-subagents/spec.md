@@ -176,6 +176,10 @@ The `stop` hook SHALL NOT return the agent for an open unmerged PR when the proj
 - **WHEN** the agent runs `git commit -m "explain gh pr merge"` in a project with `solo-sdd/`
 - **THEN** the command passes: a message is not a command
 
+#### Scenario: eval ends its options
+- **WHEN** the project has `solo-sdd/` and the agent runs `eval -- gh pr merge 1`
+- **THEN** the command is refused, the reason names `sdd-pr.py merge`: a `--` right after `eval` ends its options, as `eval gh pr merge 1` is refused
+
 ### Requirement: Known bypasses of the merge guard
 These direct merge forms SHALL pass `guard` as outside it, each pinned by a test that it passes: `xargs`, `find -exec`, `sudo -u`, `env -u`, a shell function, `bash -c`, `eval` or a quoted assignment after `A=(…)` or in `=(…)`, substitutions nested deeper than 3, a `)` in a pattern or quoted text that ends a substitution early, a quoted `(` that keeps one open, a backslash-newline between `$` and `(`. Branch protection is the boundary.
 
@@ -229,6 +233,10 @@ These direct merge forms SHALL pass `guard` as outside it, each pinned by a test
 #### Scenario: Words that stay text
 - **WHEN** the same session runs `echo solo-sdd archive add-words` or `uvx --from solo-sdd solo-sdd validate --all`
 - **THEN** the command passes
+
+#### Scenario: eval ends its options before an archive run
+- **WHEN** the session edited `src/app.py`, ran no `Review:` agent and runs `eval -- solo-sdd archive add-words`
+- **THEN** the command is refused, the reason names `src/app.py`; against a change with a foreign CLAIM it is refused as taken by another agent
 
 ### Requirement: Checks without the policy
 When `model-policy.json` cannot be read or parsed, `guard` SHALL still run every check that does not need it (secrets, worktrees, merges, the foreign CLAIM of the archive guard, CLAIM and WAITING), SHALL let through only the checks that read the policy (the model rules of test and Codex commands, the role and model rules of `Agent`, the review gate of the archive guard) and SHALL write the error to `errors.log`.

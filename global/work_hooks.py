@@ -1750,7 +1750,7 @@ def archive_runs(cmd, depth=0):
             continue
         prog = os.path.basename(w[i])
         if depth < 3 and prog == "eval":
-            found += archive_runs(" ".join(raw[i + 1:]), depth + 1)
+            found += archive_runs(" ".join(eval_words(raw, i)), depth + 1)
             continue
         if depth < 3 and prog in SHELLS:
             c = next((k for k in range(i + 1, len(w)) if re.fullmatch(r"-\w*c\w*", w[k])), None)
@@ -2011,25 +2011,27 @@ def protect_quoted(text):
 
 
 def part_words(part):
-    """(words of one command without their redirections, whether a redirection reads a .env file). A word that starts with
-    an unquoted operator (`>`, `2>&1`, `<.env`) is a redirection with its target; one glued after text (`x>.env`) only when
-    its target is a .env file. Substitution texts are cut out of the words: they are checked as commands of their own."""
+    """(words of one command without their redirections, whether a redirection reads a .env file). An unquoted operator
+    (`>`, `2>&1`, `<.env`, `x>out`) starts a redirection with its target, as the shell reads it: a word before a glued one
+    (`sh>out`) is the word alone. Substitution texts are cut out of the words: they are checked as commands of their own."""
     w = [unsubstituted(x) for x in split_words(protect_quoted(part))]
     args, j, reads = [], 0, False
     while j < len(w):
         r = REDIRECT.match(w[j])
-        if r:
-            lead = re.fullmatch(r"\d*&?", r.group(1))
-            target, nxt = (r.group(3), j + 1) if r.group(3) else ((w[j + 1] if j + 1 < len(w) else ""), j + 2)
-            env = bool(re.fullmatch(ENV_FILE, target, re.I))
-            if lead or env:
-                reads |= env and r.group(2).startswith("<")
-                if not lead:
-                    args.append(r.group(1))
-                j = nxt
-                continue
-        args.append(w[j])
-        j += 1
+        if not r:
+            args.append(w[j])
+            j += 1
+            continue
+        target, j = (r.group(3), j + 1) if r.group(3) else ((w[j + 1] if j + 1 < len(w) else ""), j + 2)
+        end = re.search(r"&?[<>]|\)", target)  # `cat<.env>o`, `cat<.env&>o`, `(cat<.env)`: the target ends at the next
+        if end:  # operator or `)`, and the rest of the word is read again
+            target, rest = target[:end.start()], target[end.start():].lstrip(")")
+            if rest:
+                w.insert(j, rest)
+        reads |= bool(re.fullmatch(ENV_FILE, target, re.I)) and r.group(2).startswith("<")
+        x = re.sub(r"&$", "", r.group(1))  # `sh&>out`: the `&` belongs to the operator
+        if x and not re.fullmatch(r"\d+|\{\w+\}", x):  # `2>`, `{fd}>`: an fd is no word
+            args.append(x)
     return [x.replace(QUOTED_LT, "<").replace(QUOTED_GT, ">") for x in args], reads
 
 
@@ -2684,7 +2686,7 @@ def gh_merges(cmd, depth=0, subs=None, match=gh_merge_words):
         i = cmd_start(w)
         prog = os.path.basename(w[i]) if i < len(w) else ""
         if depth < 3 and prog == "eval":
-            if gh_merges(" ".join(raw[i + 1:]), depth + 1, match=match):
+            if gh_merges(" ".join(eval_words(raw, i)), depth + 1, match=match):
                 return True
         elif depth < 3 and prog in SHELLS:
             c = next((k for k in range(i + 1, len(w)) if re.fullmatch(r"-\w*c\w*", w[k])), None)
